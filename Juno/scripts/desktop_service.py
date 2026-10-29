@@ -49,6 +49,7 @@ def main():
         [str(pg), '-D', str(data), 'status'], stdout=subprocess.DEVNULL).returncode == 0
     engine = None
     actor_id = None
+    host_manager = None
     try:
         subprocess.run([sys.executable, str(ROOT / 'scripts/dev_database.py'), 'start'],
                        check=True, stdout=sys.stderr)
@@ -89,7 +90,7 @@ def main():
             old = session.get(Device, previous['device_id']) if previous.get('device_id') else None
             if old is not None:
                 old.revoked = True
-            actor, token = provision(session, 'Juno native development app', previous.get('owner_id'))
+            actor, token = provision(session, 'Juno on this Mac', previous.get('owner_id'))
             actor_id = actor.id
             session.commit()
             temporary = saved.with_suffix('.tmp')
@@ -101,10 +102,18 @@ def main():
         listener.bind(('127.0.0.1', 0))
         listener.listen(128)
         host, port = listener.getsockname()
-        server = uvicorn.Server(uvicorn.Config(create_app(engine), access_log=False, log_level='warning'))
+        from juno.shared_host import HostManager
+        host_manager = HostManager(state)
+        app = create_app(engine, host_manager=host_manager)
+        host_manager.app = app
+        if host_manager.config.get('enabled'):
+            try: host_manager.set_enabled(True)
+            except Exception: host_manager.error = 'Shared hosting could not restart. Check the network host screen.'
+        server = uvicorn.Server(uvicorn.Config(app, access_log=False, log_level='warning', proxy_headers=False))
         print(json.dumps({'url': f'http://{host}:{port}', 'token': token}), flush=True)
         server.run(sockets=[listener])
     finally:
+        if host_manager is not None: host_manager.close()
         if engine is not None and actor_id is not None:
             from juno.database import sessions
             from juno.models import Device

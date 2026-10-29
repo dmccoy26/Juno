@@ -144,6 +144,39 @@ def verify_taskdock_cache(url, token):
     return snapshot['id']
 
 
+
+def verify_shared_host(url, token, state):
+    import ssl
+    from urllib.parse import urlsplit
+    status=api(url,token,'/v1/host',method='PUT',body={'enabled':True})
+    invitation=api(url,token,'/v1/host/invitations',method='POST')
+    certificate=state/'shared-host/certificate.pem'
+    assert hashlib.sha256(ssl.PEM_cert_to_DER_cert(certificate.read_text())).hexdigest()==invitation['certificate_sha256']
+    context=ssl.create_default_context(cafile=str(certificate))
+    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=context))
+    address='https://localhost:'+str(urlsplit(status['address']).port)
+    def tls(path,device_token='',body=None,expected=200):
+        request=urllib.request.Request(address+path,data=json.dumps(body).encode() if body is not None else None,
+            headers={'Authorization':'Bearer '+device_token,'Content-Type':'application/json'},method='POST' if body is not None else 'GET')
+        try:
+            with opener.open(request,timeout=10) as response:code=response.status;raw=response.read()
+        except urllib.error.HTTPError as error:code=error.code;raw=error.read();error.close()
+        assert code==expected,'Unexpected shared-host result'
+        return json.loads(raw)
+    paired=tls('/v1/pair',body={'invitation':invitation['invitation'],'label':'Synthetic packaged laptop'})
+    tls('/v1/pair',body={'invitation':invitation['invitation'],'label':'Denied replay'},expected=401)
+    exported=tls('/v1/cache',paired['token'])
+    assert exported['owner_id']==paired['owner_id']
+    assert paired['token'] not in json.dumps(exported)
+    operation={'operation_id':'00000000-0000-0000-0000-000000000099','kind':'memory.create','body':{'text':'Synthetic packaged offline memory','source':'verification:shared','confidence':'confirmed'}}
+    first=tls('/v1/offline-operations',paired['token'],operation)
+    assert tls('/v1/offline-operations',paired['token'],operation)==first
+    tls('/v1/host',paired['token'],expected=403)
+    api(url,token,'/v1/host/devices/'+paired['device_id'],method='DELETE')
+    tls('/v1/cache',paired['token'],expected=401)
+    api(url,token,'/v1/host',method='PUT',body={'enabled':False})
+
+
 def verify(package, report):
     checks=[]
     with tempfile.TemporaryDirectory(prefix='juno-verify-', dir='/tmp') as temporary:
@@ -159,6 +192,9 @@ def verify(package, report):
         count=check_payload(relocated)
         checks.append(f'payload seals, internal symlinks and {count} Mach-O dependency checks')
         state=root/'state'
+        hostdir=state/'shared-host';hostdir.mkdir(parents=True,mode=0o700)
+        (hostdir/'settings.json').write_text(json.dumps({'enabled':False,'port':0}))
+        (hostdir/'settings.json').chmod(0o600)
         process=None
         logpath=report.with_suffix('.log')
         with logpath.open('w') as log:
@@ -192,6 +228,8 @@ def verify(package, report):
                     body={'text':diary['diary_text'],'expected_revision':diary['revision'],'confirm':True})
                 assert diary['status']=='confirmed'
                 taskdock_snapshot_id=verify_taskdock_cache(url,token)
+                verify_shared_host(url,token,state)
+                checks.append('packaged TLS pairing, one-use invitations, offline-operation idempotency, administration scope and device revocation')
                 checks.append('packaged TaskDock identity review, dated snapshot, provider freshness and outage retention')
                 stop(process,relocated,state);process=None
                 checks.append('offline check-in/diary and explicit unconfigured-model behavior')
@@ -259,7 +297,7 @@ with sessions(engine_for())() as session:
                 'status':'passed','checks':checks,'host_architecture':os.uname().machine,
                 'host_macos': subprocess.check_output(['sw_vers','-productVersion'],text=True).strip(),
                 'limits':['not installed on the actual M5 laptop yet', 'no Developer ID signature or notarization',
-                          'no cross-device synchronization; chat needs a separately running local model']}
+                          'actual two-Mac/network acceptance pending; host must remain awake with Juno open']}
         report.write_text(json.dumps(result,indent=2)+'\n')
         for check in checks: print('PASS '+check)
         print('Report: '+str(report))

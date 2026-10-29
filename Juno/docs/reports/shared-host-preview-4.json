@@ -1,0 +1,30 @@
+{
+  "version": "0.1.0-preview.4",
+  "verified_at": "2026-10-29T20:44:07.192550+00:00",
+  "approved_deployment": "This work Mac as host; personal laptop offline cache and memory/diary edits",
+  "backend_tests": {
+    "passed": 47,
+    "skipped": 0
+  },
+  "native_offline_cache_queue_restart": "passed",
+  "native_store_immediate_offline_reads_and_writes": "passed",
+  "missing_pinned_session_fails_closed": "passed",
+  "real_native_pinned_tls_pairing": "passed",
+  "different_certificate_rejected": "passed",
+  "actual_host_outage_offline_edits": "passed",
+  "client_process_and_host_restart_sync": "passed",
+  "idempotent_operation_retries": "passed",
+  "keychain_device_credential": "passed",
+  "work_mac_live_host_enabled": "verified in native Computers screen and authenticated-only TLS check",
+  "work_mac_address": "Shown in Computers; encrypted HTTPS on port 8443",
+  "host_lifetime": "Juno app open and work Mac awake",
+  "real_m5_laptop_install": "pending",
+  "actual_campus_network_pairing": "pending",
+  "limits": [
+    "No always-running background host daemon",
+    "No inline conflict merge editor; queue retained/exportable for manual resolution",
+    "Existing standalone laptop data is not automatically merged",
+    "No external cloud model/storage configured",
+    "Internal installer is unsigned and app ad hoc signed"
+  ]
+}

@@ -42,14 +42,22 @@ Updated: October 29, 2026.
 - All 41 automated tests pass. Juno's reader also passed real HTTP checks against the extracted TaskDock build 13 installer with disposable Student Test data. Existing installed TaskDock and real work data were not used.
 - Native screen/missing-token guidance and isolated synthetic Keychain operations were verified. Actual installed TaskDock pairing and laptop installation remain pending. See `TASKDOCK-CONNECTION.md` and the preview 3 installer report for exact evidence.
 
+## Shared work Mac and offline laptop — preview 4
+
+- User approved this Mac as the shared system and authorized offline laptop memory/diary edits. Cloud systems/providers remain unapproved.
+- Enabled the encrypted local-network host on this Mac. Added one-use pairing files, pinned native TLS sessions, device revocation and remote administration restrictions.
+- Added owner-scoped offline exports, private durable laptop queues, expected-revision conflict handling and atomic idempotent operation replay. The host runs while Juno is open and the Mac is awake; no background daemon or system security/sleep changes were made.
+- All 47 backend tests pass. Native-code fixtures verify cache/queue restart behavior and real TLS pairing, stopped-host offline edits, restarted-client replay-safe synchronization and wrong-certificate rejection.
+- Actual two-Mac/campus-network acceptance remains pending. See `SHARED-HOST.md` and the preview 4 reports for exact evidence and limits.
+
 ## In progress / incomplete
 
-- Discovery architecture recommendation written. Live integrations, shared infrastructure and real calendar access are not established.
-- Local PostgreSQL memory service exists; approved shared deployment and actual two-Mac access do not.
+- Discovery architecture recommendation written. The local shared host now exists; installed TaskDock, actual two-Mac network acceptance and real calendar access remain pending.
+- Local PostgreSQL memory service exists; the local work Mac host now exists, while actual two-Mac acceptance remains pending.
 - The earlier development app still depends on the checkout. The new installer is self-contained and stores fresh per-user data in `~/Library/Application Support/Juno`; it does not import the development data.
 - No Developer ID signing identity is available. The app is ad hoc signed; the package is unsigned and not notarized. Institutional/macOS approval may be needed on the laptop.
-- Chat and check-ins are implemented locally. Semantic retrieval/embeddings, approved shared-service connection, installed TaskDock acceptance/calendar reads and the full beta mission remain incomplete.
-- Meeting mode now controls the chat prompt and hides private-mode assistant replies. Notifications and cross-device preference synchronization do not exist yet.
+- Chat and check-ins are implemented locally. Semantic retrieval/embeddings, actual two-Mac acceptance, installed TaskDock acceptance/calendar reads and the full beta mission remain incomplete.
+- Meeting mode now controls the chat prompt and hides private-mode assistant replies. Notifications and shared preference synchronization do not exist yet; memories, conversations and diaries now use the work host.
 - No Juno HumanLab runs or actual two-Mac tests yet.
 
 ## Verification
@@ -64,4 +72,4 @@ Evidence covers the memory/database behaviors above and synthetic connector resp
 
 ## Next implementation step
 
-Install preview 3 and TaskDock build 13 on an approved test Mac, pair through the native screen using a synthetic workspace, and complete installed-app acceptance. Obtain the actual M5 laptop installation result. Calendar planning, shared hosting, remote-model approvals, semantic retrieval and native HumanLab instrumentation remain later requirements.
+Install preview 4 on the M5 laptop, transfer a fresh invitation from this Mac and verify native pairing, offline editing and reconnection on the actual network. Complete installed TaskDock acceptance separately. Calendar planning, remote-model approvals, semantic retrieval, a background host daemon and native HumanLab instrumentation remain later requirements.

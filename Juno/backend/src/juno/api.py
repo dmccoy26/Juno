@@ -14,7 +14,7 @@ from .models import Audit, Memory, Suppression, now
 from .companion import install, invalidate_context
 from .local_model import LocalModel
 from .taskdock import TaskDockReader
-from . import taskdock_api
+from . import taskdock_api, shared_host, offline_cache
 
 
 class MemoryInput(BaseModel):
@@ -37,10 +37,10 @@ def view(row):
             ("id", "text", "source", "confidence", "revision", "created_at", "updated_at")}
 
 
-def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockReader):
+def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockReader, host_manager=None):
     engine = engine if engine is not None else engine_for()
     factory = sessions(engine)
-    app = FastAPI(title="Juno companion service", version="0.1.0-preview.3")
+    app = FastAPI(title="Juno companion service", version="0.1.0-preview.4")
     bearer = HTTPBearer(auto_error=False)
 
     @app.middleware("http")
@@ -84,14 +84,15 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
 
     def commit(session):
         try:
-            session.commit()
+            if session.info.get('offline_transaction'): session.flush()
+            else: session.commit()
         except IntegrityError:
             session.rollback()
             raise HTTPException(409, "An equivalent memory already exists.") from None
 
     @app.get("/health")
     def health():
-        return {"service": "juno", "version": "0.1.0-preview.3"}
+        return {"service": "juno", "version": "0.1.0-preview.4"}
 
     @app.get("/v1/memories")
     def memories(q: str = Query(default="", max_length=200),
@@ -159,6 +160,9 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
         commit(session)
         return Response(status_code=204)
 
+    app.state.offline_handlers = {'memory.create': (create, MemoryInput), 'memory.edit': (edit, MemoryEdit), 'memory.delete': (delete, None)}
     install(app, db, device, lock_owner, model_factory)
     taskdock_api.install(app, db, device, lock_owner, taskdock_factory)
+    shared_host.install(app, db, device, lock_owner, host_manager)
+    offline_cache.install(app, db, device, lock_owner)
     return app

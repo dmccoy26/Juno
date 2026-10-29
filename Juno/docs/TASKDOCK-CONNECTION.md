@@ -1,5 +1,7 @@
 # TaskDock connection — Juno preview 3
 
+Preview 4 adds the user-approved work-Mac/laptop deployment; see [current shared-host instructions](SHARED-HOST.md). The synthetic-workspace checkbox described below belonged to preview 3 and was removed after that explicit approval. The acceptance evidence below remains historical.
+
 Juno is a standalone native Mac app. TaskDock stays the task system of record. This preview adds local, manually refreshed, read-only TaskDock snapshots to Juno's task view and local-model chat. It is still for synthetic workspaces only.
 
 ## Pairing

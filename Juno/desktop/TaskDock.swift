@@ -91,7 +91,6 @@ struct TaskDockWorkspace: View {
     @State private var selected: String?
     @State private var search = ""
     @State private var definitions = false
-    @State private var permitted = false
     @State private var history: TaskDockHistory?
     @State private var historyTask: String?
     @State private var historyKind = ""
@@ -135,7 +134,7 @@ struct TaskDockWorkspace: View {
         Task {
             defer { busy = false }
             do {
-                guard permitted else { throw APIProblem(message: "Confirm that this is a synthetic test workspace before connecting.", status: 0) }
+                guard store.sharedProfile == nil else { throw APIProblem(message: "Manage TaskDock on the work Mac.", status: 0) }
                 let credential = token.isEmpty ? try TaskDockKeychain.read(address) ?? "" : token
                 guard !credential.isEmpty else { throw APIProblem(message: "Paste the dedicated Juno token from TaskDock Settings → Connections.", status: 0) }
                 var body: [String: Any] = ["base_url": address, "token": credential]
@@ -164,13 +163,13 @@ struct TaskDockWorkspace: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("TaskDock · read-only").font(.title2.bold())
             Text("Use TaskDock build 13 or newer on this Mac. Enable Juno access in Settings → Connections, then paste the API address and dedicated token. The token is stored in macOS Keychain.").foregroundStyle(.secondary)
+            if store.sharedProfile == nil {
             HStack {
                 TextField("Local TaskDock API address", text: $origin).textFieldStyle(.roundedBorder)
                 SecureField("Dedicated Juno token (leave blank to use Keychain)", text: $token).textFieldStyle(.roundedBorder)
             }.disabled(busy)
-            Toggle("This is a synthetic test workspace; real work data is not approved for this preview.", isOn: $permitted).disabled(busy)
             HStack {
-                Button("Connect / refresh snapshot") { reviewing = nil; refresh() }.disabled(busy || !store.connected || !permitted)
+                Button("Connect / refresh snapshot") { reviewing = nil; refresh() }.disabled(busy || !store.connected)
                 Button("Forget saved token") {
                     do { try TaskDockKeychain.forget(origin.trimmingCharacters(in: CharacterSet(charactersIn: "/"))); token = ""; reviewing = nil; notice = "Token removed from this Mac’s Keychain. Saved snapshots remain. Revoke access in TaskDock to invalidate the token." }
                     catch { notice = (error as? APIProblem)?.message }
@@ -181,9 +180,10 @@ struct TaskDockWorkspace: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Review connection").font(.headline)
                     Text("Workspace: \(review.workspace_id)\nInstallation: \(review.device_id)").font(.caption).textSelection(.enabled)
-                    Button("Use this workspace and installation") { refresh(accept: true) }.disabled(busy || origin.trimmingCharacters(in: CharacterSet(charactersIn: "/")) != reviewOrigin || !permitted)
+                    Button("Use this workspace and installation") { refresh(accept: true) }.disabled(busy || origin.trimmingCharacters(in: CharacterSet(charactersIn: "/")) != reviewOrigin)
                 }.padding(12).background(.orange.opacity(0.1))
             }
+            } else { Text("This laptop reads the work Mac’s dated TaskDock snapshot. Manage pairing and refresh TaskDock on the work Mac.").foregroundStyle(.secondary) }
             if let notice { Text(notice).foregroundStyle(.secondary).textSelection(.enabled) }
             if let snapshot = state?.snapshot {
                 TimelineView(.periodic(from: .now, by: 60)) { tick in
@@ -230,7 +230,7 @@ struct TaskDockWorkspace: View {
                 if let error = state?.error { Text(error).foregroundStyle(.orange) }
                 Spacer(); Text("No complete TaskDock snapshot saved yet.").foregroundStyle(.secondary); Spacer()
             }
-            Text("Each Mac pairs separately. No task writes, provider refreshes or cross-device synchronization. Chat can use selected dated task excerpts; suggested hours are estimates.").font(.caption).foregroundStyle(.secondary)
+            Text("TaskDock stays read-only. Provider refresh and task changes happen in TaskDock. Chat can use selected dated task excerpts; suggested hours are estimates.").font(.caption).foregroundStyle(.secondary)
         }.padding(22).task { await load() }.onChange(of: selected) { _ in Task { await loadSavedHistory() } }
     }
 }

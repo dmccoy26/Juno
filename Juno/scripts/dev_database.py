@@ -49,7 +49,7 @@ def main():
               '-d', 'postgres', '-X', '-Atc', "SELECT 1 FROM pg_database WHERE datname='juno_dev'"])
     if not result.strip():
         run('createdb', '-h', SOCKET, '-U', 'juno', 'juno_dev')
-    print('Juno development database ready (private Unix socket; synthetic data only).')
+    print('Juno local database ready (private Unix socket).')
 
 
 if __name__ == '__main__':

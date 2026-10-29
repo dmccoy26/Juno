@@ -73,6 +73,12 @@ def checkin_view(row):
 
 
 def invalidate_context(session, owner_id, key):
+    # Idempotency receipts must not retain text that was corrected or deleted.
+    from .models import OfflineOperation
+    identity = key.split(':',1)[1]
+    receipts = session.scalars(select(OfflineOperation).where(OfflineOperation.owner_id == owner_id, OfflineOperation.result['id'].astext == identity)).all()
+    for receipt in receipts:
+        receipt.result = {'id': identity, 'invalidated': True}
     ids = select(Conversation.id).where(Conversation.owner_id == owner_id)
     rows = session.scalars(select(Message).where(Message.conversation_id.in_(ids), Message.context_refs.has_key(key))).all()
     for row in rows:
@@ -158,6 +164,9 @@ def prompt_for(text, history, context, meeting):
 
 
 def install(app, db, device, lock_owner, model_factory=LocalModel):
+    def commit(session):
+        if session.info.get('offline_transaction'): session.flush()
+        else: session.commit()
     def owned(session, table, actor, identity):
         row = session.scalar(select(table).where(table.id == identity, table.owner_id == actor.owner_id))
         if row is None: raise HTTPException(404, 'Record not found.')
@@ -183,7 +192,7 @@ def install(app, db, device, lock_owner, model_factory=LocalModel):
         if row is None:
             row = ModelConnection(owner_id=actor.owner_id, base_url=origin, model=value.model); session.add(row)
         else: row.base_url, row.model = origin, value.model
-        session.commit()
+        commit(session)
         return {'base_url':row.base_url, 'model':row.model, 'configured':True}
 
     @app.get('/v1/conversations')
@@ -193,8 +202,9 @@ def install(app, db, device, lock_owner, model_factory=LocalModel):
 
     @app.post('/v1/conversations', status_code=201)
     def new_conversation(value: ConversationInput, actor=Depends(device), session=Depends(db)):
+        lock_owner(session, actor.owner_id)
         row = Conversation(owner_id=actor.owner_id, title=value.title)
-        session.add(row);session.commit()
+        session.add(row);commit(session)
         return conversation_view(row)
 
     @app.get('/v1/conversations/{identity}/messages')
@@ -234,7 +244,7 @@ def install(app, db, device, lock_owner, model_factory=LocalModel):
             session.add(answer)
         else: answer.status, answer.text, answer.meeting_mode = 'pending', '', value.meeting_mode
         answer.model_name = model
-        session.commit()
+        commit(session)
         answer_id = answer.id
         # Release the DB transaction/owner lock before the slow model call.
         failure = None
@@ -250,7 +260,7 @@ def install(app, db, device, lock_owner, model_factory=LocalModel):
             answer.status, answer.text, answer.context_refs = 'failed', failure, {}
         else:
             answer.status, answer.text, answer.context_refs = 'complete', result, refs
-        session.commit()
+        commit(session)
         return message_view(answer)
 
     @app.post('/v1/check-ins')
@@ -258,7 +268,7 @@ def install(app, db, device, lock_owner, model_factory=LocalModel):
         lock_owner(session, actor.owner_id)
         row = session.scalar(select(CheckIn).where(CheckIn.owner_id == actor.owner_id, CheckIn.local_date == value.local_date))
         if row is None:
-            row = CheckIn(owner_id=actor.owner_id, local_date=value.local_date); session.add(row); session.commit()
+            row = CheckIn(owner_id=actor.owner_id, local_date=value.local_date); session.add(row); commit(session)
         return checkin_view(row)
 
     @app.put('/v1/check-ins/{identity}/answer')
@@ -271,7 +281,7 @@ def install(app, db, device, lock_owner, model_factory=LocalModel):
         row.answers = {**row.answers, value.key:value.text}
         row.diary_text = '\n\n'.join(LABELS[k]+'\n'+(row.answers[k] or 'Not provided.') for k, _ in QUESTIONS if k in row.answers)
         row.status = 'draft';row.revision += 1;row.updated_at = now()
-        session.commit()
+        commit(session)
         return checkin_view(row)
 
     @app.put('/v1/check-ins/{identity}/diary')
@@ -282,5 +292,7 @@ def install(app, db, device, lock_owner, model_factory=LocalModel):
         if value.confirm and any(k not in row.answers for k,_ in QUESTIONS): raise HTTPException(409, 'Answer or skip each question before confirming the diary.')
         invalidate_context(session, actor.owner_id, 'diary:'+row.id)
         row.diary_text = value.text;row.status = 'confirmed' if value.confirm else 'draft';row.revision += 1;row.updated_at = now()
-        session.commit()
+        commit(session)
         return checkin_view(row)
+
+    app.state.offline_handlers.update({'checkin.start': (start_checkin, CheckInInput), 'checkin.answer': (answer_checkin, AnswerInput), 'checkin.diary': (save_diary, DiaryInput)})

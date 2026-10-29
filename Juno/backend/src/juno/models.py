@@ -139,3 +139,19 @@ class TaskDockHistory(Base):
     kind: Mapped[str] = mapped_column(String(20), primary_key=True)
     items: Mapped[list] = mapped_column(JSONB)
     read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PairingInvitation(Base):
+    __tablename__ = 'pairing_invitations'
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used: Mapped[bool] = mapped_column(default=False)
+
+
+class OfflineOperation(Base):
+    __tablename__ = 'offline_operations'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    operation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    result: Mapped[dict] = mapped_column(JSONB)

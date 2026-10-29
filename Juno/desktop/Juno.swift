@@ -54,9 +54,20 @@ final class JunoStore: ObservableObject {
     @Published var checkBusy = false
     @Published var checkIssue: String?
     var checkDay = ""
+    @Published var sharedProfile: SharedProfile?
+    @Published var offline = false
+    @Published var offlineDate: Date?
+    @Published var pendingEdits: [OfflineEdit] = []
+    @Published var syncing = false
+    @Published var syncIssue: String?
+    var offlineCopy: OfflineCopy?
+    var hostSession: URLSession?
+    var localEndpoint: URL?
+    var localToken = ""
     var process: Process?
     var endpoint: URL?
     var token = ""
+    var connectionTask: Task<Void,Never>?
     var startupTask: Task<Void, Never>?
     var selectedMemory: Memory? { items.first { $0.id == selected } }
 
@@ -111,11 +122,18 @@ final class JunoStore: ObservableObject {
                 guard let hello, let address = hello.url, let url = URL(string: address), let token = hello.token else {
                     self.problem = hello?.error ?? "Juno could not connect to her local service."; self.status = "Connection failed"; return
                 }
+                self.localEndpoint = url; self.localToken = token
                 self.endpoint = url; self.token = token
+                do { try self.restoreShared() } catch { self.problem = (error as? APIProblem)?.message ?? "Shared connection could not be restored." }
                 self.startupTask = Task {
                     for _ in 0..<40 {
-                        do { try await self.load(); await self.loadCompanion(); return }
-                        catch { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        do { try await self.load(); await self.loadCompanion(); self.startSharedMonitor(); return }
+                        catch {
+                            if self.sharedProfile != nil, ((error as? APIProblem)?.status == 401 || self.offlineCopy?.archive.pages.isEmpty == true) {
+                                self.status = "Connect work Mac"; self.problem = (error as? APIProblem)?.message ?? "Connect to the work Mac or import a fresh pairing invitation in Computers. Queued edits are retained."; self.startSharedMonitor(); return
+                            }
+                            try? await Task.sleep(nanoseconds: 250_000_000)
+                        }
                     }
                     self.problem = "The local service did not become ready. Quit and reopen Juno."; self.status = "Connection failed"
                 }
@@ -125,19 +143,56 @@ final class JunoStore: ObservableObject {
 
     func request(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> Data {
         guard let endpoint else { throw APIProblem(message: "Juno is still connecting.", status: 0) }
-        let url = URL(string: path, relativeTo: endpoint)!.absoluteURL
-        var req = URLRequest(url: url); req.httpMethod = method; req.timeoutInterval = path.contains("/messages") && method == "POST" ? 100 : (path.hasPrefix("/v1/taskdock/") ? 300 : 15)
-        req.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
-        req.cachePolicy = .reloadIgnoringLocalCacheData
-        if let body { req.httpBody = try JSONSerialization.data(withJSONObject: body); req.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else { throw APIProblem(message: "Invalid response from Juno’s service.", status: 0) }
-        guard (200..<300).contains(http.statusCode) else {
-            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            let message = object?["detail"] as? String ?? "The request could not be completed."
-            throw APIProblem(message: message, status: http.statusCode)
+        if sharedProfile == nil {
+            return try await wire(path,endpoint:endpoint,token:token,session:URLSession.shared,method:method,body:body)
         }
-        return data
+        guard let copy = offlineCopy, let hostSession else {
+            throw APIProblem(message:"The shared laptop copy or encrypted session is unavailable. Open Computers to reconnect; Juno will not use an unpaired connection.",status:0)
+        }
+        if method != "GET" {
+            let components = URLComponents(string:path)!
+            let capable = components.path.hasPrefix("/v1/memories") || components.path.hasPrefix("/v1/check-ins")
+            if capable {
+                var payload = body ?? [:]
+                if method == "DELETE", let revision = components.queryItems?.first(where:{$0.name == "expected_revision"})?.value { payload["expected_revision"] = Int(revision) }
+                let result = try copy.perform(components.path,method:method,body:payload)
+                pendingEdits = copy.archive.pending
+                if offline || syncing { syncIssue = "Saved on this laptop; queued for synchronization with the work Mac."; return result }
+                syncing = true
+                defer { syncing = false }
+                do {
+                    try await syncOfflineCopy(); syncIssue = nil
+                    if let row = try JSONSerialization.jsonObject(with:result) as? [String:Any] {
+                        if let day = row["local_date"] as? String { return try copy.read("/v1/check-ins/by-date/"+day) }
+                        if let oldID = row["id"] as? String, row["text"] != nil {
+                            let identity = copy.resolved[oldID] ?? oldID
+                            if let fresh = copy.objects("/v1/memories").first(where:{$0["id"] as? String == identity}) { return try JSONSerialization.data(withJSONObject:fresh) }
+                        }
+                    }
+                } catch {
+                    if let issue = error as? APIProblem, issue.status == 401 { sharedRevoked() }
+                    offline = true; status = sharedLabel
+                    syncIssue = (error as? APIProblem)?.message ?? "Saved on this laptop. Changes will sync when the work Mac is reachable."
+                }
+                return result
+            }
+            guard !offline && copy.archive.pending.isEmpty else { throw APIProblem(message:"Reconnect and synchronize your saved edits before this action. Your draft is still here.",status:0) }
+        }
+        if method == "GET" && offline { return try copy.read(path) }
+        if method == "GET" && !copy.archive.pending.isEmpty { return try copy.read(path) }
+        do {
+            let data = try await wire(path,endpoint:endpoint,token:token,session:hostSession,method:method,body:body)
+            offline = false; status = sharedLabel
+            if method == "GET" { copy.archive.pages[OfflineCopy.key(path)] = data; try copy.save() }
+            return data
+        } catch let issue as APIProblem {
+            if issue.status == 401 { sharedRevoked(); throw APIProblem(message:"This laptop's access was revoked or expired. Its queued edits are retained. Pair again to reconnect.",status:401) }
+            throw issue
+        } catch {
+            offline = true; status = sharedLabel
+            if method == "GET" { return try copy.read(path) }
+            throw APIProblem(message:"The work Mac is unavailable. Your draft is still here.",status:0)
+        }
     }
     func load(more: Bool = false) async throws {
         let requestedQuery = query
@@ -149,7 +204,7 @@ final class JunoStore: ObservableObject {
         guard query == requestedQuery else { return }
         if more { items.append(contentsOf: page.items.filter { row in !items.contains { $0.id == row.id } }) }
         else { items = page.items }
-        hasMore = page.has_more; connected = true; status = "Connected · Local preview"; problem = nil
+        hasMore = page.has_more; connected = true; status = sharedLabel; problem = nil
         if let selected, !items.contains(where: { $0.id == selected }) { self.selected = nil }
     }
     func refresh(more: Bool = false) {
@@ -180,7 +235,7 @@ final class JunoStore: ObservableObject {
         messages.removeAll { $0.role == "assistant" }
         if let id = currentConversation { try? await loadMessages(id) }
     }
-    func stop() { startupTask?.cancel(); process?.terminate() }
+    func stop() { connectionTask?.cancel(); startupTask?.cancel(); process?.terminate() }
 }
 
 struct Editor: View {
@@ -201,7 +256,7 @@ struct Editor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(original == nil ? "Add a memory" : "Correct this memory").font(.title2.bold())
-            Text("Use fictional information while Juno is in development.").foregroundStyle(.secondary)
+            Text("Save work context you want Juno to remember. You can correct or delete it later.").foregroundStyle(.secondary)
             Text("What should Juno remember?").font(.headline)
             TextEditor(text: $text).font(.body).frame(height: 160).padding(6).overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
                 .accessibilityLabel("Memory text")
@@ -307,7 +362,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
         store.start()
     }
-    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Juno", .applicationVersion: "0.1.0-preview.3", .credits: NSAttributedString(string: "Native Mac work companion\nChat, check-ins and memory · synthetic data only\nLocal storage; cross-device synchronization is not connected")]) }
+    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Juno", .applicationVersion: "0.1.0-preview.4", .credits: NSAttributedString(string: "Native Mac work companion\nChat, check-ins and memory · local shared host\nEncrypted work-Mac connection with offline memory and diary edits")]) }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { window?.makeKeyAndOrderFront(nil); return true }
     func applicationWillTerminate(_ notification: Notification) { store.stop() }
 }

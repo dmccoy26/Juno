@@ -83,3 +83,8 @@ Do not ask the user to choose frameworks or database libraries. Ask only for una
 ## TaskDock API v1 — October 29, 2026
 
 Preview 3 implements the supplied local read-only integration contract. Dedicated credentials live in native macOS Keychain, are passed transiently to the local service, and are never stored in PostgreSQL or given to a model. Immutable dated snapshots and separately dated history caches retain source data without replacing TaskDock as its system of record. Initial and changed workspace/device identities require review; refresh promotion is atomic and rejects concurrent replacement. No calendar, shared host, cloud fallback or task writes are enabled by this work. See `TASKDOCK-CONNECTION.md` for acceptance evidence and remaining limits.
+
+
+## Approved work Mac host and offline edits — October 29, 2026
+
+The user designated this computer as the approved shared system and explicitly requested offline laptop entries and edits. Preview 4 uses this Mac's existing Juno state as the canonical workspace, a private TLS LAN surface, one-use 15-minute pairing invitations and native certificate pinning. Device credentials remain hashed on the host and in laptop Keychain. The laptop stores owner/host-scoped copies and durable optimistic edits, then uses atomic operation IDs and expected revisions on reconnection. Conflicts retain the queue for manual resolution; existing standalone data is not merged. No cloud deployment, router forwarding, system-wide trust change, firewall weakening or sleep-policy change is authorized or performed. The host currently runs only while Juno is open and this Mac is awake. See `SHARED-HOST.md`.

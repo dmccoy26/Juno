@@ -110,7 +110,11 @@ extension JunoStore {
         Task {
             defer { checkBusy = false }
             do {
-                let row = try await decode(CheckInRecord.self, "/v1/check-ins", method: "POST", body: ["local_date": day])
+                let row: CheckInRecord
+                if sharedProfile != nil {
+                    do { row = try await decode(CheckInRecord.self,"/v1/check-ins/by-date/"+day) }
+                    catch { row = try await decode(CheckInRecord.self, "/v1/check-ins", method: "POST", body: ["local_date": day]) }
+                } else { row = try await decode(CheckInRecord.self, "/v1/check-ins", method: "POST", body: ["local_date": day]) }
                 checkIn = row; checkDay = day
                 checkAnswer = UserDefaults.standard.string(forKey: "answerDraft." + day) ?? ""
                 diaryDraft = UserDefaults.standard.string(forKey: "diaryDraft." + day) ?? row.diary_text
@@ -156,19 +160,30 @@ struct RootView: View {
                 Toggle("Meeting mode", isOn: $store.meeting).toggleStyle(.switch).help("New replies use a professional tone. Private-mode replies are hidden while this is on.")
             }.padding(18)
             Picker("Workspace", selection: $store.section) {
-                Text("Chat").tag("Chat"); Text("Daily check-in").tag("Check-in"); Text("Memories").tag("Memories"); Text("Model connection").tag("Model"); Text("TaskDock").tag("TaskDock")
+                Text("Chat").tag("Chat"); Text("Daily check-in").tag("Check-in"); Text("Memories").tag("Memories"); Text("Model connection").tag("Model"); Text("TaskDock").tag("TaskDock"); Text("Computers").tag("Computers")
             }.pickerStyle(.segmented).padding(.horizontal, 20).padding(.bottom, 14)
+            if store.sharedProfile != nil {
+                HStack {
+                    Text(store.offline ? "Offline laptop copy" : "Connected to your work Mac")
+                    if let date = store.offlineDate { Text("Last full copy: " + date.formatted()).foregroundStyle(.secondary) }
+                    Text("\(store.pendingEdits.count) queued edits")
+                    Spacer(); Button("Reconnect / sync") { store.reconnectShared() }.disabled(store.syncing)
+                }.font(.caption).padding(.horizontal,20).padding(.bottom,10)
+                if let issue = store.syncIssue { Text(issue).font(.caption).foregroundStyle(.orange).padding(.horizontal,20) }
+            }
             Divider()
             switch store.section {
             case "Memories": MemoryWorkspace(store: store)
             case "Check-in": CheckInWorkspace(store: store)
-            case "Model": ModelWorkspace(store: store)
+            case "Model":
+                if store.sharedProfile == nil { ModelWorkspace(store: store) } else { VStack(spacing:16) { Text("The work Mac runs Juno’s model").font(.title2.bold()); Text("Configure LM Studio on the work Mac. AI replies need that Mac to be awake and reachable; memories and diary edits work offline.").foregroundStyle(.secondary) }.padding(32) }
             case "TaskDock": TaskDockWorkspace(store: store)
+            case "Computers": ComputersWorkspace(store: store)
             default: ChatWorkspace(store: store)
             }
             if let issue = store.problem { HStack { Text(issue).foregroundStyle(.orange); Spacer(); Button("Dismiss") { store.problem = nil } }.padding(12) }
             Divider()
-            HStack { Text("Synthetic data only · Stored on this Mac"); Spacer(); Text("Juno 0.1.0-preview.3") }.font(.caption).foregroundStyle(.secondary).padding(12)
+            HStack { Text(store.sharedProfile == nil ? "Stored on this Mac" : "Work Mac + offline laptop copy"); Spacer(); Text("Juno 0.1.0-preview.4") }.font(.caption).foregroundStyle(.secondary).padding(12)
         }.frame(minWidth: 920, minHeight: 650)
     }
 }
@@ -211,7 +226,7 @@ struct ChatWorkspace: View {
                 HStack {
                     TextEditor(text: $store.chatDraft).frame(height: 75).padding(6).overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary)).accessibilityLabel("Message to Juno")
                         .onChange(of: store.chatDraft) { value in UserDefaults.standard.set(value, forKey: "chatDraft." + (store.currentConversation ?? "new")) }
-                    Button("Send") { store.sendChat() }.keyboardShortcut(.return, modifiers: .command).disabled(!store.connected || !store.modelConfigured || store.chatSending || store.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.chatDraft.count > 6000)
+                    Button("Send") { store.sendChat() }.keyboardShortcut(.return, modifiers: .command).disabled(!store.connected || store.offline || !store.pendingEdits.isEmpty || !store.modelConfigured || store.chatSending || store.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.chatDraft.count > 6000)
                 }
                 HStack { Text("⌘ Return to send · \(store.chatDraft.count)/6000").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Refresh chat") { if let id = store.currentConversation { Task { try? await store.loadMessages(id) } } }.disabled(store.chatSending) }
             }.padding(20).frame(minWidth: 480)
