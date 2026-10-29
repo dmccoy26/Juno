@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "juno-backend"
+version = "0.1.0.dev0"
+description = "Juno work companion service and read-only integrations"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn>=0.30,<1", "sqlalchemy>=2.0,<2.2",
+  "alembic>=1.13,<2", "psycopg[binary]>=3.2,<4",
+]
+
+[project.optional-dependencies]
+test = ["httpx>=0.28,<1"]
+
+[project.scripts]
+juno-admin = "juno.admin:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+target/
+.local/
+results/
+*.db
+*.db-*
+*.egg-info/
