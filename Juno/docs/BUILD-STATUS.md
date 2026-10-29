@@ -35,13 +35,20 @@ Updated: October 29, 2026.
 - Automatic pre-migration PostgreSQL backup and readability check added. Preview-1 schema upgrade, backup and preserved memory passed in the package verifier.
 - All 24 automated tests pass, including real PostgreSQL behavior and local model-adapter checks. Native interaction verification and a real local-model call supplement those tests.
 
+## TaskDock preview 3
+
+- Added a native read-only TaskDock connection screen, device-only Keychain credentials, identity review, immutable dated snapshots, provider freshness, safe recorded-field display and separately cached update/activity history.
+- Added schema `0003_taskdock` and bounded task excerpts for local chat, with invalidation and post-generation context checks.
+- All 41 automated tests pass. Juno's reader also passed real HTTP checks against the extracted TaskDock build 13 installer with disposable Student Test data. Existing installed TaskDock and real work data were not used.
+- Native screen/missing-token guidance and isolated synthetic Keychain operations were verified. Actual installed TaskDock pairing and laptop installation remain pending. See `TASKDOCK-CONNECTION.md` and the preview 3 installer report for exact evidence.
+
 ## In progress / incomplete
 
 - Discovery architecture recommendation written. Live integrations, shared infrastructure and real calendar access are not established.
 - Local PostgreSQL memory service exists; approved shared deployment and actual two-Mac access do not.
 - The earlier development app still depends on the checkout. The new installer is self-contained and stores fresh per-user data in `~/Library/Application Support/Juno`; it does not import the development data.
 - No Developer ID signing identity is available. The app is ad hoc signed; the package is unsigned and not notarized. Institutional/macOS approval may be needed on the laptop.
-- Chat and check-ins are implemented locally. Semantic retrieval/embeddings, approved shared-service connection, live task/calendar reads and the full beta mission remain incomplete.
+- Chat and check-ins are implemented locally. Semantic retrieval/embeddings, approved shared-service connection, installed TaskDock acceptance/calendar reads and the full beta mission remain incomplete.
 - Meeting mode now controls the chat prompt and hides private-mode assistant replies. Notifications and cross-device preference synchronization do not exist yet.
 - No Juno HumanLab runs or actual two-Mac tests yet.
 
@@ -57,4 +64,4 @@ Evidence covers the memory/database behaviors above and synthetic connector resp
 
 ## Next implementation step
 
-Obtain the actual M5 laptop installation result for preview 2 and the local-model setup experience. Then implement the read-only TaskDock bridge and calendar planning context using synthetic fixtures until live access is explicitly connected. Shared hosting, remote-model approvals, Keychain credentials, semantic retrieval and native HumanLab instrumentation remain later requirements.
+Install preview 3 and TaskDock build 13 on an approved test Mac, pair through the native screen using a synthetic workspace, and complete installed-app acceptance. Obtain the actual M5 laptop installation result. Calendar planning, shared hosting, remote-model approvals, semantic retrieval and native HumanLab instrumentation remain later requirements.

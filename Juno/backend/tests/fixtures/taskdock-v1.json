@@ -1,0 +1,506 @@
+{
+  "note": "Synthetic records only; UUIDs/timestamps are illustrative. No credential is included.",
+  "info": {
+    "api_version": "1",
+    "taskdock": {
+      "version": "0.2.0-beta.3",
+      "build": 13
+    },
+    "workspace_id": "a169154138df5279cafc899e93f5f4da",
+    "device_id": "afdfe14b-7b6f-4a15-b926-b865e3071d51",
+    "capabilities": {
+      "read_tasks": true,
+      "read_updates": true,
+      "read_activity": true,
+      "read_source_freshness": true,
+      "write_tasks": false
+    },
+    "definitions": {
+      "statuses": [
+        {
+          "id": "inbox",
+          "name": "New",
+          "behavior": "open",
+          "archived": 0
+        },
+        {
+          "id": "next",
+          "name": "Next",
+          "behavior": "open",
+          "archived": 0
+        },
+        {
+          "id": "in_progress",
+          "name": "In Progress",
+          "behavior": "progress",
+          "archived": 0
+        },
+        {
+          "id": "waiting",
+          "name": "Waiting",
+          "behavior": "waiting",
+          "archived": 0
+        },
+        {
+          "id": "done",
+          "name": "Completed",
+          "behavior": "completed",
+          "archived": 0
+        }
+      ],
+      "categories": [],
+      "custom_fields": [],
+      "priorities": [
+        {
+          "value": 1,
+          "name": "High"
+        },
+        {
+          "value": 2,
+          "name": "Normal"
+        },
+        {
+          "value": 3,
+          "name": "Low"
+        }
+      ]
+    },
+    "endpoints": {
+      "tasks": "/workspace/tasks",
+      "task": "/workspace/tasks/{id}",
+      "timeline": "/workspace/tasks/{id}/timeline",
+      "sources": "/integrations/juno/v1/sources"
+    }
+  },
+  "tasks": {
+    "items": [
+      {
+        "id": "d6fbbdd574b412b5b6c496a8e619c01a69bb3c629fdcfd09cda7bc63004b4b8e",
+        "external_id": "demo-1-1",
+        "dedup_key": "d6fbbdd574b412b5b6c496a8e619c01a69bb3c629fdcfd09cda7bc63004b4b8e",
+        "title": "Student Test \u2014 Imported task",
+        "description": "Student Test \u2014 Fictional description",
+        "source_status": "open",
+        "owner": null,
+        "due_date": "2026-10-30",
+        "priority": 2,
+        "url": null,
+        "source_updated_at": null,
+        "workflow_status": "inbox",
+        "first_seen_at": "2026-10-29T19:43:03.845279+00:00",
+        "last_seen_at": "2026-10-29T19:43:03.845279+00:00",
+        "source_visible": 1,
+        "parent_external_id": null,
+        "source_record_id": "d6fbbdd574b412b5b6c496a8e619c01a69bb3c629fdcfd09cda7bc63004b4b8e",
+        "source": "smartsheet",
+        "native": false,
+        "created_at": "2026-10-29T19:43:03.845279+00:00",
+        "parent_id": null,
+        "source_completion_mode": "status",
+        "source_completed": false,
+        "updated_at": "2026-10-29T19:43:03.845279+00:00",
+        "source_fields": {
+          "title": "Student Test \u2014 Imported task",
+          "description": "Student Test \u2014 Fictional description",
+          "owner": null,
+          "due_date": "2026-10-30",
+          "priority": 2
+        },
+        "local_overrides": {},
+        "category_id": null,
+        "status_id": "inbox",
+        "position": 0,
+        "archived": false,
+        "version": 0,
+        "completed_at": null,
+        "status_name": "open",
+        "behavior": "open",
+        "category_name": "Uncategorized",
+        "custom_values": {},
+        "start_date": null,
+        "tags": [],
+        "missing_required": {},
+        "latest_update": "",
+        "blocked_reason": "",
+        "blocked_since": null,
+        "recurrence": null,
+        "last_changed_at": "2026-10-29T19:43:03.845279+00:00",
+        "parent_title": null,
+        "child_count": 0,
+        "children_completed": 0,
+        "department_id": null,
+        "department_name": "Unassigned",
+        "event_id": null,
+        "event_title": "",
+        "work_summary": {
+          "minutes": 0,
+          "expense_cents": 0,
+          "labor_cents": 0,
+          "total_cents": 0,
+          "unpriced_minutes": 0
+        }
+      },
+      {
+        "id": "local_0f9cd1ffc8dd4a9db4312de598963603",
+        "title": "Student Test \u2014 Print signs",
+        "description": "",
+        "owner": null,
+        "due_date": null,
+        "priority": 2,
+        "parent_id": "local_81805d27e04e4b50b44b96073b2cdf18",
+        "created_at": "2026-10-29T19:43:03.779565+00:00",
+        "updated_at": "2026-10-29T19:43:03.779565+00:00",
+        "source": "local",
+        "native": true,
+        "source_status": "local",
+        "workflow_status": "inbox",
+        "url": null,
+        "source_completed": false,
+        "source_fields": {},
+        "local_overrides": {},
+        "category_id": null,
+        "status_id": "inbox",
+        "position": 0.0,
+        "archived": false,
+        "version": 1,
+        "completed_at": null,
+        "status_name": "New",
+        "behavior": "open",
+        "category_name": "Uncategorized",
+        "custom_values": {},
+        "start_date": null,
+        "tags": [],
+        "missing_required": {},
+        "latest_update": "",
+        "blocked_reason": "",
+        "blocked_since": null,
+        "recurrence": null,
+        "last_changed_at": "2026-10-29T19:43:03.779986+00:00",
+        "parent_title": "Student Test \u2014 Welcome desk",
+        "child_count": 0,
+        "children_completed": 0,
+        "department_id": null,
+        "department_name": "Unassigned",
+        "event_id": null,
+        "event_title": "",
+        "work_summary": {
+          "minutes": 0,
+          "expense_cents": 0,
+          "labor_cents": 0,
+          "total_cents": 0,
+          "unpriced_minutes": 0
+        }
+      },
+      {
+        "id": "local_81805d27e04e4b50b44b96073b2cdf18",
+        "title": "Student Test \u2014 Welcome desk",
+        "description": "",
+        "owner": null,
+        "due_date": null,
+        "priority": 2,
+        "parent_id": null,
+        "created_at": "2026-10-29T19:43:03.778068+00:00",
+        "updated_at": "2026-10-29T19:43:03.778068+00:00",
+        "source": "local",
+        "native": true,
+        "source_status": "local",
+        "workflow_status": "inbox",
+        "url": null,
+        "source_completed": false,
+        "source_fields": {},
+        "local_overrides": {},
+        "category_id": null,
+        "status_id": "inbox",
+        "position": 0.0,
+        "archived": false,
+        "version": 1,
+        "completed_at": null,
+        "status_name": "New",
+        "behavior": "open",
+        "category_name": "Uncategorized",
+        "custom_values": {},
+        "start_date": null,
+        "tags": [],
+        "missing_required": {},
+        "latest_update": "",
+        "blocked_reason": "",
+        "blocked_since": null,
+        "recurrence": null,
+        "last_changed_at": "2026-10-29T19:43:03.778978+00:00",
+        "parent_title": null,
+        "child_count": 1,
+        "children_completed": 0,
+        "department_id": null,
+        "department_name": "Unassigned",
+        "event_id": null,
+        "event_title": "",
+        "work_summary": {
+          "minutes": 0,
+          "expense_cents": 0,
+          "labor_cents": 0,
+          "total_cents": 0,
+          "unpriced_minutes": 0
+        }
+      },
+      {
+        "id": "local_c06a853da604495890684a8751d84a20",
+        "title": "Student Test \u2014 Supplies checked",
+        "description": "",
+        "owner": null,
+        "due_date": null,
+        "priority": 2,
+        "parent_id": null,
+        "created_at": "2026-10-29T19:43:03.793272+00:00",
+        "updated_at": "2026-10-29T19:43:03.793272+00:00",
+        "source": "local",
+        "native": true,
+        "source_status": "local",
+        "workflow_status": "inbox",
+        "url": null,
+        "source_completed": false,
+        "source_fields": {},
+        "local_overrides": {},
+        "category_id": null,
+        "status_id": "done",
+        "position": 0.0,
+        "archived": false,
+        "version": 1,
+        "completed_at": "2026-10-29T19:43:03.793803+00:00",
+        "status_name": "Completed",
+        "behavior": "completed",
+        "category_name": "Uncategorized",
+        "custom_values": {},
+        "start_date": null,
+        "tags": [],
+        "missing_required": {},
+        "latest_update": "",
+        "blocked_reason": "",
+        "blocked_since": null,
+        "recurrence": null,
+        "last_changed_at": "2026-10-29T19:43:03.793803+00:00",
+        "parent_title": null,
+        "child_count": 0,
+        "children_completed": 0,
+        "department_id": null,
+        "department_name": "Unassigned",
+        "event_id": null,
+        "event_title": "",
+        "work_summary": {
+          "minutes": 0,
+          "expense_cents": 0,
+          "labor_cents": 0,
+          "total_cents": 0,
+          "unpriced_minutes": 0
+        }
+      }
+    ],
+    "total": 4,
+    "matching_total": 4,
+    "offset": 0,
+    "limit": 100,
+    "has_more": false,
+    "snapshot": "5568319e43d92fbf6d364ffa5dc0aa0feaec79de824f85e2514480907fa124c6",
+    "unfinished": 3,
+    "matching_unfinished": 3,
+    "facets": {
+      "sources": [
+        "local",
+        "smartsheet"
+      ],
+      "owners": [],
+      "tags": [],
+      "source_statuses": [
+        "open"
+      ]
+    },
+    "group_counts": {
+      "smartsheet-status:open": 1,
+      "inbox": 2
+    },
+    "group_totals": {
+      "smartsheet-status:open": 1,
+      "inbox": 2,
+      "done": 1
+    },
+    "group_values": [
+      "done",
+      "inbox",
+      "smartsheet-status:open"
+    ],
+    "group_max_positions": {
+      "smartsheet-status:open": 0,
+      "inbox": 0.0,
+      "done": 0.0
+    },
+    "wip_counts": {
+      "smartsheet-status:open": 1,
+      "inbox": 2
+    }
+  },
+  "detail": {
+    "task": {
+      "id": "local_81805d27e04e4b50b44b96073b2cdf18",
+      "title": "Student Test \u2014 Welcome desk",
+      "description": "",
+      "owner": null,
+      "due_date": null,
+      "priority": 2,
+      "parent_id": null,
+      "created_at": "2026-10-29T19:43:03.778068+00:00",
+      "updated_at": "2026-10-29T19:43:03.778068+00:00",
+      "source": "local",
+      "native": true,
+      "source_status": "local",
+      "workflow_status": "inbox",
+      "url": null,
+      "source_completed": false,
+      "source_fields": {},
+      "local_overrides": {},
+      "category_id": null,
+      "status_id": "inbox",
+      "position": 0.0,
+      "archived": false,
+      "version": 1,
+      "completed_at": null,
+      "status_name": "New",
+      "behavior": "open",
+      "category_name": "Uncategorized",
+      "custom_values": {},
+      "start_date": null,
+      "tags": [],
+      "missing_required": {},
+      "latest_update": "",
+      "blocked_reason": "",
+      "blocked_since": null,
+      "recurrence": null,
+      "last_changed_at": "2026-10-29T19:43:03.778978+00:00",
+      "parent_title": null,
+      "child_count": 1,
+      "children_completed": 0,
+      "department_id": null,
+      "department_name": "Unassigned",
+      "event_id": null,
+      "event_title": "",
+      "work_summary": {
+        "minutes": 0,
+        "expense_cents": 0,
+        "labor_cents": 0,
+        "total_cents": 0,
+        "unpriced_minutes": 0
+      }
+    },
+    "children": [
+      {
+        "id": "local_0f9cd1ffc8dd4a9db4312de598963603",
+        "title": "Student Test \u2014 Print signs",
+        "description": "",
+        "owner": null,
+        "due_date": null,
+        "priority": 2,
+        "parent_id": "local_81805d27e04e4b50b44b96073b2cdf18",
+        "created_at": "2026-10-29T19:43:03.779565+00:00",
+        "updated_at": "2026-10-29T19:43:03.779565+00:00",
+        "source": "local",
+        "native": true,
+        "source_status": "local",
+        "workflow_status": "inbox",
+        "url": null,
+        "source_completed": false,
+        "source_fields": {},
+        "local_overrides": {},
+        "category_id": null,
+        "status_id": "inbox",
+        "position": 0.0,
+        "archived": false,
+        "version": 1,
+        "completed_at": null,
+        "status_name": "New",
+        "behavior": "open",
+        "category_name": "Uncategorized",
+        "custom_values": {},
+        "start_date": null,
+        "tags": [],
+        "missing_required": {},
+        "latest_update": "",
+        "blocked_reason": "",
+        "blocked_since": null,
+        "recurrence": null,
+        "last_changed_at": "2026-10-29T19:43:03.779986+00:00",
+        "parent_title": "Student Test \u2014 Welcome desk",
+        "child_count": 0,
+        "children_completed": 0,
+        "department_id": null,
+        "department_name": "Unassigned",
+        "event_id": null,
+        "event_title": "",
+        "work_summary": {
+          "minutes": 0,
+          "expense_cents": 0,
+          "labor_cents": 0,
+          "total_cents": 0,
+          "unpriced_minutes": 0
+        }
+      }
+    ],
+    "child_offset": 0,
+    "children_total": 1,
+    "updates": [],
+    "updates_next_cursor": null,
+    "activity": [
+      {
+        "id": 1,
+        "task_id": "local_81805d27e04e4b50b44b96073b2cdf18",
+        "kind": "created",
+        "detail": "{\"changes\": {}}",
+        "created_at": "2026-10-29T19:43:03.779436+00:00"
+      }
+    ],
+    "activity_next_cursor": null
+  },
+  "sources": {
+    "items": [
+      {
+        "id": "beacon",
+        "mode": "mock",
+        "health": "never_synced",
+        "last_attempt_at": null,
+        "last_success_at": null
+      },
+      {
+        "id": "gmail",
+        "mode": "mock",
+        "health": "never_synced",
+        "last_attempt_at": null,
+        "last_success_at": null
+      },
+      {
+        "id": "google_tasks",
+        "mode": "disabled",
+        "health": "never_synced",
+        "last_attempt_at": null,
+        "last_success_at": null
+      },
+      {
+        "id": "openexecutive",
+        "mode": "mock",
+        "health": "never_synced",
+        "last_attempt_at": null,
+        "last_success_at": null
+      },
+      {
+        "id": "slack",
+        "mode": "mock",
+        "health": "never_synced",
+        "last_attempt_at": null,
+        "last_success_at": null
+      },
+      {
+        "id": "smartsheet",
+        "mode": "mock",
+        "health": "healthy",
+        "last_attempt_at": "2026-10-29T19:43:03.843315+00:00",
+        "last_success_at": "2026-10-29T19:43:03.845279+00:00"
+      }
+    ]
+  }
+}

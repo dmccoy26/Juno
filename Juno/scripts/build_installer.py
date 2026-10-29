@@ -13,7 +13,7 @@ import tarfile
 from fetch_runtimes import fetch
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '0.1.0-preview.2'
+VERSION = '0.1.0-preview.3'
 
 
 def run(*args, **kwargs):
@@ -82,7 +82,7 @@ def build(output):
         if path.is_file() or path.is_symlink():
             path.unlink()
     run('xcrun', 'swiftc', '-parse-as-library', '-swift-version', '5', '-O', '-target',
-        'arm64-apple-macosx13.5', ROOT/'desktop/Juno.swift', ROOT/'desktop/Companion.swift', '-o', contents/'MacOS/Juno')
+        'arm64-apple-macosx13.5', ROOT/'desktop/Juno.swift', ROOT/'desktop/Companion.swift', ROOT/'desktop/TaskDock.swift', '-o', contents/'MacOS/Juno')
     icons = work/'Juno.iconset'; icons.mkdir()
     master = work/'icon.png'
     run('xcrun', 'swift', ROOT/'desktop/icon.swift', master)
@@ -94,7 +94,7 @@ def build(output):
     run('iconutil', '-c', 'icns', icons, '-o', resources/'Juno.icns')
     info = dict(CFBundleName='Juno', CFBundleDisplayName='Juno', CFBundleIconFile='Juno',
                 CFBundleIdentifier='com.dmccoy.juno', CFBundleExecutable='Juno',
-                CFBundlePackageType='APPL', CFBundleVersion='2', CFBundleShortVersionString='0.1.0',
+                CFBundlePackageType='APPL', CFBundleVersion='3', CFBundleShortVersionString='0.1.0',
                 JunoReleaseVersion=VERSION, JunoPackaged=True, LSMinimumSystemVersion='13.5',
                 NSHighResolutionCapable=True, NSAppTransportSecurity={'NSAllowsLocalNetworking': True})
     (contents/'Info.plist').write_bytes(plistlib.dumps(info))
@@ -103,7 +103,7 @@ def build(output):
         'Juno '+VERSION+'\nInternal preview. Apple Silicon. Synthetic data only.\n'
         'Includes its own Python and PostgreSQL. No Homebrew or checkout required.\n'
         'Data: ~/Library/Application Support/Juno (local to each Mac).\n'
-        'Local model chat and guided check-ins. No live integrations or cross-device sync yet.\n'
+        'Local model chat and guided check-ins. Read-only local TaskDock pairing; no cross-device sync yet.\n'
         'Ad hoc signed; not Developer ID signed or notarized.\n')
     # No developer bytecode, private configuration, database, or external links.
     for path in list(app.rglob('__pycache__')):
@@ -137,7 +137,7 @@ def build(output):
     components.write_bytes(plistlib.dumps(definitions))
     component = work/'component.pkg'
     run('pkgbuild', '--root', work/'payload', '--component-plist', components,
-        '--identifier', 'com.dmccoy.juno.pkg', '--version', '0.1.0.2', '--install-location', '/',
+        '--identifier', 'com.dmccoy.juno.pkg', '--version', '0.1.0.3', '--install-location', '/',
         '--ownership', 'recommended', '--scripts', installer, component)
     (work/'Distribution.xml').write_text('''<?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
@@ -147,13 +147,13 @@ def build(output):
  <welcome file="welcome.html"/>
  <choices-outline><line choice="default"><line choice="juno"/></line></choices-outline>
  <choice id="default"/><choice id="juno" visible="false"><pkg-ref id="com.dmccoy.juno.pkg"/></choice>
- <pkg-ref id="com.dmccoy.juno.pkg" version="0.1.0.2">component.pkg</pkg-ref>
+ <pkg-ref id="com.dmccoy.juno.pkg" version="0.1.0.3">component.pkg</pkg-ref>
 </installer-gui-script>
 ''')
     (work/'welcome.html').write_text('''<html><body><h1>Juno — First Mac Preview</h1>
 <p>Installs a standalone application at <b>/Applications/Juno.app</b>, including Python and PostgreSQL. No Homebrew, developer tools, source checkout, or internet downloads are needed at first launch.</p>
 <p><b>Quit Juno before installing.</b> Open the installed app as your normal user. Your memories are kept separately in your own Library/Application Support/Juno folder.</p>
-<p><b>Synthetic data only.</b> This preview supports persistent chat through a local LM Studio server, guided daily check-ins and memory review/editing/deletion. Model weights are not bundled; chat needs a local model server. The check-in works without one. Live work integrations and cross-device synchronization are not connected yet. Each Mac has independent local data.</p>
+<p><b>Synthetic data only.</b> This preview supports persistent chat through a local LM Studio server, guided daily check-ins and memory review/editing/deletion. Model weights are not bundled; chat needs a local model server. The check-in works without one. Read-only TaskDock pairing is available for a local synthetic workspace. Cross-device synchronization is not connected. Each Mac has independent local data.</p>
 <p>Apple Silicon; macOS 13.5 or later. Intended first laptop: M5 Air running macOS 26.5. This internal preview is not Developer ID signed or notarized; follow your institution's normal software approval process.</p></body></html>''')
     output.mkdir(parents=True, exist_ok=True)
     package = output/f'Juno-{VERSION}-macOS-arm64.pkg'

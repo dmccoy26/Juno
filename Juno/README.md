@@ -6,7 +6,9 @@ The agreed product direction and first beta build mission are in [MISSION-0.1.0.
 
 Current state: a native Mac development application with a working memory interface, a PostgreSQL-backed memory API, and a read-only TaskDock connector. Persistent local-model chat and guided daily check-ins are implemented.
 
-The latest self-contained installer is `dist/Juno-0.1.0-preview.2-macOS-arm64.pkg`. Install it, then open `/Applications/Juno.app` in Finder. Python and PostgreSQL are included; no terminal, Homebrew, checkout, or browser tab is required on the recipient Mac. Use synthetic data only. Each Mac has separate local data; cross-device synchronization is not connected yet. Chat needs a separately running local model server.
+The latest self-contained installer is `dist/Juno-0.1.0-preview.3-macOS-arm64.pkg`. Install it, then open `/Applications/Juno.app` in Finder. Python and PostgreSQL are included; no terminal, Homebrew, checkout, or browser tab is required on the recipient Mac. Use synthetic data only. Each Mac has separate local data; cross-device synchronization is not connected yet. Chat needs a separately running local model server.
+
+The native TaskDock tab now supports read-only pairing with TaskDock build 13, Keychain credentials, dated task snapshots, source freshness and cached history. See [TaskDock pairing and verification](docs/TASKDOCK-CONNECTION.md).
 
 See [chat, LM Studio setup and check-ins](docs/CHAT-AND-CHECKINS.md), plus [installer verification](docs/INSTALLER-PREVIEW.md). This internal preview is not Developer ID signed or notarized. Actual M5 laptop installation is still pending.
 
@@ -23,8 +25,9 @@ python3 scripts/build_macos.py
 - [Native development preview](docs/NATIVE-PREVIEW.md)
 - [First laptop installer](docs/INSTALLER-PREVIEW.md)
 
-Run the synthetic connector tests without installing dependencies:
+Run the complete suite after setting up the local environment (see the service setup link above):
 
 ```sh
-PYTHONPATH=backend/src python3 -m unittest discover -s backend/tests -v
+python3 scripts/dev_database.py start
+JUNO_TEST_ADMIN_URL="$(python3 scripts/dev_database.py url)" .venv/bin/python -m unittest discover -s backend/tests -v
 ```

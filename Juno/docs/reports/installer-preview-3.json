@@ -1,0 +1,24 @@
+{
+  "package": "Juno-0.1.0-preview.3-macOS-arm64.pkg",
+  "sha256": "93aa20ddcd3f72becd9136a41e516ddc1a1d3e6a321be48a0d5c58f5b56f5c9b",
+  "status": "passed",
+  "checks": [
+    "installer expands with expected app and non-destructive preinstall guard",
+    "payload seals, internal symlinks and 239 Mach-O dependency checks",
+    "fresh isolated startup, authentication, create/edit and stale-edit conflict",
+    "packaged TaskDock identity review, dated snapshot, provider freshness and outage retention",
+    "offline check-in/diary and explicit unconfigured-model behavior",
+    "TaskDock snapshot persists across packaged service restart",
+    "relaunch persistence, credential rotation, deletion/suppression and clean shutdown",
+    "application parent-loss watchdog stops its owned database",
+    "application resources unchanged after execution",
+    "schema-1 upgrade with readable pre-migration backup and preserved memory"
+  ],
+  "host_architecture": "arm64",
+  "host_macos": "26.6.2",
+  "limits": [
+    "not installed on the actual M5 laptop yet",
+    "no Developer ID signature or notarization",
+    "no cross-device synchronization; chat needs a separately running local model"
+  ]
+}

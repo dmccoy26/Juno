@@ -156,18 +156,19 @@ struct RootView: View {
                 Toggle("Meeting mode", isOn: $store.meeting).toggleStyle(.switch).help("New replies use a professional tone. Private-mode replies are hidden while this is on.")
             }.padding(18)
             Picker("Workspace", selection: $store.section) {
-                Text("Chat").tag("Chat"); Text("Daily check-in").tag("Check-in"); Text("Memories").tag("Memories"); Text("Model connection").tag("Model")
+                Text("Chat").tag("Chat"); Text("Daily check-in").tag("Check-in"); Text("Memories").tag("Memories"); Text("Model connection").tag("Model"); Text("TaskDock").tag("TaskDock")
             }.pickerStyle(.segmented).padding(.horizontal, 20).padding(.bottom, 14)
             Divider()
             switch store.section {
             case "Memories": MemoryWorkspace(store: store)
             case "Check-in": CheckInWorkspace(store: store)
             case "Model": ModelWorkspace(store: store)
+            case "TaskDock": TaskDockWorkspace(store: store)
             default: ChatWorkspace(store: store)
             }
             if let issue = store.problem { HStack { Text(issue).foregroundStyle(.orange); Spacer(); Button("Dismiss") { store.problem = nil } }.padding(12) }
             Divider()
-            HStack { Text("Synthetic data only · Stored on this Mac"); Spacer(); Text("Juno 0.1.0-preview.2") }.font(.caption).foregroundStyle(.secondary).padding(12)
+            HStack { Text("Synthetic data only · Stored on this Mac"); Spacer(); Text("Juno 0.1.0-preview.3") }.font(.caption).foregroundStyle(.secondary).padding(12)
         }.frame(minWidth: 920, minHeight: 650)
     }
 }

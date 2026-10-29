@@ -1,0 +1,24 @@
+{
+  "checked_at": "2026-10-29T20:11:09.237335+00:00",
+  "juno_version": "0.1.0-preview.3",
+  "taskdock_version": "0.2.0-beta.3",
+  "taskdock_build": 13,
+  "synthetic_data_only": true,
+  "automated_tests": {
+    "passed": 41,
+    "skipped": 0
+  },
+  "native_screen_and_missing_token": "passed",
+  "isolated_synthetic_keychain_write_read_replace_remove": "passed",
+  "real_loopback_reader_against_extracted_taskdock_installer": "passed",
+  "taskdock_candidate_sha256": "4802a2a08700c2c1e33f0631a64cf0f80d15ce1e9307fb9062ef1c8477d2e655",
+  "existing_installed_taskdock_used": false,
+  "real_workspace_read": false,
+  "installed_native_pairing": "pending",
+  "m5_laptop_install": "pending",
+  "limits": [
+    "No real-data institutional approval established",
+    "No calendar or cross-device synchronization",
+    "Native TaskDock acceptance and HumanLab testing remain pending"
+  ]
+}

@@ -79,3 +79,7 @@ Use optimistic revisions for edits and return a conflict rather than overwriting
 - Signing/notarization identity and actual laptop access: needed before distribution/two-device signoff.
 
 Do not ask the user to choose frameworks or database libraries. Ask only for unavailable institutional access facts or consequential deployment decisions, with a concrete recommendation.
+
+## TaskDock API v1 — October 29, 2026
+
+Preview 3 implements the supplied local read-only integration contract. Dedicated credentials live in native macOS Keychain, are passed transiently to the local service, and are never stored in PostgreSQL or given to a model. Immutable dated snapshots and separately dated history caches retain source data without replacing TaskDock as its system of record. Initial and changed workspace/device identities require review; refresh promotion is atomic and rejects concurrent replacement. No calendar, shared host, cloud fallback or task writes are enabled by this work. See `TASKDOCK-CONNECTION.md` for acceptance evidence and remaining limits.

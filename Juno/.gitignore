@@ -12,3 +12,5 @@ results/
 *.db
 *.db-*
 *.egg-info/
+
+docs/reports/*.log

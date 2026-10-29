@@ -1,0 +1,9 @@
+{
+  "synthetic_only": true,
+  "taskdock_build": 13,
+  "real_loopback_http": true,
+  "discovery": true,
+  "native_tasks_and_subtasks": true,
+  "updates_and_activity": true,
+  "revocation_no_fallback": true
+}

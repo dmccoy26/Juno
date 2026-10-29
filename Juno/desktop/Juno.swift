@@ -126,7 +126,7 @@ final class JunoStore: ObservableObject {
     func request(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> Data {
         guard let endpoint else { throw APIProblem(message: "Juno is still connecting.", status: 0) }
         let url = URL(string: path, relativeTo: endpoint)!.absoluteURL
-        var req = URLRequest(url: url); req.httpMethod = method; req.timeoutInterval = path.contains("/messages") && method == "POST" ? 100 : 15
+        var req = URLRequest(url: url); req.httpMethod = method; req.timeoutInterval = path.contains("/messages") && method == "POST" ? 100 : (path.hasPrefix("/v1/taskdock/") ? 300 : 15)
         req.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         req.cachePolicy = .reloadIgnoringLocalCacheData
         if let body { req.httpBody = try JSONSerialization.data(withJSONObject: body); req.setValue("application/json", forHTTPHeaderField: "Content-Type") }
@@ -307,7 +307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
         store.start()
     }
-    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Juno", .applicationVersion: "0.1.0-preview.2", .credits: NSAttributedString(string: "Native Mac work companion\nChat, check-ins and memory · synthetic data only\nLocal storage; cross-device synchronization is not connected")]) }
+    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Juno", .applicationVersion: "0.1.0-preview.3", .credits: NSAttributedString(string: "Native Mac work companion\nChat, check-ins and memory · synthetic data only\nLocal storage; cross-device synchronization is not connected")]) }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { window?.makeKeyAndOrderFront(nil); return true }
     func applicationWillTerminate(_ notification: Notification) { store.stop() }
 }

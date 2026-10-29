@@ -109,3 +109,33 @@ class CheckIn(Base):
     revision: Mapped[int] = mapped_column(Integer, default=1)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     __table_args__ = (UniqueConstraint('owner_id', 'local_date'),)
+
+
+class TaskDockSnapshot(Base):
+    """Immutable dated read cache, never the task system of record."""
+    __tablename__ = 'taskdock_snapshots'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), index=True)
+    origin: Mapped[str] = mapped_column(String(500))
+    info: Mapped[dict] = mapped_column(JSONB)
+    items: Mapped[list] = mapped_column(JSONB)
+    sources: Mapped[list] = mapped_column(JSONB)
+    snapshot: Mapped[str] = mapped_column(Text)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class TaskDockState(Base):
+    __tablename__ = 'taskdock_state'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    active_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class TaskDockHistory(Base):
+    __tablename__ = 'taskdock_history'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(ForeignKey('taskdock_snapshots.id'), primary_key=True)
+    task_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), primary_key=True)
+    items: Mapped[list] = mapped_column(JSONB)
+    read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

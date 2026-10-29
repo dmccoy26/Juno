@@ -102,6 +102,48 @@ def stop(process, app, state):
     assert status != 0, 'Owned PostgreSQL did not stop'
 
 
+
+def verify_taskdock_cache(url, token):
+    """Disposable strict local API fixture; never reads an installed TaskDock workspace."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+    from urllib.parse import urlsplit, parse_qs
+    import secrets
+    fixture=json.loads((Path(__file__).resolve().parents[1]/'backend/tests/fixtures/taskdock-v1.json').read_text())
+    pairing=secrets.token_urlsafe(32)
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_GET(self):
+            if self.headers.get('Authorization') != 'Bearer '+pairing:
+                self.send_error(401);return
+            path=urlsplit(self.path).path
+            if path=='/integrations/juno/v1/info': result=fixture['info']
+            elif path=='/integrations/juno/v1/sources': result=fixture['sources']
+            elif path=='/workspace/tasks':
+                query=parse_qs(urlsplit(self.path).query)
+                assert query['parents_only']==['false'] and query['include_completed']==['true']
+                result={**fixture['tasks'],'limit':500}
+            else:self.send_error(403);return
+            raw=json.dumps(result).encode();self.send_response(200);self.send_header('Content-Type','application/json');self.end_headers();self.wfile.write(raw)
+    server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+    worker=Thread(target=server.serve_forever,daemon=True);worker.start()
+    try:
+        body={'base_url':'http://127.0.0.1:'+str(server.server_port),'token':pairing}
+        review=api(url,token,'/v1/taskdock/refresh',method='POST',body=body)
+        assert review['review_required'] is True
+        body.update(reviewed_workspace_id=review['info']['workspace_id'],reviewed_device_id=review['info']['device_id'])
+        snapshot=api(url,token,'/v1/taskdock/refresh',method='POST',body=body)['snapshot']
+        assert snapshot['items']==fixture['tasks']['items']
+        assert snapshot['sources']==fixture['sources']['items']
+        assert pairing not in json.dumps(snapshot)
+    finally:
+        server.shutdown();server.server_close();worker.join(3)
+    api(url,token,'/v1/taskdock/refresh',method='POST',body={**body,'expected_snapshot_id':snapshot['id']},expected=502)
+    kept=api(url,token,'/v1/taskdock')['snapshot']
+    assert kept['id']==snapshot['id'] and kept['stale'] is True
+    return snapshot['id']
+
+
 def verify(package, report):
     checks=[]
     with tempfile.TemporaryDirectory(prefix='juno-verify-', dir='/tmp') as temporary:
@@ -149,6 +191,8 @@ def verify(package, report):
                 diary=api(url,token,'/v1/check-ins/'+diary['id']+'/diary',method='PUT',
                     body={'text':diary['diary_text'],'expected_revision':diary['revision'],'confirm':True})
                 assert diary['status']=='confirmed'
+                taskdock_snapshot_id=verify_taskdock_cache(url,token)
+                checks.append('packaged TaskDock identity review, dated snapshot, provider freshness and outage retention')
                 stop(process,relocated,state);process=None
                 checks.append('offline check-in/diary and explicit unconfigured-model behavior')
 
@@ -156,6 +200,8 @@ def verify(package, report):
                 url=second['url']
                 api(url,token,'/v1/memories',expected=401)
                 token=second['token']
+                assert api(url,token,'/v1/taskdock')['snapshot']['id']==taskdock_snapshot_id
+                checks.append('TaskDock snapshot persists across packaged service restart')
                 assert api(url,token,path)['text']==edit['text']
                 assert api(url,token,'/v1/check-ins',method='POST',body={'local_date':'2026-10-29'})['status']=='confirmed'
                 api(url,token,path+'?expected_revision=2',method='DELETE',expected=204)
