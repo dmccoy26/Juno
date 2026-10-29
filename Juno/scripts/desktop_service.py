@@ -11,6 +11,8 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend/src'))
@@ -22,13 +24,26 @@ def main():
     def terminate(signum, frame):
         raise SystemExit(0)
     signal.signal(signal.SIGTERM, terminate)
-    state = ROOT / '.local'
+    parent = os.getppid()
+    def watch_parent():
+        while os.getppid() == parent:
+            time.sleep(1)
+        os.kill(os.getpid(), signal.SIGTERM)
+    threading.Thread(target=watch_parent, daemon=True).start()
+    state = Path(os.environ.get('JUNO_DATA_ROOT', str(ROOT / '.local')))
     state.mkdir(mode=0o700, exist_ok=True)
     state.chmod(0o700)
     lock = (state / 'desktop.lock').open('w')
-    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    for attempt in range(100):
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            if attempt == 99:
+                raise RuntimeError('Another Juno service is still running.')
+            time.sleep(.1)
     os.chmod(state / 'desktop.lock', 0o600)
-    pg = Path('/opt/homebrew/opt/postgresql@17/bin/pg_ctl')
+    pg = Path(os.environ.get('JUNO_POSTGRES_BIN', '/opt/homebrew/opt/postgresql@17/bin')) / 'pg_ctl'
     data = state / 'postgres/data'
     was_running = data.exists() and subprocess.run(
         [str(pg), '-D', str(data), 'status'], stdout=subprocess.DEVNULL).returncode == 0

@@ -19,12 +19,17 @@ Updated: October 29, 2026.
 - Native interaction checks verified adding and correcting one explicitly fictional demo memory (revision 2), search results, meeting-mode switching, and canceling the deletion confirmation. Actual destructive deletion remains covered by backend tests; the native confirmation was canceled.
 - Changed the interface decision from React/Tauri to SwiftUI to prioritize the user's standalone Mac workflow. No browser tab is needed to use the preview.
 - Final bundle compiled and passed strict signature verification. Reopening the native app retained the corrected demo memory and meeting-mode setting. A helper lifecycle check verified authenticated startup and clean shutdown of its owned database. All 13 backend tests passed after the native implementation. The app was reopened and left running for the user.
+- Pushed the initial implementation to `https://github.com/dmccoy26/Juno` (`32c9403`).
+- Built the first self-contained Apple Silicon installer: `dist/Juno-0.1.0-preview.1-macOS-arm64.pkg` (approximately 147 MB), with checksum sidecar. Python 3.14.10 and PostgreSQL 17.11 are bundled from pinned vendor downloads; no Homebrew, checkout, or runtime downloads are needed on the recipient Mac.
+- Verified the actual installer payload after extraction and relocation on macOS 26.6.2: 239 Mach-O dependency checks, bundle integrity, clean-data startup, authentication, memory create/edit/conflict, restart persistence, credential rotation, deletion/suppression, clean shutdown and parent-loss cleanup. The packaged native window connected successfully. See `reports/installer-preview-1.json`.
+- Target laptop identified by the user: M5 MacBook Air, macOS 26.5. Actual laptop installation remains to be tested. The temporary packaged verification app was quit after inspection.
 
 ## In progress / incomplete
 
 - Discovery architecture recommendation written. Live integrations, shared infrastructure and real calendar access are not established.
 - Local PostgreSQL memory service exists; approved shared deployment and actual two-Mac access do not.
-- The native development app depends on this checkout, its virtual environment, and Homebrew PostgreSQL. It is not yet a self-contained installer that can be copied to the laptop.
+- The earlier development app still depends on the checkout. The new installer is self-contained and stores fresh per-user data in `~/Library/Application Support/Juno`; it does not import the development data.
+- No Developer ID signing identity is available. The app is ad hoc signed; the package is unsigned and not notarized. Institutional/macOS approval may be needed on the laptop.
 - No chat/model integration, semantic retrieval/embeddings, diary/check-in UI, approved shared-service connection, or deployed beta yet.
 - Meeting mode currently changes the neutral welcome copy and saves a local preference; chat tone, notifications, and cross-device preference synchronization do not exist yet.
 - No Juno HumanLab runs or actual two-Mac tests yet.
@@ -41,6 +46,6 @@ Evidence covers the memory/database behaviors above and synthetic connector resp
 
 ## Next implementation step
 
-Extend the service and native app with conversations/diary/check-ins and a configurable approved model endpoint. Add Keychain-backed remote-service credentials and package independent runtimes before claiming portable installation or two-Mac support. HumanLab needs native interaction capability before it can test the actual SwiftUI interface; do not substitute a different web interface and call that equivalent coverage. Use synthetic records throughout until approved hosting/model access exists.
+Obtain the user's actual laptop installation result. Then extend the service and native app with conversations/diary/check-ins and a configurable approved model endpoint. Add Keychain-backed remote-service credentials and approved shared hosting before claiming cross-device synchronization. HumanLab needs native interaction capability before it can test the actual SwiftUI interface; do not substitute a different web interface and call that equivalent coverage. Use synthetic records throughout until approved hosting/model access exists.
 
 Refer to `DECISIONS.md` for unresolved environment facts. Institutional deployment details can remain pending while synthetic local implementation continues.

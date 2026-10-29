@@ -1,0 +1,20 @@
+{
+  "package": "Juno-0.1.0-preview.1-macOS-arm64.pkg",
+  "sha256": "206beaa823dec005d939f035dc3c5d24ed979d81811e3caa78ea988442bdafd9",
+  "status": "passed",
+  "checks": [
+    "installer expands with expected app and non-destructive preinstall guard",
+    "payload seals, internal symlinks and 239 Mach-O dependency checks",
+    "fresh isolated startup, authentication, create/edit and stale-edit conflict",
+    "relaunch persistence, credential rotation, deletion/suppression and clean shutdown",
+    "application parent-loss watchdog stops its owned database",
+    "application resources unchanged after execution"
+  ],
+  "host_architecture": "arm64",
+  "limits": [
+    "not installed on the actual M5 laptop yet",
+    "no Developer ID signature or notarization",
+    "no cross-device synchronization or model/chat connection"
+  ],
+  "host_macos": "26.6.2"
+}

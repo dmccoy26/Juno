@@ -1,0 +1,14 @@
+[
+  {
+    "name": "python",
+    "file": "cpython-3.14.10-arm64.tar.gz",
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.14.10%2B20261026-aarch64-apple-darwin-install_only_stripped.tar.gz",
+    "sha256": "95eb8c87d16af37c54e9765e31d8c56c0d8ffa9968ea0f704f73a9b83f84e9f9"
+  },
+  {
+    "name": "postgres",
+    "file": "Postgres-2.9.6-17.dmg",
+    "url": "https://github.com/PostgresApp/PostgresApp/releases/download/v2.9.6/Postgres-2.9.6-17.dmg",
+    "sha256": "b38bb00b8c8702a568270aab85995c550f7f93d1503b818efdc5ff9a519b7168"
+  }
+]

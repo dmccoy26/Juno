@@ -16,7 +16,7 @@ Date: October 29, 2026. These decisions guide implementation; they do not claim 
 | Model operation | Retrieval with traceable sources; structured outputs validated by code | Generated prose cannot authorize an action or replace canonical task/calendar state. |
 | Testing | Python behavior/integration tests and native Mac interaction checks; HumanLab coverage to be extended | HumanLab's existing browser instrument cannot test SwiftUI. Do not claim browser testing covers the native interface. |
 
-Python dependencies are locked in `backend/requirements.lock`. PostgreSQL 17 is installed for isolated local development. The available Swift compiler builds the native app; Rust and Node are not needed for this interface. The development bundle uses this checkout's Python environment and Homebrew PostgreSQL and is not yet a portable distribution.
+Python dependencies are locked in `backend/requirements.lock`. PostgreSQL 17 is installed for isolated local development. The available Swift compiler builds the native app; Rust and Node are not needed for this interface. The development bundle uses this checkout's environment. The separate installer builder bundles pinned standalone Python and Postgres.app server runtimes, eliminating the checkout/Homebrew dependency for recipient Macs. Each installed preview uses independent local storage until approved shared hosting is connected.
 
 The development app starts its helper automatically, receives a short-lived credential through a private pipe, and keeps it only in process memory. The helper revokes its previous development credential on restart and its current credential on clean shutdown. Tokens are not persisted by the app. Keychain-backed credentials remain required for a future connection to an approved shared service; they are not implemented in this local preview.
 
@@ -67,7 +67,7 @@ Use optimistic revisions for edits and return a conflict rather than overwriting
 1. Read-only integration contract and synthetic fixtures; build discovery evidence.
 2. Shared service schemas, owner authentication, migrations, and memory APIs with a disposable PostgreSQL test environment.
 3. Native SwiftUI interface exercising the real service: memory review/edit/delete and locally persisted meeting-mode setting. Implemented in the development preview.
-4. Conversations, diary/check-in and approved model connection; Keychain-backed shared-service credentials; independently packaged runtimes and native verification.
+4. Independently packaged runtimes and native verification delivered for `0.1.0-preview.1`. Next: conversations, diary/check-in and approved model connection; Keychain-backed shared-service credentials.
 5. Calendar and TaskDock bridge, planning behavior, an appropriate HumanLab native adapter or clearly bounded service-only scenarios, and real two-Mac verification on approved infrastructure.
 
 ## Unresolved environment facts

@@ -5,10 +5,10 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-STATE = ROOT / '.local' / 'postgres'
+STATE = Path(os.environ.get('JUNO_DATA_ROOT', str(ROOT / '.local'))) / 'postgres'
 DATA = STATE / 'data'
 SOCKET = STATE / 'socket'
-BIN = Path('/opt/homebrew/opt/postgresql@17/bin')
+BIN = Path(os.environ.get('JUNO_POSTGRES_BIN', '/opt/homebrew/opt/postgresql@17/bin'))
 
 
 def run(*args):
@@ -46,7 +46,7 @@ def main():
         run('pg_ctl', '-D', DATA, '-l', STATE / 'postgres.log', 'start')
     # Check before creating; never reset or drop an existing development DB.
     result = subprocess.check_output([str(BIN / 'psql'), '-h', str(SOCKET), '-U', 'juno',
-              '-d', 'postgres', '-Atc', "SELECT 1 FROM pg_database WHERE datname='juno_dev'"])
+              '-d', 'postgres', '-X', '-Atc', "SELECT 1 FROM pg_database WHERE datname='juno_dev'"])
     if not result.strip():
         run('createdb', '-h', SOCKET, '-U', 'juno', 'juno_dev')
     print('Juno development database ready (private Unix socket; synthetic data only).')

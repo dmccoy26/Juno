@@ -41,10 +41,13 @@ final class JunoStore: ObservableObject {
 
     func start() {
         guard process == nil else { return }
-        guard let root = Bundle.main.object(forInfoDictionaryKey: "JunoProjectRoot") as? String else {
-            problem = "The development app is missing its project location."; return
+        let packaged = Bundle.main.object(forInfoDictionaryKey: "JunoPackaged") as? Bool ?? false
+        let resources = Bundle.main.resourceURL!.path
+        guard let root = packaged ? resources + "/app" : Bundle.main.object(forInfoDictionaryKey: "JunoProjectRoot") as? String else {
+            problem = "The app is missing its service files."; return
         }
-        let python = root + "/.venv/bin/python"
+        let python = packaged ? resources + "/runtime/python/bin/python3" : root + "/.venv/bin/python"
+        let state = packaged ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Juno").path : root + "/.local"
         guard FileManager.default.isExecutableFile(atPath: python) else {
             problem = "The local Juno environment is missing. Rebuild the development app after setting up its backend."; return
         }
@@ -52,9 +55,16 @@ final class JunoStore: ObservableObject {
         proc.executableURL = URL(fileURLWithPath: python)
         proc.arguments = [root + "/scripts/desktop_service.py"]
         proc.currentDirectoryURL = URL(fileURLWithPath: root)
+        var environment = ProcessInfo.processInfo.environment
+        for key in Array(environment.keys) where key.hasPrefix("PYTHON") || key.hasPrefix("JUNO_") || key.hasPrefix("DYLD_") || key.hasPrefix("PG") { environment.removeValue(forKey: key) }
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        environment["PYTHONNOUSERSITE"] = "1"
+        environment["JUNO_DATA_ROOT"] = state
+        if packaged { environment["JUNO_POSTGRES_BIN"] = resources + "/runtime/postgres/bin" }
+        proc.environment = environment
         proc.standardOutput = pipe
-        let log = root + "/.local/desktop.log"
-        try? FileManager.default.createDirectory(atPath: root + "/.local", withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let log = state + "/desktop.log"
+        try? FileManager.default.createDirectory(atPath: state, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         if !FileManager.default.fileExists(atPath: log) { FileManager.default.createFile(atPath: log, contents: nil, attributes: [.posixPermissions: 0o600]) }
         proc.standardError = try? FileHandle(forWritingTo: URL(fileURLWithPath: log))
         proc.terminationHandler = { [weak self] _ in
@@ -118,7 +128,7 @@ final class JunoStore: ObservableObject {
         guard query == requestedQuery else { return }
         if more { items.append(contentsOf: page.items.filter { row in !items.contains { $0.id == row.id } }) }
         else { items = page.items }
-        hasMore = page.has_more; connected = true; status = "Connected · Local development"; problem = nil
+        hasMore = page.has_more; connected = true; status = "Connected · Local preview"; problem = nil
         if let selected, !items.contains(where: { $0.id == selected }) { self.selected = nil }
     }
     func refresh(more: Bool = false) {
@@ -246,7 +256,7 @@ struct RootView: View {
                 HStack { Image(systemName: "exclamationmark.triangle"); Text(problem).textSelection(.enabled); Spacer(); Button("Refresh") { store.refresh() }.disabled(store.busy || store.endpoint == nil) }.padding(12).background(.orange.opacity(0.12))
             }
             Divider()
-            HStack { Text("Development preview · Synthetic data only"); Spacer(); Text("Memory foundation · 0.1.0") }.font(.caption).foregroundStyle(.secondary).padding(12)
+            HStack { Text("Preview · Synthetic data only · Stored on this Mac"); Spacer(); Text("Memory foundation · 0.1.0-preview.1") }.font(.caption).foregroundStyle(.secondary).padding(12)
         }.frame(minWidth: 850, minHeight: 570)
         .toolbar { Button { store.refresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }.disabled(store.busy || store.endpoint == nil) }
         .sheet(isPresented: $editing) { Editor(store: store, original: draft) }
@@ -284,7 +294,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
         store.start()
     }
-    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Juno", .applicationVersion: "0.1.0 development preview", .credits: NSAttributedString(string: "Native Mac work companion\nMemory foundation · synthetic data only")]) }
+    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Juno", .applicationVersion: "0.1.0-preview.1", .credits: NSAttributedString(string: "Native Mac work companion\nMemory foundation · synthetic data only\nLocal storage; cross-device synchronization is not connected")]) }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { window?.makeKeyAndOrderFront(nil); return true }
     func applicationWillTerminate(_ notification: Notification) { store.stop() }
 }

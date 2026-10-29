@@ -1,5 +1,7 @@
 # Juno native development preview
 
+This document describes the source-dependent development build. A self-contained installer is now available; see `INSTALLER-PREVIEW.md` for the laptop build and its verification limits.
+
 Open `/Users/dmccoy/Applications/Juno.app` from Finder or Spotlight. It is a compiled SwiftUI/AppKit application with its own native window and menus. It does not open a web browser or embed a website.
 
 ## What works

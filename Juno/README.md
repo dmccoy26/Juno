@@ -6,7 +6,9 @@ The agreed product direction and first beta build mission are in [MISSION-0.1.0.
 
 Current state: a native Mac development application with a working memory interface, a PostgreSQL-backed memory API, and a read-only TaskDock connector. Chat and daily check-ins are not implemented yet.
 
-Open `~/Applications/Juno.app` in Finder. Juno opens her own native window and starts the local service automatically; no terminal or browser tab is required. Use synthetic data only. This development app depends on this checkout and its installed dependencies and is not a portable laptop release yet.
+The first self-contained installer is `dist/Juno-0.1.0-preview.1-macOS-arm64.pkg`. Install it, then open `/Applications/Juno.app` in Finder. Python and PostgreSQL are included; no terminal, Homebrew, checkout, or browser tab is required on the recipient Mac. Use synthetic data only. Each Mac has separate local data; shared memory and chat are not connected yet.
+
+See [laptop installation and verification](docs/INSTALLER-PREVIEW.md). This internal preview is not Developer ID signed or notarized. Actual M5 laptop installation is still pending.
 
 Rebuild after quitting Juno:
 
@@ -19,6 +21,7 @@ python3 scripts/build_macos.py
 - [Build status and next steps](docs/BUILD-STATUS.md)
 - [Local service setup and testing](docs/LOCAL-DEVELOPMENT.md)
 - [Native development preview](docs/NATIVE-PREVIEW.md)
+- [First laptop installer](docs/INSTALLER-PREVIEW.md)
 
 Run the synthetic connector tests without installing dependencies:
 
