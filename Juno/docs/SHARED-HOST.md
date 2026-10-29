@@ -1,4 +1,4 @@
-# Work Mac host and offline laptop — preview 4
+# Work Mac host and offline laptop — preview 5
 
 Dan approved this Mac as Juno's shared system and authorized a laptop cache, including offline memory and diary edits. This changes the earlier synthetic-only storage restriction for this specific local deployment. It does not authorize cloud storage, remote model providers or public hosting.
 
@@ -6,7 +6,7 @@ Dan approved this Mac as Juno's shared system and authorized a laptop cache, inc
 
 The development Juno app on this Mac is configured to start its encrypted host at:
 
-`https://<this-Mac-local-name>.local:8443` (the actual address is shown in Computers)
+`https://<work-Mac-private-IP>:8443` (the actual IP address is shown in Computers)
 
 Juno must remain open and this Mac must remain awake. Closing the window leaves the Mac app running; quitting Juno or sleeping/shutting down the Mac makes the host unavailable. Hosting starts again when Juno starts. This version does not install an always-running daemon or change sleep, firewall, router or login settings.
 
@@ -14,7 +14,7 @@ The current host uses the existing development data in `/Users/dmccoy/Ai/Juno/.l
 
 ## Pair the laptop
 
-1. Install Juno `0.1.0-preview.4` on the laptop and open it. The laptop needs no separate LM Studio model for shared-host chat.
+1. Install Juno `0.1.0-preview.5` on the laptop and open it. The laptop needs no separate LM Studio model for shared-host chat.
 2. On this work Mac, choose **Computers → Create laptop pairing file…**.
 3. Transfer the `.junopair` file directly to your own laptop, for example with AirDrop. It contains an invitation secret: do not paste it into chat, email it to others, publish it, or put it in a support report.
 4. Within 15 minutes, choose **Computers → Import work Mac pairing file…** on the laptop. Both Macs must be reachable on the local network.
@@ -40,16 +40,24 @@ The offline export includes at most 10,000 memories, 1,000 conversations, 50,000
 
 The host keeps PostgreSQL on a private Unix socket. Only the opt-in HTTPS service listens on the LAN, restricted to loopback/private/local addresses and an explicit route allowlist. Remote clients cannot administer hosts/devices, configure model endpoints, supply TaskDock credentials or trigger TaskDock refreshes. TaskDock remains connected locally on the work Mac; its dedicated token is not copied to the laptop.
 
+New pairing files prefer the work Mac’s private IPv4 address, avoiding Bonjour discovery across wired/Wi-Fi networks. The certificate includes that IP, the Mac hostname and localhost as subject alternative names. Existing certificates are preserved on normal restarts; this repair replaced the unused initial localhost-only certificate after confirming no laptop had paired and invalidated unused invitations.
+
+A browser still treats this private self-signed certificate as untrusted unless separately trusted; Juno uses the pairing-file pin and does not install system-wide trust. The root HTTPS route contains only a connection-status message, not a web interface.
+
 A pairing file supplies the exact host certificate fingerprint as the out-of-band trust anchor. Native requests use an ephemeral pinned TLS session, reject another certificate and reject redirects. No certificate is installed into system-wide trust. Host private keys/settings are in the private `shared-host` state directory; invitation/device credentials are hashed in PostgreSQL. Keychain credentials and invitation codes are excluded from the offline export and model context.
 
 A laptop copy and queued edits are stored in its application-support directory, scoped by host certificate/address and owner, with private directory/file permissions. Queues and full-copy replacement use atomic writes. A different owner or host identity does not merge into an existing copy. Keep normal Mac account/device protections enabled; application-specific at-rest encryption is not added in this preview.
 
 ## Verification and remaining acceptance
 
-- 47 automated backend tests, including invitation lifetime/replay/replacement, device revocation, LAN administration boundaries, owner isolation, atomic idempotency, revision conflicts, diary chains and receipt redaction.
+- 48 automated backend tests, including invitation lifetime/replay/replacement, device revocation, LAN administration boundaries, owner isolation, atomic idempotency, revision conflicts, diary chains and receipt redaction.
 - `scripts/verify_offline_client.py` compiles the actual native cache/queue code and verifies offline memory/diary edits, restart persistence, dependent-ID mapping, local conflict retention, safe stale-reply handling, search and private file permissions. It also compiles the actual JunoStore and verifies immediate offline reads/create/edit/delete/check-in saves and failure when the pinned session is missing.
-- `scripts/verify_shared_host.py` compiles the actual native TLS/cache/queue code and uses a disposable PostgreSQL owner and real HTTPS host. It verifies wrong-certificate rejection, native pairing, Keychain storage, an actual stopped-host outage, offline edits, a separate client process restart, host restart, replay-safe sync and final host data.
+- `scripts/verify_shared_host.py` compiles the actual native TLS/cache/queue code and uses a disposable PostgreSQL owner and real HTTPS host. It verifies strict TLS validation for the advertised IP and hostname, wrong-certificate rejection, native pairing using the IP, Keychain storage, an actual stopped-host outage, offline edits, a separate client process restart, host restart, replay-safe sync and final host data.
 - The native Computers screen confirmed this Mac's live host address and enabled state. The live TLS endpoint rejected unauthenticated access.
 - The packaged installer verifier checks shared-host TLS startup, one-use invitations, owner-scoped export, replay-safe offline operations, forbidden remote administration and revocation, alongside existing migration/runtime tests.
 
 Actual M5 laptop installation, campus network reachability, AirDrop/import through both real native apps and multi-day use still require user acceptance. The app is ad hoc signed and the installer remains unsigned/not notarized. Shared preferences, a background host daemon, formatted TaskDock rich text, automatic TaskDock source refresh, calendar integration and HumanLab native acceptance remain outside this increment.
+
+## Wired/Wi-Fi connection troubleshooting
+
+On the laptop, `nc -vz <work-Mac-IP> 8443` tests TCP access without sending any credentials. Success means the network path is open; timeout/refusal indicates a network/firewall/listener problem rather than a certificate trust problem. Use a fresh pairing file after this certificate repair. Preview 5 reports DNS, TCP reachability, identity verification and expired-invitation failures separately. Network isolation between wired and wireless VLANs cannot be repaired by changing the certificate; have the network administrator allow the intended local connection if it is blocked. No firewall protection is disabled by Juno.

@@ -1,10 +1,10 @@
 """Opt-in TLS LAN host. Only the local app can administer paired devices."""
-import base64
 from datetime import timedelta
 import ipaddress
 import json
 from pathlib import Path
 import secrets
+import re
 import socket
 import ssl
 import subprocess
@@ -16,6 +16,22 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy import select
 from .auth import digest, provision
 from .models import Device, PairingInvitation, now
+
+
+def network_identity():
+    try:
+        name=subprocess.check_output(['/usr/sbin/scutil','--get','LocalHostName'],text=True,stderr=subprocess.DEVNULL).strip()+'.local'
+    except (OSError,subprocess.CalledProcessError):name=socket.gethostname()
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,252}',name):name='localhost'
+    addresses=[]
+    # Prefer the wired interface; use actual local addresses, never external discovery.
+    for interface in ('en0','en1','en2'):
+        try:
+            value=subprocess.check_output(['/usr/sbin/ipconfig','getifaddr',interface],text=True,stderr=subprocess.DEVNULL).strip()
+            ip=ipaddress.ip_address(value)
+            if ip.version==4 and ip.is_private and not ip.is_loopback and value not in addresses:addresses.append(value)
+        except (OSError,ValueError,subprocess.CalledProcessError):pass
+    return name,addresses
 
 
 class LANBoundary:
@@ -31,7 +47,7 @@ class LANBoundary:
         except ValueError: allowed = False
         path, method = scope['path'], scope['method']
         permitted = (path == '/v1/pair' and method == 'POST' or
-            path in {'/v1/cache','/v1/ping'} and method == 'GET' or path == '/v1/offline-operations' and method == 'POST' or
+            path in {'/','/v1/cache','/v1/ping'} and method == 'GET' or path == '/v1/offline-operations' and method == 'POST' or
             path.startswith('/v1/memories') and method in {'GET','POST','PUT','DELETE'} or
             path.startswith('/v1/conversations') and method in {'GET','POST'} or
             path.startswith('/v1/check-ins') and method in {'GET','POST','PUT'} or
@@ -63,7 +79,9 @@ class HostManager:
         if not cert.exists():
             # No shell interpolation; private key never leaves the host state directory.
             config = self.root/'openssl.cnf'
-            config.write_text('[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=Juno private host\n[ext]\nsubjectAltName=DNS:localhost\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,digitalSignature,keyEncipherment,keyCertSign\nextendedKeyUsage=serverAuth\n')
+            name,addresses=network_identity()
+            sans=','.join(dict.fromkeys(['DNS:localhost','DNS:'+name,'IP:127.0.0.1',*['IP:'+a for a in addresses]]))
+            config.write_text('[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN='+name+'\n[ext]\nsubjectAltName='+sans+'\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,digitalSignature,keyEncipherment,keyCertSign\nextendedKeyUsage=serverAuth\n')
             subprocess.run(['/usr/bin/openssl','req','-x509','-newkey','rsa:3072','-nodes','-days','365',
                 '-keyout',str(key),'-out',str(cert),'-config',str(config)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             config.unlink()
@@ -71,10 +89,10 @@ class HostManager:
         return cert,key
 
     def status(self):
-        try: name = subprocess.check_output(['/usr/sbin/scutil','--get','LocalHostName'],text=True,stderr=subprocess.DEVNULL).strip()+'.local'
-        except (OSError,subprocess.CalledProcessError): name=socket.gethostname()
+        name,addresses=network_identity()
+        destination=addresses[0] if addresses else name
         running=bool(self.server and self.worker and self.worker.is_alive() and self.server.started)
-        return {'enabled':running,'address':f'https://{name}:{self.config["port"]}',
+        return {'enabled':running,'address':f'https://{destination}:{self.config["port"]}',
             'error':self.error,'availability':'Available while Juno is open and this Mac is awake.'}
 
     def set_enabled(self, enabled):
@@ -133,6 +151,10 @@ class PairInput(BaseModel):
 def install(app,db,device,lock_owner,manager):
     def local(request:Request):
         if request.scope.get('juno_lan'):raise HTTPException(403,'Host administration is local only.')
+
+    @app.get('/')
+    def landing():
+        return {'service':'Juno shared host','transport':'HTTPS','authentication':'Pair through Juno Computers to access work records.'}
 
     @app.get('/v1/ping')
     def ping(actor=Depends(device)):

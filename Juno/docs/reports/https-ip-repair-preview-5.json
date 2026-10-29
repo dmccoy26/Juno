@@ -1,0 +1,32 @@
+{
+  "version": "0.1.0-preview.5",
+  "verified_at": "2026-10-29T21:09:34.351161+00:00",
+  "problem": "Original certificate covered localhost only; advertised hostname failed strict TLS verification. Laptop on Wi-Fi could also encounter Bonjour discovery failure reaching wired host.",
+  "changes": [
+    "Prefer private IPv4 in host status and invitations",
+    "Include IPv4 and hostname SANs",
+    "Keep exact certificate pinning",
+    "Distinguish DNS, TCP reachability, TLS identity and invitation failures",
+    "Minimal public root status without exposing work records"
+  ],
+  "backend_tests": {
+    "passed": 48,
+    "skipped": 0
+  },
+  "strict_tls_ip_and_hostname": "passed with explicitly supplied private certificate as trust anchor; no system trust changes",
+  "native_pinned_pairing_using_advertised_ip": "passed on disposable owner",
+  "native_offline_edit_restart_sync": "passed",
+  "native_immediate_offline_store": "passed",
+  "current_host_certificate_repaired": true,
+  "active_laptop_devices_before_repair": 0,
+  "old_unused_invitations_invalidated": true,
+  "prior_certificate_and_key_retained_privately": true,
+  "mac_firewall_changes": false,
+  "actual_wired_to_wifi_tcp_test": "awaiting laptop result",
+  "actual_laptop_pairing": "pending fresh pairing file",
+  "limits": [
+    "Private self-signed certificate is not browser/system trusted",
+    "No router or firewall weakening",
+    "Actual campus network reachability is not established by same-Mac tests"
+  ]
+}

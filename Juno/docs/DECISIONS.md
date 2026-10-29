@@ -88,3 +88,8 @@ Preview 3 implements the supplied local read-only integration contract. Dedicate
 ## Approved work Mac host and offline edits — October 29, 2026
 
 The user designated this computer as the approved shared system and explicitly requested offline laptop entries and edits. Preview 4 uses this Mac's existing Juno state as the canonical workspace, a private TLS LAN surface, one-use 15-minute pairing invitations and native certificate pinning. Device credentials remain hashed on the host and in laptop Keychain. The laptop stores owner/host-scoped copies and durable optimistic edits, then uses atomic operation IDs and expected revisions on reconnection. Conflicts retain the queue for manual resolution; existing standalone data is not merged. No cloud deployment, router forwarding, system-wide trust change, firewall weakening or sleep-policy change is authorized or performed. The host currently runs only while Juno is open and this Mac is awake. See `SHARED-HOST.md`.
+
+
+## IP-based LAN pairing repair — October 29, 2026
+
+Use the work Mac’s private IPv4 address in new pairing files, per the user’s wired-desktop/Wi-Fi-laptop preference. Include IP and hostname SANs in generated certificates and keep exact certificate pinning. Do not install a trust root or disable hostname/certificate verification to make browser tests pass. The localhost-only initial certificate was replaced only after confirming no active laptop pairing; old files were retained privately and unused invitations invalidated. Native errors distinguish network reachability from pairing/identity failures.

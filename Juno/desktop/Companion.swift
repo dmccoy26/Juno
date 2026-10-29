@@ -183,7 +183,7 @@ struct RootView: View {
             }
             if let issue = store.problem { HStack { Text(issue).foregroundStyle(.orange); Spacer(); Button("Dismiss") { store.problem = nil } }.padding(12) }
             Divider()
-            HStack { Text(store.sharedProfile == nil ? "Stored on this Mac" : "Work Mac + offline laptop copy"); Spacer(); Text("Juno 0.1.0-preview.4") }.font(.caption).foregroundStyle(.secondary).padding(12)
+            HStack { Text(store.sharedProfile == nil ? "Stored on this Mac" : "Work Mac + offline laptop copy"); Spacer(); Text("Juno 0.1.0-preview.5") }.font(.caption).foregroundStyle(.secondary).padding(12)
         }.frame(minWidth: 920, minHeight: 650)
     }
 }

@@ -40,7 +40,7 @@ def main():
         subprocess.run(['iconutil','-c','icns',str(iconset),'-o',str(resources/'Juno.icns')], check=True)
         info = dict(CFBundleIconFile='Juno', CFBundleName='Juno', CFBundleDisplayName='Juno', CFBundleIdentifier='com.dmccoy.juno.development',
                     CFBundleExecutable='Juno', CFBundlePackageType='APPL', CFBundleShortVersionString='0.1.0',
-                    CFBundleVersion='4', LSMinimumSystemVersion='13.5', NSHighResolutionCapable=True,
+                    CFBundleVersion='5', LSMinimumSystemVersion='13.5', NSHighResolutionCapable=True,
                     NSAppTransportSecurity={'NSAllowsLocalNetworking':True}, JunoProjectRoot=str(ROOT))
         (contents/'Info.plist').write_bytes(plistlib.dumps(info))
         subprocess.run(['codesign','--force','--sign','-',str(bundle)], check=True)

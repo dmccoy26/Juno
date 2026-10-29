@@ -107,7 +107,15 @@ def main():
             temp=Path(folder);manager=HostManager(temp);manager.config['port']=0
             app=create_app(engine,host_manager=manager);manager.app=app;manager.set_enabled(True)
             invitation=manager.invitation_info()
-            pairing={'address':'https://127.0.0.1:'+str(manager.config['port']),'pin':invitation['certificate_sha256'],'owner':owner,'invitation':code}
+            import ssl,urllib.request
+            from juno.shared_host import network_identity
+            context=ssl.create_default_context(cafile=str(manager.certificate()[0]))
+            opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=context))
+            for address in (invitation['address'],'https://'+network_identity()[0]+':'+str(manager.config['port'])):
+                with opener.open(address+'/',timeout=5) as response:
+                    assert json.load(response)['service']=='Juno shared host'
+            print('PASS advertised IP and hostname with strict TLS hostname validation')
+            pairing={'address':invitation['address'],'pin':invitation['certificate_sha256'],'owner':owner,'invitation':code}
             settings=temp/'pair.json';settings.write_text(json.dumps(pairing));settings.chmod(0o600)
             native=(ROOT/'desktop/Shared.swift').read_text().split('extension JunoStore {',1)[0]
             (temp/'main.swift').write_text(native+'\n'+SWIFT)

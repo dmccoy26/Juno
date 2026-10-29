@@ -121,3 +121,18 @@ class SharedHostTests(memory_tests.MemoryTests):
 
 for name in list(vars(memory_tests.MemoryTests)):
     if name.startswith('test_') and name not in SharedHostTests.__dict__:setattr(SharedHostTests,name,None)
+
+
+class CertificateTests(__import__('unittest').TestCase):
+    def test_advertised_ip_and_hostname_are_certificate_sans_and_persist(self):
+        import ssl
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory(prefix='juno-certificate-test-') as folder, patch('juno.shared_host.network_identity',return_value=('synthetic-host.local',['10.22.33.44'])):
+            manager=HostManager(folder)
+            cert,key=manager.certificate()
+            names=ssl._ssl._test_decode_cert(str(cert))['subjectAltName']
+            for entry in [('DNS','synthetic-host.local'),('DNS','localhost'),('IP Address','127.0.0.1'),('IP Address','10.22.33.44')]:self.assertIn(entry,names)
+            original=cert.read_bytes()
+            self.assertEqual(manager.certificate()[0].read_bytes(),original)
+            self.assertEqual(manager.status()['address'],'https://10.22.33.44:8443')
+            self.assertEqual(key.stat().st_mode & 0o777,0o600)

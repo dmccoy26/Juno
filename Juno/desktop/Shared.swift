@@ -8,6 +8,18 @@ struct SharedProfile: Codable {
 }
 struct HostStatus: Decodable { let enabled: Bool; let address: String; let error: String?; let availability: String }
 struct HostInvitation: Codable { let version: Int; let address: String; let certificate_sha256: String; let invitation: String; let expires_at: String }
+func pairingFailure(_ error: Error) -> String {
+    if let api = error as? APIProblem { return api.message }
+    if let url = error as? URLError {
+        switch url.code {
+        case .cannotFindHost, .dnsLookupFailed: return "The work Mac address could not be resolved. Create a new pairing file on the work Mac using its IP address."
+        case .timedOut, .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet: return "Cannot reach the work Mac on TCP port 8443. Check that Juno is hosting and that wired-to-Wi-Fi traffic is allowed by the network and firewall."
+        case .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot, .secureConnectionFailed, .userCancelledAuthentication, .cancelled: return "The paired HTTPS identity could not be verified. Create and import a fresh pairing file from the work Mac."
+        default: return "The work Mac connection failed (network error \(url.errorCode)). Your data and queued edits have been retained."
+        }
+    }
+    return "The pairing file could not be read or used. Export a fresh file from the work Mac and import it within 15 minutes."
+}
 struct PairResult: Decodable { let token: String; let owner_id: String; let device_id: String }
 struct PairedDevice: Decodable, Identifiable { let id: String; let label: String; let current: Bool }
 struct PairedDevices: Decodable { let items: [PairedDevice] }
@@ -362,7 +374,7 @@ struct ComputersWorkspace: View {
                 store.items = []; store.messages = []; store.checkIn = nil; store.currentConversation = nil
                 try await store.syncOfflineCopy(); try await store.load(); await store.loadCompanion()
                 notice = "Paired. The work Mac's history and an offline copy are ready. Existing standalone laptop data was not merged."
-            } catch { notice = (error as? APIProblem)?.message ?? "Pairing failed. Check that both Macs are on the same network, the work Mac is awake, and the invitation has not expired." }
+            } catch { notice = pairingFailure(error) }
         }
     }
     var body: some View {

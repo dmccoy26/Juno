@@ -73,3 +73,8 @@ Evidence covers the memory/database behaviors above and synthetic connector resp
 ## Next implementation step
 
 Install preview 4 on the M5 laptop, transfer a fresh invitation from this Mac and verify native pairing, offline editing and reconnection on the actual network. Complete installed TaskDock acceptance separately. Calendar planning, remote-model approvals, semantic retrieval, a background host daemon and native HumanLab instrumentation remain later requirements.
+
+
+## IP and HTTPS pairing repair — preview 5
+
+The initial certificate named only localhost; the advertised .local address therefore failed ordinary TLS hostname verification. Preview 5 creates certificates with local IP/hostname SANs and exports pairing files using the desktop’s private IP, avoiding Bonjour discovery across wired and Wi-Fi networks. Pairing errors now distinguish DNS, TCP reachability, certificate identity and invalid/expired invitations. No laptop device had successfully paired before the local certificate repair; old unused invitations were invalidated and the prior certificate/key retained privately. 48 backend tests and native strict-TLS/IP-pairing/offline-sync fixtures pass. Actual laptop wired-to-Wi-Fi reachability still requires verification.

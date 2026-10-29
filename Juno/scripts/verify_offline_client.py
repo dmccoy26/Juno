@@ -50,6 +50,7 @@ STORE_TEST=r'''
 import Foundation
 @main struct OfflineStoreCheck {
     @MainActor static func main() async throws {
+        guard pairingFailure(URLError(.cannotFindHost)).contains("IP address"), pairingFailure(URLError(.cannotConnectToHost)).contains("8443"), pairingFailure(APIProblem(message:"Expired invitation",status:401)) == "Expired invitation" else { fatalError("Pairing diagnostics lost the failure reason") }
         let profile = SharedProfile(address:"https://synthetic-unreachable.local:8443",certificate_sha256:String(repeating:"a",count:64),owner_id:UUID().uuidString,device_id:"synthetic")
         let copy = try OfflineCopy(profile:profile)
         defer { try? FileManager.default.removeItem(at:copy.file) }
