@@ -11,6 +11,8 @@ from sqlalchemy.exc import IntegrityError
 from .auth import authenticate
 from .database import engine_for, sessions
 from .models import Audit, Memory, Suppression, now
+from .companion import install, invalidate_context
+from .local_model import LocalModel
 
 
 class MemoryInput(BaseModel):
@@ -33,10 +35,10 @@ def view(row):
             ("id", "text", "source", "confidence", "revision", "created_at", "updated_at")}
 
 
-def create_app(engine=None):
+def create_app(engine=None, model_factory=LocalModel):
     engine = engine if engine is not None else engine_for()
     factory = sessions(engine)
-    app = FastAPI(title="Juno memory service", version="0.1.0.dev0")
+    app = FastAPI(title="Juno companion service", version="0.1.0-preview.2")
     bearer = HTTPBearer(auto_error=False)
 
     @app.middleware("http")
@@ -87,7 +89,7 @@ def create_app(engine=None):
 
     @app.get("/health")
     def health():
-        return {"service": "juno", "version": "0.1.0.dev0"}
+        return {"service": "juno", "version": "0.1.0-preview.2"}
 
     @app.get("/v1/memories")
     def memories(q: str = Query(default="", max_length=200),
@@ -131,6 +133,7 @@ def create_app(engine=None):
         ensure_allowed(session, actor.owner_id, fp)
         if fp != row.fingerprint:
             suppress(session, actor.owner_id, row.fingerprint)
+        invalidate_context(session, actor.owner_id, 'memory:'+row.id)
         for key, content in value.model_dump(exclude={"expected_revision"}).items():
             setattr(row, key, content)
         row.fingerprint = fp
@@ -148,9 +151,11 @@ def create_app(engine=None):
         if row.revision != expected_revision:
             raise HTTPException(409, "Memory changed; reload before deleting.")
         suppress(session, actor.owner_id, row.fingerprint)
+        invalidate_context(session, actor.owner_id, 'memory:'+row.id)
         audit(session, actor, row, "memory.deleted")
         session.delete(row)
         commit(session)
         return Response(status_code=204)
 
+    install(app, db, device, lock_owner, model_factory)
     return app

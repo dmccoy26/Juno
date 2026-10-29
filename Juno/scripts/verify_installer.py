@@ -60,11 +60,17 @@ def api(url, token, path, *, method='GET', body=None, expected=200):
     return json.loads(raw) if raw else None
 
 
-def launch(app, state, log, wrapped=False):
+def local_environment(app, state):
     resources=app/'Contents/Resources'
     env={k:v for k,v in os.environ.items() if k in ('HOME','USER','LOGNAME','TMPDIR','LANG')}
     env.update(PATH='/usr/bin:/bin:/usr/sbin:/sbin', PYTHONNOUSERSITE='1', PYTHONDONTWRITEBYTECODE='1',
                JUNO_DATA_ROOT=str(state), JUNO_POSTGRES_BIN=str(resources/'runtime/postgres/bin'))
+    return env
+
+
+def launch(app, state, log, wrapped=False):
+    resources=app/'Contents/Resources'
+    env=local_environment(app,state)
     command=[str(resources/'runtime/python/bin/python3'), str(resources/'app/scripts/desktop_service.py')]
     if wrapped:
         wrapper = 'import subprocess,sys; p=subprocess.Popen(sys.argv[1:],stdout=subprocess.PIPE,text=True); print(p.stdout.readline().strip(),flush=True); p.wait()'
@@ -128,11 +134,30 @@ def verify(package, report):
                 api(url,token,path,method='PUT',body=edit,expected=409)
                 stop(process,relocated,state);process=None
                 checks.append('fresh isolated startup, authentication, create/edit and stale-edit conflict')
+                # The check-in is useful even with no configured model/server.
+                process,hello=launch(relocated,state,log)
+                url,token=hello['url'],hello['token']
+                assert api(url,token,'/v1/model')['configured'] is False
+                conv=api(url,token,'/v1/conversations',method='POST',body={'title':'Synthetic portable chat'},expected=201)
+                api(url,token,'/v1/conversations/'+conv['id']+'/messages',method='POST',
+                    body={'text':'Synthetic unsent message','request_id':'00000000-0000-0000-0000-000000000001'},expected=503)
+                assert api(url,token,'/v1/conversations/'+conv['id']+'/messages')['items']==[]
+                diary=api(url,token,'/v1/check-ins',method='POST',body={'local_date':'2026-10-29'})
+                for question in diary['questions']:
+                    diary=api(url,token,'/v1/check-ins/'+diary['id']+'/answer',method='PUT',
+                        body={'key':question['key'],'text':'Synthetic installer check-in answer.','expected_revision':diary['revision']})
+                diary=api(url,token,'/v1/check-ins/'+diary['id']+'/diary',method='PUT',
+                    body={'text':diary['diary_text'],'expected_revision':diary['revision'],'confirm':True})
+                assert diary['status']=='confirmed'
+                stop(process,relocated,state);process=None
+                checks.append('offline check-in/diary and explicit unconfigured-model behavior')
+
                 process,second=launch(relocated,state,log)
                 url=second['url']
                 api(url,token,'/v1/memories',expected=401)
                 token=second['token']
                 assert api(url,token,path)['text']==edit['text']
+                assert api(url,token,'/v1/check-ins',method='POST',body={'local_date':'2026-10-29'})['status']=='confirmed'
                 api(url,token,path+'?expected_revision=2',method='DELETE',expected=204)
                 api(url,token,path,expected=404)
                 api(url,token,'/v1/memories',method='POST',body=value,expected=409)
@@ -148,6 +173,39 @@ def verify(package, report):
                 checks.append('application parent-loss watchdog stops its owned database')
                 run('codesign','--verify','--deep','--strict',relocated)
                 checks.append('application resources unchanged after execution')
+                legacy=root/'legacy-state'
+                env=local_environment(relocated,legacy)
+                resources=relocated/'Contents/Resources'
+                python=resources/'runtime/python/bin/python3'
+                helper=resources/'app/scripts/dev_database.py'
+                subprocess.run([str(python),str(helper),'start'],env=env,check=True,stdout=log,stderr=log)
+                env['JUNO_DATABASE_URL']=subprocess.check_output([str(python),str(helper),'url'],env=env,text=True).strip()
+                seed = """import sys,json
+from pathlib import Path
+sys.path.insert(0,sys.argv[1]+'/backend/src')
+from alembic import command
+from alembic.config import Config
+from juno.database import engine_for,sessions
+from juno.auth import provision
+from juno.models import Memory
+command.upgrade(Config(sys.argv[1]+'/backend/alembic.ini'),'0001_memory')
+with sessions(engine_for())() as session:
+ actor,token=provision(session,'Synthetic legacy owner')
+ session.add(Memory(owner_id=actor.owner_id,text='Legacy synthetic memory survives upgrade.',source='verification:legacy',confidence='confirmed',fingerprint='a'*64))
+ session.commit()
+ Path(sys.argv[2]+'/desktop-owner.json').write_text(json.dumps({'owner_id':actor.owner_id,'device_id':actor.id}))
+"""
+                subprocess.run([str(python),'-c',seed,str(resources/'app'),str(legacy)],env=env,check=True,stdout=log,stderr=log)
+                subprocess.run([str(python),str(helper),'stop'],env=env,check=True,stdout=log,stderr=log)
+                process,upgraded=launch(relocated,legacy,log)
+                legacy_rows=api(upgraded['url'],upgraded['token'],'/v1/memories')['items']
+                assert any(r['text']=='Legacy synthetic memory survives upgrade.' for r in legacy_rows)
+                backups=list((legacy/'backups').glob('*.dump'))
+                assert len(backups)==1, 'Upgrade did not create a backup'
+                run(resources/'runtime/postgres/bin/pg_restore','--list',backups[0])
+                stop(process,relocated,legacy);process=None
+                checks.append('schema-1 upgrade with readable pre-migration backup and preserved memory')
+
             finally:
                 if process is not None:
                     process.terminate();process.wait(timeout=15)
@@ -155,7 +213,7 @@ def verify(package, report):
                 'status':'passed','checks':checks,'host_architecture':os.uname().machine,
                 'host_macos': subprocess.check_output(['sw_vers','-productVersion'],text=True).strip(),
                 'limits':['not installed on the actual M5 laptop yet', 'no Developer ID signature or notarization',
-                          'no cross-device synchronization or model/chat connection']}
+                          'no cross-device synchronization; chat needs a separately running local model']}
         report.write_text(json.dumps(result,indent=2)+'\n')
         for check in checks: print('PASS '+check)
         print('Report: '+str(report))

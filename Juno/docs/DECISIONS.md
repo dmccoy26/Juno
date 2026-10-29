@@ -67,7 +67,7 @@ Use optimistic revisions for edits and return a conflict rather than overwriting
 1. Read-only integration contract and synthetic fixtures; build discovery evidence.
 2. Shared service schemas, owner authentication, migrations, and memory APIs with a disposable PostgreSQL test environment.
 3. Native SwiftUI interface exercising the real service: memory review/edit/delete and locally persisted meeting-mode setting. Implemented in the development preview.
-4. Independently packaged runtimes and native verification delivered for `0.1.0-preview.1`. Next: conversations, diary/check-in and approved model connection; Keychain-backed shared-service credentials.
+4. Independently packaged runtimes and native verification delivered for `0.1.0-preview.1`. Delivered in preview 2: persistent conversations, offline-capable diary/check-in, and a local-only LM Studio-compatible model connection. Keychain-backed shared-service credentials and remote endpoints remain future work.
 5. Calendar and TaskDock bridge, planning behavior, an appropriate HumanLab native adapter or clearly bounded service-only scenarios, and real two-Mac verification on approved infrastructure.
 
 ## Unresolved environment facts

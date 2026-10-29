@@ -24,7 +24,7 @@ def main():
         contents = bundle/'Contents'
         (contents/'MacOS').mkdir(parents=True)
         subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-O','-target','arm64-apple-macosx13.5',
-                        str(ROOT/'desktop/Juno.swift'),'-o',str(contents/'MacOS/Juno')], check=True)
+                        str(ROOT/'desktop/Juno.swift'),str(ROOT/'desktop/Companion.swift'),'-o',str(contents/'MacOS/Juno')], check=True)
         resources = contents/'Resources'
         resources.mkdir()
         iconset = Path(temp)/'Juno.iconset'
@@ -40,7 +40,7 @@ def main():
         subprocess.run(['iconutil','-c','icns',str(iconset),'-o',str(resources/'Juno.icns')], check=True)
         info = dict(CFBundleIconFile='Juno', CFBundleName='Juno', CFBundleDisplayName='Juno', CFBundleIdentifier='com.dmccoy.juno.development',
                     CFBundleExecutable='Juno', CFBundlePackageType='APPL', CFBundleShortVersionString='0.1.0',
-                    CFBundleVersion='1', LSMinimumSystemVersion='13.5', NSHighResolutionCapable=True,
+                    CFBundleVersion='2', LSMinimumSystemVersion='13.5', NSHighResolutionCapable=True,
                     NSAppTransportSecurity={'NSAllowsLocalNetworking':True}, JunoProjectRoot=str(ROOT))
         (contents/'Info.plist').write_bytes(plistlib.dumps(info))
         subprocess.run(['codesign','--force','--sign','-',str(bundle)], check=True)

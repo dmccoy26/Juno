@@ -33,6 +33,27 @@ final class JunoStore: ObservableObject {
     @Published var meeting = UserDefaults.standard.bool(forKey: "meetingMode") {
         didSet { UserDefaults.standard.set(meeting, forKey: "meetingMode") }
     }
+    @Published var section = "Chat"
+    @Published var conversations: [ConversationRecord] = []
+    @Published var conversationMore = false
+    @Published var currentConversation: String?
+    @Published var messages: [ChatMessage] = []
+    @Published var olderMessages = false
+    @Published var chatDraft = ""
+    @Published var chatSending = false
+    @Published var chatIssue: String?
+    @Published var modelBase = "http://127.0.0.1:1234/v1"
+    @Published var modelName = ""
+    @Published var modelOptions: [String] = []
+    @Published var modelConfigured = false
+    @Published var modelBusy = false
+    @Published var modelNotice: String?
+    @Published var checkIn: CheckInRecord?
+    @Published var checkAnswer = ""
+    @Published var diaryDraft = ""
+    @Published var checkBusy = false
+    @Published var checkIssue: String?
+    var checkDay = ""
     var process: Process?
     var endpoint: URL?
     var token = ""
@@ -93,7 +114,7 @@ final class JunoStore: ObservableObject {
                 self.endpoint = url; self.token = token
                 self.startupTask = Task {
                     for _ in 0..<40 {
-                        do { try await self.load(); return }
+                        do { try await self.load(); await self.loadCompanion(); return }
                         catch { try? await Task.sleep(nanoseconds: 250_000_000) }
                     }
                     self.problem = "The local service did not become ready. Quit and reopen Juno."; self.status = "Connection failed"
@@ -105,7 +126,7 @@ final class JunoStore: ObservableObject {
     func request(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> Data {
         guard let endpoint else { throw APIProblem(message: "Juno is still connecting.", status: 0) }
         let url = URL(string: path, relativeTo: endpoint)!.absoluteURL
-        var req = URLRequest(url: url); req.httpMethod = method; req.timeoutInterval = 15
+        var req = URLRequest(url: url); req.httpMethod = method; req.timeoutInterval = path.contains("/messages") && method == "POST" ? 100 : 15
         req.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         req.cachePolicy = .reloadIgnoringLocalCacheData
         if let body { req.httpBody = try JSONSerialization.data(withJSONObject: body); req.setValue("application/json", forHTTPHeaderField: "Content-Type") }
@@ -149,11 +170,15 @@ final class JunoStore: ObservableObject {
         let saved = try JSONDecoder().decode(Memory.self, from: data)
         query = ""; items.removeAll { $0.id == saved.id }; items.insert(saved, at: 0); selected = saved.id
         do { try await load() } catch { problem = "Your memory was saved, but the list could not refresh. Try Refresh." }
+        messages.removeAll { $0.role == "assistant" }
+        if let id = currentConversation { try? await loadMessages(id) }
     }
     func delete(_ row: Memory) async throws {
         _ = try await request("/v1/memories/\(row.id)?expected_revision=\(row.revision)", method: "DELETE")
         selected = nil; items.removeAll { $0.id == row.id }
         do { try await load() } catch { problem = "The memory was deleted, but the list could not refresh. Try Refresh." }
+        messages.removeAll { $0.role == "assistant" }
+        if let id = currentConversation { try? await loadMessages(id) }
     }
     func stop() { startupTask?.cancel(); process?.terminate() }
 }
@@ -200,7 +225,7 @@ struct Editor: View {
     }
 }
 
-struct RootView: View {
+struct MemoryWorkspace: View {
     @ObservedObject var store: JunoStore
     @State private var editing = false
     @State private var draft: Memory?
@@ -209,13 +234,6 @@ struct RootView: View {
     @State private var removing = false
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Image(systemName: "sparkles").font(.title).foregroundStyle(.purple)
-                VStack(alignment: .leading) { Text("Juno").font(.title2.bold()); Text(store.status).font(.caption).foregroundStyle(.secondary) }
-                Spacer()
-                Toggle("Meeting mode", isOn: $store.meeting).toggleStyle(.switch).help("Use a neutral, professional tone. This setting is saved on this Mac.")
-            }.padding(20)
-            Divider()
             HSplitView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("MEMORY").font(.caption.bold()).foregroundStyle(.secondary)
@@ -252,11 +270,6 @@ struct RootView: View {
                     }
                 }.padding(32).frame(minWidth: 400, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            if let problem = store.problem {
-                HStack { Image(systemName: "exclamationmark.triangle"); Text(problem).textSelection(.enabled); Spacer(); Button("Refresh") { store.refresh() }.disabled(store.busy || store.endpoint == nil) }.padding(12).background(.orange.opacity(0.12))
-            }
-            Divider()
-            HStack { Text("Preview · Synthetic data only · Stored on this Mac"); Spacer(); Text("Memory foundation · 0.1.0-preview.1") }.font(.caption).foregroundStyle(.secondary).padding(12)
         }.frame(minWidth: 850, minHeight: 570)
         .toolbar { Button { store.refresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }.disabled(store.busy || store.endpoint == nil) }
         .sheet(isPresented: $editing) { Editor(store: store, original: draft) }
@@ -294,7 +307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
         store.start()
     }
-    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Juno", .applicationVersion: "0.1.0-preview.1", .credits: NSAttributedString(string: "Native Mac work companion\nMemory foundation · synthetic data only\nLocal storage; cross-device synchronization is not connected")]) }
+    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Juno", .applicationVersion: "0.1.0-preview.2", .credits: NSAttributedString(string: "Native Mac work companion\nChat, check-ins and memory · synthetic data only\nLocal storage; cross-device synchronization is not connected")]) }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { window?.makeKeyAndOrderFront(nil); return true }
     func applicationWillTerminate(_ notification: Notification) { store.stop() }
 }

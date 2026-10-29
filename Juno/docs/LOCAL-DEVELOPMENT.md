@@ -1,6 +1,6 @@
 # Local synthetic-data memory service
 
-This is the backend foundation, not the desktop beta. It contains no model calls or live work integrations. Keep all records synthetic until institutional hosting and model permissions are established.
+The service now supports memory, persistent chat through a configured local model, and offline-capable daily check-ins. No live work integrations or cloud fallback are connected. Keep all records synthetic until institutional hosting and model permissions are established. See `CHAT-AND-CHECKINS.md` for the new native workflows.
 
 ## Setup
 
@@ -35,6 +35,8 @@ Revoke a device with:
 
 ## Run
 
+Stop the native development app before manually running the API against the same developer database; the app owns recovery of interrupted local requests.
+
 ```sh
 .venv/bin/uvicorn juno.api:create_app --factory --host 127.0.0.1 --port 8765 --no-access-log
 ```
@@ -53,7 +55,7 @@ Confidence is `confirmed`, `observed`, or `inferred`. Bodies reject extra fields
 
 Corrections suppress the previous text/source fingerprint. Deletions remove the canonical record and suppress its last fingerprint. Audit rows retain action metadata, not memory text. This prevents identical content from being silently recreated through this API. Explicit restoration is not implemented yet.
 
-Search currently uses canonical PostgreSQL records and literal substring matching. Embeddings, semantic retrieval, diary/chat records and their derived copies are not implemented. Deletion does not erase nonexistent future layers, source applications, or old operating-system backups. Backup expiry and deletion propagation through those future layers remain beta requirements.
+Search currently uses canonical PostgreSQL records and literal substring matching. Embeddings and semantic retrieval are not implemented. Referenced assistant replies are invalidated when a memory or confirmed diary changes. Raw user messages and original interview answers remain separate source records. Deletion does not erase source applications or old operating-system backups. Backup expiry and deletion propagation through those future layers remain beta requirements.
 
 ## Verify
 

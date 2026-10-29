@@ -56,17 +56,36 @@ def main():
         os.environ['JUNO_DATABASE_URL'] = url
         from alembic import command
         from alembic.config import Config
-        command.upgrade(Config(str(ROOT / 'backend/alembic.ini')), 'head')
+        from alembic.script import ScriptDirectory
+        from sqlalchemy import inspect, text
         from juno.auth import provision
         from juno.database import engine_for, sessions
-        from juno.models import Device
+        from juno.models import Device, Message
         from juno.api import create_app
         import uvicorn
         engine = engine_for(url)
+        config = Config(str(ROOT / 'backend/alembic.ini'))
+        expected = ScriptDirectory.from_config(config).get_current_head()
+        if inspect(engine).has_table('alembic_version'):
+            with engine.connect() as connection:
+                installed = connection.scalar(text('SELECT version_num FROM alembic_version'))
+            if installed != expected:
+                backups = state/'backups'; backups.mkdir(mode=0o700, exist_ok=True)
+                backup = backups/(time.strftime('%Y%m%d-%H%M%S')+'-before-'+expected+'.dump')
+                subprocess.run([str(pg.parent/'pg_dump'), '-h', str(state/'postgres/socket'), '-U', 'juno',
+                                '-d', 'juno_dev', '-Fc', '-f', str(backup)], check=True, stdout=sys.stderr)
+                backup.chmod(0o600)
+                subprocess.run([str(pg.parent/'pg_restore'), '--list', str(backup)], check=True, stdout=subprocess.DEVNULL)
+        command.upgrade(config, 'head')
         factory = sessions(engine)
         saved = state / 'desktop-owner.json'
         previous = json.loads(saved.read_text()) if saved.exists() else {}
         with factory() as session:
+            # This helper owns the exclusive local service lock. Pending replies
+            # from a previous process cannot still be running after a restart.
+            from sqlalchemy import update
+            session.execute(update(Message).where(Message.status == 'pending').values(
+                status='failed', text='This reply was interrupted. You can retry it.', context_refs={}))
             old = session.get(Device, previous['device_id']) if previous.get('device_id') else None
             if old is not None:
                 old.revoked = True
@@ -94,6 +113,7 @@ def main():
                 if actor:
                     actor.revoked = True
                     session.commit()
+        if engine is not None:
             engine.dispose()
         if not was_running and data.exists():
             subprocess.run([str(pg), '-D', str(data), '-m', 'fast', 'stop'],

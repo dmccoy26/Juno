@@ -4,13 +4,13 @@ A Mac AI work companion that helps Dan decide what to do next, retain work conte
 
 The agreed product direction and first beta build mission are in [MISSION-0.1.0.md](MISSION-0.1.0.md).
 
-Current state: a native Mac development application with a working memory interface, a PostgreSQL-backed memory API, and a read-only TaskDock connector. Chat and daily check-ins are not implemented yet.
+Current state: a native Mac development application with a working memory interface, a PostgreSQL-backed memory API, and a read-only TaskDock connector. Persistent local-model chat and guided daily check-ins are implemented.
 
-The first self-contained installer is `dist/Juno-0.1.0-preview.1-macOS-arm64.pkg`. Install it, then open `/Applications/Juno.app` in Finder. Python and PostgreSQL are included; no terminal, Homebrew, checkout, or browser tab is required on the recipient Mac. Use synthetic data only. Each Mac has separate local data; shared memory and chat are not connected yet.
+The latest self-contained installer is `dist/Juno-0.1.0-preview.2-macOS-arm64.pkg`. Install it, then open `/Applications/Juno.app` in Finder. Python and PostgreSQL are included; no terminal, Homebrew, checkout, or browser tab is required on the recipient Mac. Use synthetic data only. Each Mac has separate local data; cross-device synchronization is not connected yet. Chat needs a separately running local model server.
 
-See [laptop installation and verification](docs/INSTALLER-PREVIEW.md). This internal preview is not Developer ID signed or notarized. Actual M5 laptop installation is still pending.
+See [chat, LM Studio setup and check-ins](docs/CHAT-AND-CHECKINS.md), plus [installer verification](docs/INSTALLER-PREVIEW.md). This internal preview is not Developer ID signed or notarized. Actual M5 laptop installation is still pending.
 
-Rebuild after quitting Juno:
+Rebuild the source-dependent development app after quitting Juno:
 
 ```sh
 python3 scripts/build_macos.py
