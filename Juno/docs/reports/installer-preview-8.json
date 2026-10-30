@@ -1,11 +1,11 @@
 {
   "package": "Juno-0.1.0-preview.8-macOS-arm64.pkg",
-  "sha256": "9bb86f5b5244e28ee75f5537d798899df0236697a9083c494fcdaccc414b019b",
+  "sha256": "c7d7d36251c9b05af58e6dbff71a503a9ef967d5b96e9b6fe2884342f40c8dfb",
   "status": "passed",
   "checks": [
     "installer expands with expected app and non-destructive preinstall guard",
     "payload seals, internal symlinks and 239 Mach-O dependency checks",
-    "relocated bundled seven-provider readers, account review, pagination limits, fixed read destinations and PKCE OAuth delivery/renewal fixtures with network disabled",
+    "relocated bundled seven-provider readers, owner-scoped API/concurrency protection, fixed read destinations and PKCE OAuth fixtures against isolated PostgreSQL with external networking disabled",
     "fresh isolated startup, authentication, create/edit and stale-edit conflict",
     "packaged Beacon HTTP reader, calendar recurrence/DST/overlap, semester CSV, error retention and offline export",
     "packaged TLS pairing, one-use invitations, offline-operation idempotency, administration scope and device revocation",

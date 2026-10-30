@@ -1,5 +1,6 @@
 """Actual TaskDock/Juno bridge with disposable records and loopback HTTP; no installed app data."""
 import argparse,json,os,socket,subprocess,sys,tempfile,time
+from datetime import datetime
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT/'backend/src'),str(ROOT/'backend/tests')]
@@ -66,7 +67,8 @@ def main():
                 assert case.client.get('/v1/integrations',headers={'Authorization':'Bearer '+case.other_token}).json()['items']==[]
                 assert case.client.post('/v1/taskdock/evidence',json=body).status_code==409
                 grants([]);body['expected_id']=snapshot['id'];assert case.client.post('/v1/taskdock/evidence',json=body).status_code==403
-                retained=case.client.get('/v1/integrations').json()['items'][0];assert retained['id']==snapshot['id'] and retained['details']['active'] is False
+                retained=case.client.get('/v1/integrations').json()['items'][0];assert retained['id']!=snapshot['id'] and retained['details']['active'] is False
+                assert retained['items']==snapshot['items'] and datetime.fromisoformat(retained['fetched_at'])==datetime.fromisoformat(snapshot['fetched_at'])
                 report={'taskdock_build':info['taskdock']['build'],'actual_http_bridge':True,'task_only_backward_compatibility':True,'explicit_grants':True,'paged_notes':501,'owner_isolation':True,'credential_excluded_from_cache':True,'revocation_retains_inactive_copy':True,'synthetic_only':True}
                 print(json.dumps(report,indent=2))
                 if args.report:args.report.write_text(json.dumps(report,indent=2)+'\n')

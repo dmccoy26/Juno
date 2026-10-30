@@ -103,7 +103,7 @@ def stop(process, app, state):
 
 
 
-def verify_provider_runtime(app):
+def verify_provider_runtime(app, state):
     """Run the same fictional provider contract checks against relocated bundled modules."""
     code = """
 import socket,sys,unittest
@@ -113,14 +113,15 @@ import juno.providers.readers
 assert Path(juno.providers.readers.__file__).resolve().is_relative_to(Path(sys.argv[2]).resolve())
 def denied(*args,**kwargs):raise AssertionError('No network is allowed in packaged provider fixtures')
 socket.socket.connect=denied
-from test_providers import ProviderReaderTests,OAuthTests
-suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (ProviderReaderTests,OAuthTests)])
+from test_providers import ProviderReaderTests,OAuthTests,ProviderAPITests
+suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (ProviderReaderTests,OAuthTests,ProviderAPITests)])
 result=unittest.TextTestRunner(verbosity=0).run(suite)
-sys.exit(0 if result.wasSuccessful() else 1)
+sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
 """
     import tempfile
     with tempfile.TemporaryDirectory(prefix='juno-provider-payload-') as folder:
-        env=local_environment(app,Path(folder));env['PYTHONPATH']=str(app/'Contents/Resources/app/backend/src')
+        env=local_environment(app,state);env['PYTHONPATH']=str(app/'Contents/Resources/app/backend/src')
+        env['JUNO_TEST_ADMIN_URL']=subprocess.check_output([str(app/'Contents/Resources/runtime/python/bin/python3'),str(app/'Contents/Resources/app/scripts/dev_database.py'),'url'],env=env,cwd=folder,text=True).strip()
         subprocess.run([str(app/'Contents/Resources/runtime/python/bin/python3'),'-c',code,str(Path(__file__).resolve().parents[1]/'backend/tests'),str(app/'Contents/Resources/app')],env=env,cwd=folder,check=True,timeout=45)
 
 
@@ -249,8 +250,6 @@ def verify(package, report):
         shutil.copytree(apps[0],relocated,symlinks=True)
         count=check_payload(relocated)
         checks.append(f'payload seals, internal symlinks and {count} Mach-O dependency checks')
-        verify_provider_runtime(relocated)
-        checks.append('relocated bundled seven-provider readers, account review, pagination limits, fixed read destinations and PKCE OAuth delivery/renewal fixtures with network disabled')
         state=root/'state'
         hostdir=state/'shared-host';hostdir.mkdir(parents=True,mode=0o700)
         (hostdir/'settings.json').write_text(json.dumps({'enabled':False,'port':0}))
@@ -260,6 +259,8 @@ def verify(package, report):
         with logpath.open('w') as log:
             try:
                 process,hello=launch(relocated,state,log)
+                verify_provider_runtime(relocated,state)
+                checks.append('relocated bundled seven-provider readers, owner-scoped API/concurrency protection, fixed read destinations and PKCE OAuth fixtures against isolated PostgreSQL with external networking disabled')
                 url,token=hello['url'],hello['token']
                 assert api(url,token,'/v1/memories')['items']==[], 'Payload was not clean'
                 api(url,'','/v1/memories',expected=401)

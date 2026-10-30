@@ -143,6 +143,25 @@ class OAuthTests(unittest.TestCase):
         state=self.start()['flow_id'];self.manager.callback('google',state,'synthetic-code')
         self.assertEqual(self.manager.poll(state,'owner','device')['phase'],'failed')
 
+    def test_microsoft_public_client_pkce_scope_aliases_rotation_and_cleanup(self):
+        calls=[];tick=[0]
+        def exchange(method,url,headers,body):
+            fields=parse_qs(body.decode());calls.append((url,fields))
+            return {'access_token':'synthetic-ms-access','refresh_token':'synthetic-ms-refresh' if len(calls)==1 else None,'token_type':'Bearer','expires_in':3600,'scope':'https://graph.microsoft.com/User.Read https://graph.microsoft.com/Calendars.Read'}
+        manager=OAuthManager(exchange,clock=lambda:tick[0])
+        start=lambda:manager.start('owner','device','outlook_calendar','synthetic-client','must-not-send-secret','organizations',18123)
+        flow=start();self.assertEqual(flow['redirect_uri'],'http://localhost:18123/v1/providers/oauth/callback/microsoft')
+        self.assertEqual(urlsplit(flow['authorization_url']).netloc,'login.microsoftonline.com')
+        manager.callback('microsoft',flow['flow_id'],'synthetic-ms-code')
+        self.assertEqual(manager.poll(flow['flow_id'],'owner','device')['phase'],'complete')
+        self.assertNotIn('client_secret',calls[0][1]);self.assertIn('code_verifier',calls[0][1])
+        manager.acknowledge(flow['flow_id'],'owner','device')
+        value=manager.refresh('outlook_calendar','synthetic-client','must-not-send-secret','organizations','synthetic-ms-refresh')
+        self.assertIsNone(value['refresh_token']);self.assertEqual(calls[-1][1]['scope'],[' '.join(SCOPES['outlook_calendar'])])
+        pending=start();tick[0]=601
+        if manager.timer:manager.timer.cancel()
+        manager.sweep();self.assertNotIn(pending['flow_id'],manager.flows)
+
 
 class ProviderAPITests(memory_tests.MemoryTests):
     def setUp(self):
@@ -226,7 +245,7 @@ class ProviderAPITests(memory_tests.MemoryTests):
                 self.assertEqual(response.status_code,status)
                 if status==429:self.assertEqual(response.headers['retry-after'],'123')
                 saved=client.get('/v1/integrations').json()['items'][0]
-                self.assertEqual(saved['id'],ident);self.assertTrue(saved['items'])
+                self.assertEqual(saved['id']==ident,status!=401);self.assertTrue(saved['items'])
                 if status==401:self.assertFalse(saved['details']['active'])
                 self.assertNotIn(TOKEN,response.text)
 
@@ -237,6 +256,88 @@ class ProviderAPITests(memory_tests.MemoryTests):
             response=self.refresh(expected=first['id'])
             self.assertEqual(response.status_code,413)
         self.assertEqual(self.client.get('/v1/integrations').json()['items'][0]['id'],first['id'])
+
+    def test_late_refresh_cannot_undo_disconnect_revocation_or_removal(self):
+        import threading
+        for action in ('disconnect','revocation','remove'):
+            with self.subTest(action=action):
+                existing=self.client.get('/v1/integrations').json()['items']
+                first=self.refresh(expected=existing[0]['id'] if existing else None).json()['snapshot']
+                entered=threading.Event();release=threading.Event();results=[]
+                fixture=ProviderFixture()
+                def blocked(method,url,headers,body):
+                    if urlsplit(url).path.endswith('/messages/synthetic-message'):
+                        entered.set()
+                        if not release.wait(5):raise ReadError('Synthetic delayed read timed out')
+                    return fixture(method,url,headers,body)
+                def work():
+                    with TestClient(create_app(self.engine,provider_transport=blocked),base_url='http://127.0.0.1:18123',client=('127.0.0.1',50000)) as client:
+                        results.append(client.post('/v1/providers/gmail/refresh',headers={'Authorization':'Bearer '+self.second_token},json={'token':TOKEN,'selection':config('gmail'),'expected_id':first['id']}))
+                worker=threading.Thread(target=work);worker.start()
+                try:
+                    self.assertTrue(entered.wait(3))
+                    if action=='disconnect':
+                        self.assertEqual(self.client.post('/v1/providers/gmail/disconnect',json={'expected_id':first['id']}).status_code,200)
+                    elif action=='revocation':
+                        def revoked(*args):raise ReadError('Synthetic authorization revoked',401)
+                        with TestClient(create_app(self.engine,provider_transport=revoked),base_url='http://127.0.0.1:18123',client=('127.0.0.1',50000)) as denied:
+                            response=denied.post('/v1/providers/gmail/refresh',headers={'Authorization':'Bearer '+self.token},json={'token':TOKEN,'selection':config('gmail'),'expected_id':first['id']})
+                            self.assertEqual(response.status_code,401)
+                    else:self.assertEqual(self.client.delete('/v1/integrations/gmail',params={'expected_id':first['id']}).status_code,200)
+                finally:release.set();worker.join(timeout=8)
+                self.assertFalse(worker.is_alive());self.assertEqual(results[0].status_code,409)
+                current=self.client.get('/v1/integrations').json()['items']
+                if action=='remove':self.assertEqual(current,[])
+                else:
+                    self.assertFalse(current[0]['details']['active']);self.assertEqual(current[0]['items'],first['items']);self.assertEqual(datetime.fromisoformat(current[0]['fetched_at']),datetime.fromisoformat(first['fetched_at']))
+
+    def test_all_provider_cache_isolation_and_changed_account_review(self):
+        originals={}
+        for provider in ('gmail','google_calendar','google_tasks','google_chat','slack','smartsheet','outlook_calendar'):
+            response=self.refresh(provider);self.assertEqual(response.status_code,200,response.text);originals[provider]=response.json()['snapshot']
+        cache=self.client.get('/v1/cache');self.assertEqual(cache.status_code,200)
+        self.assertNotIn(TOKEN,cache.text);self.assertNotIn('Authorization',cache.text)
+        self.assertEqual(len(self.client.get('/v1/integrations').json()['items']),7)
+        before=len(self.fixture.calls)
+        denied=self.client.post('/v1/providers/gmail/refresh',headers={'Authorization':'Bearer '+self.other_token},json={'token':TOKEN,'selection':config('gmail'),'expected_id':originals['gmail']['id']})
+        self.assertEqual(denied.status_code,409);self.assertEqual(len(self.fixture.calls),before)
+        review=self.client.post('/v1/providers/gmail/refresh',json={'token':TOKEN,'selection':{**config('gmail'),'reviewed_account':'0'*64},'expected_id':originals['gmail']['id']})
+        self.assertTrue(review.json()['review_required']);self.assertEqual(len(self.fixture.calls),before+1)
+        saved=next(r for r in self.client.get('/v1/integrations').json()['items'] if r['kind']=='gmail')
+        self.assertEqual(saved['id'],originals['gmail']['id']);self.assertEqual(saved['items'],originals['gmail']['items'])
+
+    def test_late_taskdock_bridge_refresh_cannot_undo_grant_denial(self):
+        import threading
+        from juno.taskdock import TaskDockError
+        entered=threading.Event();release=threading.Event();results=[]
+        catalog={'info':{'workspace_id':'synthetic-workspace','device_id':'synthetic-installation'},'sources':[],'grants':['notes']}
+        class Bridge:
+            def __init__(self,base_url,token):self.base_url=base_url;self.token=token
+            def catalog(self):
+                if self.token=='synthetic-revoked':raise TaskDockError('Synthetic TaskDock sharing revoked',403)
+                return catalog
+            def evidence(self,kinds):
+                if self.token=='synthetic-delayed':
+                    entered.set()
+                    if not release.wait(5):raise TaskDockError('Synthetic bridge wait expired')
+                return {'catalog':catalog,'snapshot':'synthetic-hash','items':[{'id':'note:synthetic','kind':'note','record_id':'synthetic','title':'Synthetic note','body':'Synthetic retained note'}]}
+        app=create_app(self.engine,taskdock_factory=Bridge)
+        with TestClient(app) as client:
+            client.headers['Authorization']='Bearer '+self.token
+            body={'base_url':'http://127.0.0.1:18124','token':'synthetic-initial','kinds':['notes'],'reviewed_workspace_id':'synthetic-workspace','reviewed_device_id':'synthetic-installation'}
+            first=client.post('/v1/taskdock/evidence',json=body).json()['snapshot'];body['expected_id']=first['id']
+            def work():
+                with TestClient(app) as other:
+                    other.headers['Authorization']='Bearer '+self.second_token
+                    results.append(other.post('/v1/taskdock/evidence',json={**body,'token':'synthetic-delayed'}))
+            worker=threading.Thread(target=work);worker.start()
+            try:
+                self.assertTrue(entered.wait(3))
+                self.assertEqual(client.post('/v1/taskdock/evidence',json={**body,'token':'synthetic-revoked'}).status_code,403)
+            finally:release.set();worker.join(timeout=8)
+            self.assertFalse(worker.is_alive());self.assertEqual(results[0].status_code,409)
+            saved=client.get('/v1/integrations').json()['items'][0]
+            self.assertFalse(saved['details']['active']);self.assertEqual(saved['items'],first['items']);self.assertNotEqual(saved['id'],first['id'])
 
 for name in list(vars(memory_tests.MemoryTests)):
     if name.startswith('test_') and name not in ProviderAPITests.__dict__:setattr(ProviderAPITests,name,None)

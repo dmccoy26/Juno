@@ -58,7 +58,8 @@ def install(app,db,device,lock_owner,reader_factory=TaskDockReader):
             if row and row.id==value.expected_id:
                 from .companion import invalidate_context
                 invalidate_context(session,actor.owner_id,'integration:taskdock_saved');row.error=message[:500]
-                if status in (401,403):row.details={**row.details,'active':False}
+                if status in (401,403):
+                    row.id=str(uuid4());row.details={**row.details,'active':False}
                 session.commit()
             raise HTTPException(status,message) from None
         lock_owner(session,actor.owner_id);row=owned(session,actor.owner_id);check(row,value.expected_id)

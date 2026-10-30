@@ -56,7 +56,9 @@ def install(app,db,device,lock_owner,transport=None,oauth_manager=None):
             from .companion import invalidate_context
             invalidate_context(session,actor.owner_id,'integration:'+kind)
             row.error=str(error)[:500]
-            if error.status in (401,403,404):row.details={**row.details,'active':False,'connection_notice':'Authorization/resource needs review; historical evidence is retained but excluded from new model context.'}
+            if error.status in (401,403,404):
+                row.id=str(uuid4())  # Fence reads that began before authorization was denied.
+                row.details={**row.details,'active':False,'connection_notice':'Authorization/resource needs review; historical evidence is retained but excluded from new model context.'}
             session.commit()
 
     @router.get('/catalog')
@@ -99,6 +101,7 @@ def install(app,db,device,lock_owner,transport=None,oauth_manager=None):
         if row:
             from .companion import invalidate_context
             invalidate_context(session,actor.owner_id,'integration:'+provider)
+            row.id=str(uuid4())  # An older in-flight refresh must not undo an explicit disconnect.
             row.details={**row.details,'active':False,'connection_notice':'Disconnected on the work Mac; this historical copy is excluded from new model context.'}
             row.error='Disconnected. This dated copy is retained until you remove it.';session.commit()
         return {'disconnected':True,'notice':'Forget the credential in native Juno Keychain setup. No upstream authorization or data was changed.'}
