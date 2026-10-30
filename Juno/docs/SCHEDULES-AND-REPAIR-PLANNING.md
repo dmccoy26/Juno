@@ -51,3 +51,5 @@ Using the midpoint updates only your draft. Apply/save it explicitly before rese
 In **Schedules**, choose **By person** for a person's work hours and local holds, or **By room** for building access, occupied classes and holds. Pick the person/room and browse weeks with Previous week, This week, Next week or the date control. Daily exceptions replace that day's rules of the same kind. Candidate/unsettled profiles remain visibly unconfirmed. Empty days mean no saved facts, not permission to work. Scroll horizontally to see all seven days on smaller windows.
 
 Use **List & edit** to change the underlying records, and **Plan** to check possible repair windows against task requirements and constraints. The overview does not turn funding into agreed shifts or classify blank periods as free time.
+
+Choose **Room + person** to compare a selected room and person side by side for the same date. Room access/classes appear on the left and work hours/holds on the right. Use the shared date picker or Previous day / Today / Next day to move both panels together. This comparison shows saved facts; use Plan for a checked repair window.

@@ -46,6 +46,7 @@ struct SchedulesWorkspace: View {
     @State private var rule = RecurringSchedule(); @State private var person = StaffSchedule(); @State private var exception = DailyScheduleException()
     @State private var ruleEditor = false; @State private var personEditor = false; @State private var exceptionEditor = false
     @State private var scheduleView = "Week by person"
+    @State private var comparisonDate = Date()
     @State private var editingPersonName: String?
     @State private var limitHours = "20"; @State private var desiredHours = ""
     private let weekdays = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
@@ -79,10 +80,26 @@ struct SchedulesWorkspace: View {
                     Picker("Schedule view", selection:$scheduleView) {
                         Text("By person").tag("Week by person")
                         Text("By room").tag("Week by room")
+                        Text("Room + person").tag("Compare")
                         Text("List & edit").tag("List & edit")
                     }.pickerStyle(.segmented).frame(maxWidth:600)
                     if scheduleView != "List & edit" {
-                        ScheduleWeekView(record:record, byRoom:scheduleView == "Week by room")
+                        if scheduleView == "Compare" {
+                            HStack {
+                                DatePicker("Compare date",selection:$comparisonDate,displayedComponents:.date)
+                                    .environment(\.timeZone,TimeZone(identifier:"America/Chicago")!)
+                                Button("Previous day") { moveComparisonDay(-1) }
+                                Button("Today") { comparisonDate = Date() }
+                                Button("Next day") { moveComparisonDay(1) }
+                            }
+                            HStack(alignment:.top,spacing:20) {
+                                ScheduleWeekView(record:record,byRoom:true,comparisonDate:comparisonDate).frame(maxWidth:.infinity)
+                                Divider()
+                                ScheduleWeekView(record:record,byRoom:false,comparisonDate:comparisonDate).frame(maxWidth:.infinity)
+                            }
+                        } else {
+                            ScheduleWeekView(record:record, byRoom:scheduleView == "Week by room")
+                        }
                         Button("Edit schedules and people") { scheduleView = "List & edit" }
                     } else {
                     GroupBox("People and weekly limits") {
@@ -128,6 +145,11 @@ struct SchedulesWorkspace: View {
         .sheet(isPresented:$ruleEditor) { ruleForm }
         .sheet(isPresented:$personEditor) { personForm }
         .sheet(isPresented:$exceptionEditor) { exceptionForm }
+    }
+    private func moveComparisonDay(_ amount: Int) {
+        var calendar = Calendar(identifier:.gregorian)
+        calendar.timeZone = TimeZone(identifier:"America/Chicago")!
+        comparisonDate = calendar.date(byAdding:.day,value:amount,to:comparisonDate)!
     }
     private var ruleForm: some View {
         VStack(alignment:.leading,spacing:12) {
@@ -230,6 +252,7 @@ struct ScheduleWeekItem: Identifiable {
 struct ScheduleWeekView: View {
     let record: ScheduleRecord
     let byRoom: Bool
+    var comparisonDate: Date? = nil
     @State private var selected = ""
     @State private var anchor = Date()
     private var calendar: Calendar {
@@ -244,6 +267,7 @@ struct ScheduleWeekView: View {
         let monday = calendar.date(byAdding:.day,value:-offset,to:start)!
         return (0..<7).map { calendar.date(byAdding:.day,value:$0,to:monday)! }
     }
+    private var displayedDates: [Date] { comparisonDate.map { [calendar.startOfDay(for:$0)] } ?? week }
     private func format(_ date: Date, _ pattern: String) -> String {
         let f = DateFormatter(); f.calendar = calendar; f.timeZone = calendar.timeZone
         f.locale = Locale(identifier:"en_US"); f.dateFormat = pattern
@@ -295,12 +319,18 @@ struct ScheduleWeekView: View {
                     ForEach(choices,id:\.self) { Text($0).tag($0) }
                 }.frame(maxWidth:320)
                 Spacer()
+                if comparisonDate == nil {
                 Button("Previous week") { anchor = calendar.date(byAdding:.day,value:-7,to:anchor)! }
                 Button("This week") { anchor = Date() }
                 Button("Next week") { anchor = calendar.date(byAdding:.day,value:7,to:anchor)! }
+                }
             }
+            if comparisonDate == nil {
             DatePicker("Week containing",selection:$anchor,displayedComponents:.date).environment(\.timeZone,calendar.timeZone)
             Text(format(week[0],"MMM d") + " – " + format(week[6],"MMM d, yyyy") + " • America/Chicago").font(.headline)
+            } else {
+                Text(format(comparisonDate!,"EEEE MMM d, yyyy") + " • America/Chicago").font(.headline)
+            }
             if !byRoom, let p = record.people.first(where: { $0.name == selection }) {
                 Text(p.name + " • " + p.status + " • funded limit " + String(p.weekly_limit_minutes / 60) + "h/week").font(.headline)
                 if !p.notes.isEmpty { Text(p.notes).foregroundStyle(.secondary) }
@@ -309,7 +339,7 @@ struct ScheduleWeekView: View {
             Text(byRoom ? "Blue: building access • Orange: classes (unavailable) • Purple: local holds • Red: daily exceptions" : "Blue: work hours • Purple: local holds • Red: daily exceptions").font(.caption)
             ScrollView(.horizontal) {
                 HStack(alignment:.top,spacing:8) {
-                    ForEach(week,id:\.self) { date in
+                    ForEach(displayedDates,id:\.self) { date in
                         VStack(alignment:.leading,spacing:8) {
                             Text(format(date,"EEE MMM d")).font(.headline)
                             let entries = items(date)
@@ -324,7 +354,7 @@ struct ScheduleWeekView: View {
                                     .accessibilityElement(children:.combine)
                             }
                             Spacer(minLength:0)
-                        }.padding(10).frame(width:170,alignment:.topLeading).frame(minHeight:230,alignment:.topLeading)
+                        }.padding(10).frame(width:comparisonDate == nil ? 170 : nil,alignment:.topLeading).frame(maxWidth:comparisonDate == nil ? nil : .infinity).frame(minHeight:230,alignment:.topLeading)
                             .background(Color.secondary.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius:8))
                     }
                 }.padding(.bottom,4)
