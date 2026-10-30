@@ -199,7 +199,39 @@ class PlanningTests(memory_tests.MemoryTests):
         self.client.post(path,json={'text':'What next?','request_id':str(uuid.uuid4())})
         self.assertNotIn('FICTIONAL OLD RESUMPTION',str(FakeModel.calls[-1]))
 
+    def test_request_overview_preserves_none_unknown_and_source_without_writes(self):
+        with self.factory() as s:
+            snapshot=s.scalar(select(TaskDockSnapshot).where(TaskDockSnapshot.owner_id==self.actor.owner_id))
+            tasks=list(snapshot.items)
+            tasks[0]={**tasks[0],'due_date':'2030-01-10','planning_details':{
+                'room':{'state':'provided','value':'ARTS 121','origin':'reviewed mapping','source_updated_at':'2030-01-06T12:00:00Z'},
+                'impact':{'state':'unknown','value':None},
+                'blockers':{'state':'none','value':None}},
+                'planning_readiness':{'state':'needs_information','missing':['impact'],'staffing_review_required':True}}
+            snapshot.items=tasks;snapshot.info={**snapshot.info,'definitions':{'priorities':[{'value':1,'name':'High'}]}}
+            s.commit()
+        result=self.plan();task=next(t for t in result['tasks'] if t['task_id']=='dean')
+        self.assertEqual(task['priority_label'],'High')
+        self.assertEqual(task['due_date'],'2030-01-10')
+        self.assertEqual(task['room_hint'],'ARTS 121')
+        self.assertEqual(task['request_questions'],[{'key':'impact','label':'Operational impact','question':'What teaching or operations is this issue affecting?'}])
+        self.assertEqual(next(f for f in task['request_fields'] if f['key']=='blockers')['state'],'none')
+        self.assertEqual(next(f for f in task['request_fields'] if f['key']=='room')['source_updated_at'],'2030-01-06T12:00:00Z')
+        self.assertFalse(task['actionable'])
+        self.assertEqual(self.client.get('/v1/planning').json()['revision'],0)
+        with self.factory() as s:
+            snapshot=s.scalar(select(TaskDockSnapshot).where(TaskDockSnapshot.owner_id==self.actor.owner_id))
+            self.assertEqual(snapshot.items,tasks)
+
+    def test_request_overview_does_not_ask_withheld_fields_or_invent_priority(self):
+        from juno.taskdock_planning import request_overview
+        result=request_overview({'id':'x','priority':2,'priority_state':'default_or_unknown'}, {'sharing':{'controlled':True},'definitions':{}},now())
+        self.assertEqual(result['priority_label'],'Unknown')
+        self.assertEqual(result['request_fields'],[])
+        self.assertEqual(result['request_questions'],[])
+        self.assertIn('not shared',result['request_scope_notice'])
+
 
 for name in list(memory_tests.MemoryTests.__dict__):
-    if name.startswith('test_'):
+    if name.startswith("test_"):
         setattr(PlanningTests,name,None)

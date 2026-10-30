@@ -2,6 +2,12 @@
 
 Updated: October 30, 2026.
 
+## Plan request overview — mission 9
+
+Plan issue cards now collect room, impact, TaskDock priority, due date and blockers. Expand Request details & source to review shared facts, their information-quality states and timestamps. Needs details includes missing shared request fields. Discuss this detail opens one focused question in Chat for review and Send; it does not automatically change task/planning records. The existing estimate and staffing guide remains available.
+
+Verification: 121 backend/PostgreSQL tests (zero skips), exact native API decoding of request facts/questions and editor bounds/date checks; optimized native build. Native inspection of a real classroom issue confirmed summary, source description/timestamp, unknown values and the one-question chat draft. No message was sent; the test draft was cleared. Host identity, saved-work counts, pairing and certificate/key were preserved on installation. Final reviewed build installed and connected; the conversational draft was rechecked and cleared, with Juno left on Plan. Laptop installer unchanged. See [mission 9](missions/2026-10-30-09-plan-request-overview.md).
+
 ## TaskDock Beta 3.17 — optional request facts
 
 Juno now supports controlled sharing selections and version checks on task/history reads. Shared structured request facts appear in task details and room issue cards, preserving unknown/explicitly-none/provided states, source timestamps and conflicts. Provided room hints and blockers/dependencies inform planning; estimates, capability, supervision and staffing remain reviewable Juno decisions. Dated bounded comment samples remain labeled samples.

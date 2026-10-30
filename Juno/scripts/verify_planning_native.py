@@ -4,6 +4,8 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT/'backend/src'),str(ROOT/'backend/tests')]
 from test_schedules import ScheduleTests
+from sqlalchemy import select
+from juno.models import TaskDockSnapshot
 
 
 def main():
@@ -11,6 +13,11 @@ def main():
     try:
         case.setUp()
         case.save(tasks=[{'task_id':'dean','minutes':45,'dean':True,'employee':'Alex','capability':'Fictional confirmed training','independent':True}])
+        with case.factory() as session:
+            snapshot=session.scalar(select(TaskDockSnapshot).where(TaskDockSnapshot.owner_id==case.actor.owner_id))
+            items=list(snapshot.items)
+            items[0]={**items[0],'planning_details':{'room':{'state':'provided','value':'ARTS 121','origin':'reviewed'},'impact':{'state':'unknown','value':None},'blockers':{'state':'none','value':None}}}
+            snapshot.items=items;session.commit()
         state=case.client.get('/v1/planning').json();plan=case.plan()
         with tempfile.TemporaryDirectory(prefix='juno-planning-native-') as temp:
             folder=Path(temp)
@@ -32,6 +39,12 @@ precondition(plan.staff_loads.first?.employee=="Alex")
 precondition(plan.staff_loads.first?.available_minutes==nil)
 precondition(plan.recommended_task_id==nil)
 precondition(plan.tasks.first?.missing.isEmpty==false)
+let request=plan.tasks.first { $0.task_id == "dean" }!
+precondition(request.requestField("room")?.display == "ARTS 121")
+precondition(request.requestField("blockers")?.display == "Explicitly none")
+precondition(request.request_questions?.first?.key == "impact")
+precondition(request.request_questions?.count == 1)
+precondition(request.taskdock_saved_at != nil)
 let schedule=try decoder.decode(ScheduleRecord.self,from:Data(contentsOf:root.appendingPathComponent("schedules.json")))
 let windows=try decoder.decode(AvailabilityRecord.self,from:Data(contentsOf:root.appendingPathComponent("availability.json")))
 precondition(schedule.people.first?.status=="active")

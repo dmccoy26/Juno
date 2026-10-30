@@ -189,7 +189,7 @@ def build_plan(session, owner, day):
             missing.append('Confirm the task room before planning employee work.')
         if employee and not f.get('supervision'):
             if not f.get('independent') or not f.get('capability'): missing.append('Confirm '+employee+' can do this independently, with supporting experience.')
-        from .taskdock_planning import blockers,provided
+        from .taskdock_planning import blockers,provided,fact,request_overview
         from .schedules import room_hint
         blocker = f.get('blocker') or blockers(task)
         if str(task.get('behavior', '')).lower() == 'waiting' and not blocker:
@@ -207,13 +207,13 @@ def build_plan(session, owner, day):
         priority = task.get('priority')
         priority = priority if isinstance(priority, (int,float)) and not isinstance(priority,bool) else 9999
         rank = (0 if f.get('dean') else 1 if f.get('operational') else 2, 0 if overdue else 1, due or '9999', priority, identity)
-        rows.append({'task_id':identity,'title':str(task.get('title') or 'Untitled task'),
+        rows.append({**request_overview(task,snapshot.info,snapshot.fetched_at),'task_id':identity,'title':str(task.get('title') or 'Untitled task'),
                      'estimate_minutes':suggested,'estimate_confirmed':estimate is not None,
                      'estimate_reason':'Your saved estimate.' if estimate else 'Broad starter estimate, not calibrated; confirm scope before scheduling.',
                      'actual_minutes':f.get('actual_minutes'),'dean':f.get('dean',False),'operational':f.get('operational',False),
                      'blocker':str(blocker),'waiting_on':f.get('waiting_on',''),'next_action':f.get('next_action',''),
                      'next_check':f.get('next_check'),'resume':f.get('resume',''),'employee':employee,'room':room,
-                     'room_hint':room_hint(provided(task,'room')) or provided(task,'room') or room_hint(str(task.get('title',''))),
+                     'room_hint':None if fact(task,'room').get('state')=='none' else room_hint(provided(task,'room')) or provided(task,'room') or room_hint(str(task.get('title',''))),
                      'missing':missing,'actionable':not missing,'slot_start':slot[0].isoformat() if slot and not missing else None,
                      'reason':'Dean request' if f.get('dean') else 'Teaching/operations need' if f.get('operational') else 'Due date and recorded TaskDock priority; impact needs your review.', '_rank':rank})
     rows.sort(key=lambda r:r['_rank'])

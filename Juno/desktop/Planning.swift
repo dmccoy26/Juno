@@ -14,11 +14,29 @@ struct PlanningFacts: Codable {
 struct PlanningRecord: Codable {
     var revision: Int; var workspace_id: String?; var reserve_minutes: Int; var priority_choice: String; var priority_choice_date: String?; var windows: [PlanningWindow]; var tasks: [PlanningFacts]
 }
+struct PlanningRequestField: Decodable, Identifiable {
+    var key: String; var label: String; var state: String; var value: String?
+    var origin: String?; var updated_at: String?; var source_updated_at: String?; var review_conflict: Bool?; var taskdock_flag: String?
+    var id: String { key }
+    var display: String { state == "none" ? "Explicitly none" : state == "provided" ? value ?? "Unknown" : "Not supplied / unknown" }
+}
+struct PlanningRequestQuestion: Decodable, Identifiable {
+    var key: String; var label: String; var question: String
+    var id: String { key }
+}
 struct PlanningTask: Decodable, Identifiable {
     var task_id: String; var title: String; var estimate_minutes: Int; var estimate_confirmed: Bool
     var estimate_reason: String; var missing: [String]; var actionable: Bool; var reason: String
     var blocker: String; var next_action: String; var next_check: String?; var resume: String; var employee: String
     var room: String; var room_hint: String?
+    var request_fields: [PlanningRequestField]?; var request_questions: [PlanningRequestQuestion]?
+    var due_date: String?; var priority_label: String?; var taskdock_saved_at: String?; var request_scope_notice: String?
+    func requestField(_ key: String) -> PlanningRequestField? { request_fields?.first { $0.key == key } }
+    var roomSummary: String {
+        if !room.isEmpty { return room + " (confirmed in Juno)" }
+        if let field = requestField("room") { return field.display }
+        return room_hint.map { $0 + " (title suggestion; unconfirmed)" } ?? "Unknown"
+    }
     var id: String { task_id }
 }
 struct StaffPlanningLoad: Decodable, Identifiable {
@@ -172,13 +190,17 @@ struct PlanningWorkspace: View {
                         Picker("Show",selection:$taskFilter) { Text("All issues").tag("All issues");Text("Needs details").tag("Needs details");Text("Blocked").tag("Blocked");Text("Ready to review").tag("Ready to review") }.frame(width:210)
                     }
                     Button("Refresh tasks in TaskDock connection") { store.section = "TaskDock" }
-                    ForEach(plan.tasks.filter { (taskSearch.isEmpty || $0.title.localizedCaseInsensitiveContains(taskSearch)) && (taskFilter == "All issues" || taskFilter == "Needs details" && !$0.missing.isEmpty || taskFilter == "Blocked" && !$0.blocker.isEmpty || taskFilter == "Ready to review" && $0.actionable) }) { task in
+                    ForEach(plan.tasks.filter { (taskSearch.isEmpty || $0.title.localizedCaseInsensitiveContains(taskSearch)) && (taskFilter == "All issues" || taskFilter == "Needs details" && (!$0.missing.isEmpty || !($0.request_questions ?? []).isEmpty) || taskFilter == "Blocked" && !$0.blocker.isEmpty || taskFilter == "Ready to review" && $0.actionable) }) { task in
                         GroupBox {
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack { Text(task.title).font(.headline); if plan.recommended_task_id == task.id { Text("Suggested next").foregroundStyle(.green) }; Spacer(); Button("Discuss estimate") {
                                     store.chatDraft = "Help me estimate this task from the saved evidence: “" + task.title + "”. Give a range and explain the uncertainty. Ask one scope question if needed. Do not change my confirmed estimate; I will review and enter it in Plan."
                                     store.section = "Chat"
                                 }; Button("Clarify with Juno") { choose(task,guidedMode:true) }; Button("Planning details") { choose(task) } }
+                                PlanningRequestOverview(task:task) { question in
+                                    store.chatDraft = "Help me clarify “" + task.title + "”. Start with this question: “" + question.question + "” Ask me one question at a time."
+                                    store.section = "Chat"
+                                }
                                 Text("\(task.estimate_minutes) min • \(task.reason)")
                                 Text(task.estimate_reason).font(.caption).foregroundStyle(.secondary)
                                 if !task.missing.isEmpty { DisclosureGroup("\(task.missing.count) details to confirm") { ForEach(task.missing,id:\.self) { Text($0).font(.caption).foregroundStyle(.orange) } } }
@@ -252,7 +274,7 @@ struct PlanningWorkspace: View {
             case 1:
                 Text("Which room needs the work?").font(.title3.bold())
                 TextField("Room — leave blank if not room-related or unknown",text:$facts.room).textFieldStyle(.roundedBorder)
-                if let hint = plan?.tasks.first(where: { $0.id == selected })?.room_hint { Button("Use title suggestion: " + hint) { facts.room = hint };Text("Confirm that the title suggestion is the right room.").font(.caption) }
+                if let hint = plan?.tasks.first(where: { $0.id == selected })?.room_hint { Button("Use suggested room: " + hint) { facts.room = hint };Text("Confirm that the suggested room is correct before applying it.").font(.caption) }
             case 2:
                 Text("Who might handle this task?").font(.title3.bold())
                 TextField("Possible employee — leave blank if not confirmed",text:$facts.employee).textFieldStyle(.roundedBorder)
@@ -308,7 +330,7 @@ struct PlanningWorkspace: View {
                 Divider()
                 Text("Room & person").font(.headline)
                 TextField("Room needing confirmed access", text: $facts.room)
-                if let hint = plan?.tasks.first(where: { $0.id == selected })?.room_hint { Button("Use room suggested by task title: " + hint) { facts.room = hint } }
+                if let hint = plan?.tasks.first(where: { $0.id == selected })?.room_hint { Button("Use suggested room: " + hint) { facts.room = hint } }
                 TextField("Possible employee", text: $facts.employee)
                 TextField("Confirmed relevant experience / capability", text: $facts.capability)
                 Toggle("I confirm this employee can do this independently", isOn: $facts.independent)
@@ -325,4 +347,55 @@ struct PlanningWorkspace: View {
             }.padding(6)
         }
     }
+}
+
+
+struct PlanningRequestOverview: View {
+    let task: PlanningTask
+    let clarify: (PlanningRequestQuestion) -> Void
+    private func due(_ raw: String?) -> String {
+        guard let raw, !raw.isEmpty else { return "Unknown / not supplied" }
+        let day = String(raw.prefix(10));let parser = DateFormatter();parser.locale = Locale(identifier:"en_US_POSIX");parser.timeZone = TimeZone(identifier:"America/Chicago");parser.dateFormat = "yyyy-MM-dd";parser.isLenient = false
+        guard let date = parser.date(from:day),parser.string(from:date) == day else { return raw }
+        parser.dateFormat = "EEE, MMM d, yyyy";return parser.string(from:date)
+    }
+    var body: some View {
+        VStack(alignment:.leading,spacing:8) {
+            ViewThatFits(in:.horizontal) {
+                HStack(alignment:.top,spacing:28) { location;priority }.frame(maxWidth:.infinity,alignment:.leading)
+                VStack(alignment:.leading,spacing:8) { location;priority }
+            }
+            Text("Impact: " + (task.requestField("impact")?.display ?? "Unknown / not shared"))
+            Text("Blockers: " + (task.blocker.isEmpty ? task.requestField("blockers")?.display ?? "None recorded; not confirmed clear" : task.blocker)).foregroundStyle(task.blocker.isEmpty ? Color.secondary : Color.orange)
+            if let question = task.request_questions?.first {
+                HStack(alignment:.top) {
+                    VStack(alignment:.leading,spacing:3) {
+                        Text("Next detail to clarify").font(.caption.bold()).foregroundStyle(.secondary)
+                        Text(question.question)
+                    }
+                    Spacer()
+                    Button("Discuss this detail") { clarify(question) }
+                }.padding(10).background(Color.purple.opacity(0.08),in:RoundedRectangle(cornerRadius:8))
+                Text("Opens a chat draft. Answers stay in chat; update TaskDock or save confirmed planning details to reuse them.").font(.caption).foregroundStyle(.secondary)
+            }
+            DisclosureGroup("Request details & source") {
+                VStack(alignment:.leading,spacing:10) {
+                    if let notice = task.request_scope_notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
+                    if let stamp = task.taskdock_saved_at { Text("TaskDock copy saved: " + scheduleDate(stamp)).font(.caption).foregroundStyle(.secondary) }
+                    ForEach(task.request_fields ?? []) { field in
+                        VStack(alignment:.leading,spacing:2) {
+                            Text(field.label + ": " + field.display)
+                            if let source = field.origin { Text("Source: " + source).font(.caption).foregroundStyle(.secondary) }
+                            if let stamp = field.source_updated_at ?? field.updated_at { Text("Observed: " + scheduleDate(stamp)).font(.caption).foregroundStyle(.secondary) }
+                            if field.review_conflict == true { Text("Conflicts with TaskDock’s blocked flag; review before planning.").font(.caption).foregroundStyle(.orange) }
+                            if let flag = field.taskdock_flag { Text("TaskDock flag: " + flag).font(.caption).foregroundStyle(.orange) }
+                        }
+                    }
+                    Text("These are request facts. Duration, capability, supervision and room access still need review.").font(.caption).foregroundStyle(.secondary)
+                }.padding(.top,6).frame(maxWidth:.infinity,alignment:.leading)
+            }
+        }.textSelection(.enabled)
+    }
+    private var location: some View { Text("Room: " + task.roomSummary).frame(maxWidth:.infinity,alignment:.leading) }
+    private var priority: some View { VStack(alignment:.leading,spacing:4) { Text("Priority: " + (task.priority_label ?? "Unknown"));Text("Due: " + due(task.due_date)) }.frame(maxWidth:.infinity,alignment:.leading) }
 }

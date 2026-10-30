@@ -70,3 +70,38 @@ def validate_task(task,info):
             raise ValueError('Invalid TaskDock comment sample or sharing scope.')
         if any(not isinstance(row,dict) or not isinstance(row.get('body',''),str) or len(row.get('body',''))>5000 for row in sample['items']):raise ValueError('Invalid TaskDock comment sample.')
     return result
+
+QUESTIONS = {
+    'issue_description':'What exactly is going wrong?',
+    'requested_outcome':'What would a successful fix look like?',
+    'impact':'What teaching or operations is this issue affecting?',
+    'blockers':'Is anything preventing the work from starting, such as parts, approval or research?',
+    'room':'Which room needs the work, or is this not room-related?',
+    'equipment':'Which equipment is affected, or is equipment not involved?',
+    'dependencies':'Does another task or person need to finish something first?',
+    'troubleshooting':'What troubleshooting has already been tried?',
+    'building':'Which building is involved, or is this not building-related?',
+    'reported_priority':'What priority did the requester report?',
+    'requester':'Who requested this work?',
+    'contact':'Who should we contact for access or more information?',
+}
+
+def request_overview(task,info,fetched_at):
+    """Read-only display/clarification facts; never manufactures staffing readiness."""
+    details=task.get('planning_details',{})
+    fields=[{'key':key,'label':FIELDS[key],**details[key]} for key in FIELDS if key in details]
+    required=task.get('planning_readiness',{}).get('missing',[])
+    order=list(dict.fromkeys([*required,*QUESTIONS]))
+    questions=[{'key':key,'label':FIELDS[key],'question':QUESTIONS[key]} for key in order
+               if key in QUESTIONS and fact(task,key).get('state')=='unknown']
+    priority=task.get('priority')
+    priority_label='Unknown'
+    if priority is not None and task.get('priority_state')!='default_or_unknown':
+        priority_label=next((str(row['name']) for row in info.get('definitions',{}).get('priorities',[])
+                             if isinstance(row,dict) and row.get('value',row.get('id'))==priority and row.get('name')),str(priority))
+    limited=bool(info.get('sharing',{}).get('controlled') and task.get('planning_readiness',{}).get('state')=='limited_sharing')
+    return {'request_fields':fields,'request_questions':questions,'due_date':task.get('due_date'),
+            'priority_label':priority_label,'taskdock_saved_at':fetched_at.isoformat(),
+            'request_scope_notice':('Some request details are withheld by the sharing selection.' if limited else
+                'Shared request facts only. Missing details remain unknown.' if fields else
+                'Structured request facts are not shared in this saved copy. Enable fields in TaskDock, then refresh.')}
