@@ -35,6 +35,9 @@ final class JunoStore: ObservableObject {
     }
     @Published var section = "Today"
     @Published var planningTaskID: String?
+    @Published var memoryReviewText: String?
+    @Published var memoryReviewOriginal: String?
+    @Published var memoryNotice: String?
     @Published var conversations: [ConversationRecord] = []
     @Published var conversationMore = false
     @Published var currentConversation: String?
@@ -219,7 +222,8 @@ final class JunoStore: ObservableObject {
         if let api = error as? APIProblem { problem = api.message }
         else { problem = "Could not reach Juno’s service. Try refreshing. Unsaved edits have been kept."; connected = false; status = "Disconnected" }
     }
-    func save(original: Memory?, text: String, source: String, confidence: String) async throws {
+    @discardableResult
+    func save(original: Memory?, text: String, source: String, confidence: String) async throws -> Memory {
         var body: [String: Any] = ["text": text, "source": source, "confidence": confidence]
         if let original { body["expected_revision"] = original.revision }
         let data = try await request(original.map { "/v1/memories/" + $0.id } ?? "/v1/memories", method: original == nil ? "POST" : "PUT", body: body)
@@ -228,6 +232,7 @@ final class JunoStore: ObservableObject {
         do { try await load() } catch { problem = "Your memory was saved, but the list could not refresh. Try Refresh." }
         messages.removeAll { $0.role == "assistant" }
         if let id = currentConversation { try? await loadMessages(id) }
+        return saved
     }
     func delete(_ row: Memory) async throws {
         _ = try await request("/v1/memories/\(row.id)?expected_revision=\(row.revision)", method: "DELETE")
@@ -243,14 +248,15 @@ struct Editor: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject var store: JunoStore
     let original: Memory?
+    var onSaved: ((Memory) -> Void)?
     @State var text: String
     @State var source: String
     @State var confidence: String
     @State private var saving = false
     @State private var issue: String?
-    init(store: JunoStore, original: Memory?) {
-        self.store = store; self.original = original
-        _text = State(initialValue: original?.text ?? "")
+    init(store: JunoStore, original: Memory?, initialText: String = "", onSaved: ((Memory) -> Void)? = nil) {
+        self.store = store; self.original = original;self.onSaved = onSaved
+        _text = State(initialValue: original?.text ?? initialText)
         _source = State(initialValue: original?.source ?? "Manual entry")
         _confidence = State(initialValue: original?.confidence ?? "confirmed")
     }
@@ -272,7 +278,7 @@ struct Editor: View {
                 Button(saving ? "Saving…" : "Save memory") {
                     saving = true
                     Task {
-                        do { try await store.save(original: original, text: text, source: source, confidence: confidence); dismiss() }
+                        do { let saved = try await store.save(original: original, text: text, source: source, confidence: confidence);onSaved?(saved); dismiss() }
                         catch { issue = (error as? APIProblem)?.message ?? "Could not save. Your draft is still here."; saving = false }
                     }
                 }.keyboardShortcut(.defaultAction).disabled(saving || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || text.count > 10000 || source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || source.count > 500)

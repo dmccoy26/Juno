@@ -15,6 +15,12 @@ struct CheckInRecord: Decodable {
     let status: String; let revision: Int; let questions: [CheckQuestion]; let next_key: String?; let source_notice: String
 }
 
+func memoryRequestText(_ text: String) -> String? {
+    let pattern = #"^\s*(?:please\s+)?(?:(?:can|could|will)\s+you\s+)?(?:please\s+)?remember\s+(?:that\b|this\b)[:?,\s]*(.*)$"#
+    guard let regex = try? NSRegularExpression(pattern:pattern,options:[.caseInsensitive,.dotMatchesLineSeparators]),let match = regex.firstMatch(in:text,range:NSRange(text.startIndex...,in:text)),let range = Range(match.range(at:1),in:text) else { return nil }
+    return String(text[range]).trimmingCharacters(in:.whitespacesAndNewlines)
+}
+
 extension JunoStore {
     func decode<T: Decodable>(_ type: T.Type, _ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> T {
         let data = try await request(path, method: method, body: body)
@@ -55,6 +61,7 @@ extension JunoStore {
         guard !chatSending else { return }
         let text = retry.flatMap { failed in messages.first { $0.request_id == failed.request_id && $0.role == "user" }?.text } ?? chatDraft
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if retry == nil, let draft = memoryRequestText(text) { memoryReviewOriginal = text;memoryReviewText = draft;memoryNotice = nil;return }
         chatSending = true; chatIssue = nil
         let mode = meeting
         Task {
@@ -247,6 +254,7 @@ struct ChatWorkspace: View {
                                     else if message.status == "invalidated" { Text(message.text).italic().foregroundStyle(.secondary) }
                                     else if store.meeting && message.role == "assistant" && !message.meeting_mode { Text("Private-mode reply hidden during Meeting mode.").italic().foregroundStyle(.secondary) }
                                     else { Text(message.text).textSelection(.enabled) }
+                                    if message.role == "user" && message.status == "complete" { Button("Save as memory…") { store.memoryReviewOriginal = nil;store.memoryReviewText = memoryRequestText(message.text) ?? message.text;store.memoryNotice = nil }.font(.caption).disabled(!store.connected) }
                                     if message.status == "failed" { Button("Retry this reply") { store.sendChat(retry: message) }.disabled(store.chatSending) }
                                 }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(message.role == "user" ? Color.purple.opacity(0.08) : Color.secondary.opacity(0.04)).clipShape(RoundedRectangle(cornerRadius: 10)).id(message.id)
                             }
@@ -254,14 +262,24 @@ struct ChatWorkspace: View {
                         }.padding(.vertical, 4)
                     }.onAppear { if let last = store.messages.last { reader.scrollTo(last.id,anchor:.bottom) } }.onChange(of: store.messages.count) { _ in if let last = store.messages.last { reader.scrollTo(last.id, anchor: .bottom) } }
                 }
+                if let notice = store.memoryNotice { HStack { Text(notice).font(.caption);Button("Review memory") { store.section = "Memories" };Button("Dismiss") { store.memoryNotice = nil } } }
                 if let issue = store.chatIssue { Text(issue).foregroundStyle(.orange).textSelection(.enabled) }
                 HStack {
                     TextEditor(text: $store.chatDraft).frame(height: 75).padding(6).overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary)).accessibilityLabel("Message to Juno")
                         .onChange(of: store.chatDraft) { value in UserDefaults.standard.set(value, forKey: "chatDraft." + (store.currentConversation ?? "new")) }
-                    Button("Send") { store.sendChat() }.keyboardShortcut(.return, modifiers: .command).disabled(!store.connected || store.offline || !store.pendingEdits.isEmpty || !store.modelConfigured || store.chatSending || store.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.chatDraft.count > 6000)
+                    Button(memoryRequestText(store.chatDraft) == nil ? "Send" : "Review memory") { store.sendChat() }.keyboardShortcut(.return, modifiers: .command).disabled(!store.connected || (store.offline && memoryRequestText(store.chatDraft) == nil) || (!store.pendingEdits.isEmpty && memoryRequestText(store.chatDraft) == nil) || (!store.modelConfigured && memoryRequestText(store.chatDraft) == nil) || store.chatSending || store.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.chatDraft.count > 6000)
                 }
                 HStack { Text("⌘ Return to send · \(store.chatDraft.count)/6000").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Refresh chat") { if let id = store.currentConversation { Task { try? await store.loadMessages(id) } } }.disabled(store.chatSending) }
             }.padding(20).frame(minWidth: 480)
+        }
+        .sheet(isPresented:Binding(get:{store.memoryReviewText != nil},set:{if !$0 {store.memoryReviewText = nil;store.memoryReviewOriginal = nil}})) {
+            Editor(store:store,original:nil,initialText:store.memoryReviewText ?? "") { saved in
+                store.memoryNotice = store.offline ? "Memory saved on this laptop and queued for sync." : "Memory saved. You can review, correct or delete it in Memories."
+                if let original = store.memoryReviewOriginal,store.chatDraft == original {
+                    store.chatDraft = "";UserDefaults.standard.removeObject(forKey:"chatDraft." + (store.currentConversation ?? "new"))
+                }
+                store.selected = saved.id;store.memoryReviewOriginal = nil;store.memoryReviewText = nil
+            }
         }
     }
 }

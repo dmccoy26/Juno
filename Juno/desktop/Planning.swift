@@ -67,6 +67,8 @@ struct PlanningWorkspace: View {
     @State private var estimateTask: Task<Void,Never>?
     @State private var estimating = false
     @State private var taskFilter = "All issues"
+    @State private var guided = false
+    @State private var guideStep = 0
     private func dateString(_ date: Date) -> String {
         let f = DateFormatter(); f.timeZone = TimeZone(identifier: "America/Chicago"); f.dateFormat = "yyyy-MM-dd"; return f.string(from: date)
     }
@@ -96,7 +98,8 @@ struct PlanningWorkspace: View {
             issue = "Saved. Recommendations use these confirmed planning facts."
         } catch { issue = (error as? APIProblem)?.message ?? "Could not save planning. Your changes remain here." }
     }
-    private func choose(_ task: PlanningTask) {
+    private func choose(_ task: PlanningTask, guidedMode: Bool = false) {
+        guided = guidedMode;guideStep = 0
         selected = task.id
         editorIssue = nil
         estimateSuggestion = nil
@@ -175,7 +178,7 @@ struct PlanningWorkspace: View {
                                 HStack { Text(task.title).font(.headline); if plan.recommended_task_id == task.id { Text("Suggested next").foregroundStyle(.green) }; Spacer(); Button("Discuss estimate") {
                                     store.chatDraft = "Help me estimate this task from the saved evidence: “" + task.title + "”. Give a range and explain the uncertainty. Ask one scope question if needed. Do not change my confirmed estimate; I will review and enter it in Plan."
                                     store.section = "Chat"
-                                }; Button("Planning details") { choose(task) } }
+                                }; Button("Clarify with Juno") { choose(task,guidedMode:true) }; Button("Planning details") { choose(task) } }
                                 Text("\(task.estimate_minutes) min • \(task.reason)")
                                 Text(task.estimate_reason).font(.caption).foregroundStyle(.secondary)
                                 if !task.missing.isEmpty { DisclosureGroup("\(task.missing.count) details to confirm") { ForEach(task.missing,id:\.self) { Text($0).font(.caption).foregroundStyle(.orange) } } }
@@ -223,18 +226,64 @@ struct PlanningWorkspace: View {
             VStack(alignment:.leading,spacing:0) {
                 HStack { VStack(alignment:.leading) { Text("Task planning details").font(.title2.bold());Text(plan?.tasks.first { $0.id == selected }?.title ?? "Review your task context").foregroundStyle(.secondary).lineLimit(2) };Spacer() }.padding(20)
                 Divider()
-                ScrollView { editor.padding(18) }
+                HStack { Text(guided ? "One question at a time" : "All task details").font(.caption).foregroundStyle(.secondary);Spacer();Button(guided ? "Show all fields" : "Guide me through this") { guided.toggle();guideStep = 0 } }.padding(.horizontal,20).padding(.vertical,8)
+                ScrollView { if guided { guidedEditor.padding(20) } else { editor.padding(18) } }
                 if let editorIssue { Text(editorIssue).foregroundStyle(.orange).padding(.horizontal,20).padding(.vertical,8) }
                 Divider()
                 HStack {
                     Button("Cancel",role:.cancel) { estimateTask?.cancel();estimating = false;selected = nil }.keyboardShortcut(.cancelAction)
                     Spacer()
-                    Button("Apply to draft") { if applyFacts() { estimateTask?.cancel();estimating = false;selected = nil } }.keyboardShortcut(.defaultAction).disabled(store.offline || estimating)
+                    if guided && guideStep > 0 { Button("Back") { guideStep -= 1 } }
+                    if guided && guideStep < 5 { Button("Next") { guideStep += 1 } }
+                    Button("Apply to draft") { if applyFacts() { estimateTask?.cancel();estimating = false;selected = nil } }.keyboardShortcut(.defaultAction).disabled(store.offline || estimating || (guided && guideStep < 5))
                 }.padding(18)
             }.frame(width:700,height:620)
         }
         .onChange(of: day) { _ in if !dirty { Task { await load() } } }
     }
+    private var guidedEditor: some View {
+        VStack(alignment:.leading,spacing:16) {
+            Text(guideStep < 5 ? "Question \(guideStep + 1) of 5" : "Review your answers").font(.caption).foregroundStyle(.secondary)
+            switch guideStep {
+            case 0:
+                Text("How much working time might this take?").font(.title3.bold())
+                TextField("Estimated minutes — leave blank if unknown",text:$estimate).textFieldStyle(.roundedBorder)
+                Text("Use your best reviewed estimate. You can revise it later; blank stays unknown.").foregroundStyle(.secondary)
+            case 1:
+                Text("Which room needs the work?").font(.title3.bold())
+                TextField("Room — leave blank if not room-related or unknown",text:$facts.room).textFieldStyle(.roundedBorder)
+                if let hint = plan?.tasks.first(where: { $0.id == selected })?.room_hint { Button("Use title suggestion: " + hint) { facts.room = hint };Text("Confirm that the title suggestion is the right room.").font(.caption) }
+            case 2:
+                Text("Who might handle this task?").font(.title3.bold())
+                TextField("Possible employee — leave blank if not confirmed",text:$facts.employee).textFieldStyle(.roundedBorder)
+                Text("This records a planning detail; it does not assign or notify anyone.").foregroundStyle(.secondary)
+            case 3:
+                Text("What support would that person need?").font(.title3.bold())
+                TextField("Relevant experience or training",text:$facts.capability).textFieldStyle(.roundedBorder)
+                Toggle("Confirmed able to work independently",isOn:$facts.independent)
+                Toggle("Needs my supervision / collaboration",isOn:Binding(get:{facts.supervision ?? false},set:{facts.supervision = $0}))
+                Text("Leave both unchecked when capability is unknown.").foregroundStyle(.secondary)
+            case 4:
+                Text("What could prevent this from getting done?").font(.title3.bold())
+                TextField("Blocker — parts, approval, research or access",text:$facts.blocker).textFieldStyle(.roundedBorder)
+                TextField("Waiting on whom or what?",text:$facts.waiting_on).textFieldStyle(.roundedBorder)
+                TextField("Next step to unblock it",text:$facts.next_action).textFieldStyle(.roundedBorder)
+                Text("Blank means nothing recorded; it does not confirm that there are no blockers.").foregroundStyle(.secondary)
+            default:
+                Text("Nothing has been saved yet.").font(.headline)
+                Text("Estimate: " + (estimate.isEmpty ? "Unknown" : estimate + " minutes"))
+                Text("Room: " + (facts.room.isEmpty ? "Not confirmed" : facts.room))
+                Text("Person: " + (facts.employee.isEmpty ? "Not confirmed" : facts.employee))
+                Text("Support: " + (facts.supervision == true ? "Supervision needed" : facts.independent ? "Confirmed independent" : "Not confirmed"))
+                if !facts.capability.isEmpty { Text("Experience / training: " + facts.capability) }
+                Text("Blocker: " + (facts.blocker.isEmpty ? "None recorded" : facts.blocker))
+                if !facts.waiting_on.isEmpty { Text("Waiting on: " + facts.waiting_on) }
+                if !facts.next_action.isEmpty { Text("Next action: " + facts.next_action) }
+                Text("Apply adds these answers to your planning draft. Save planning on the main screen to persist them. Cancel leaves the existing draft untouched.").foregroundStyle(.secondary)
+            }
+        }.frame(maxWidth:.infinity,alignment:.leading)
+    }
+
     private var editor: some View {
         GroupBox("Time & priority") {
             VStack(alignment: .leading, spacing: 10) {

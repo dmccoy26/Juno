@@ -55,6 +55,32 @@ class CompanionTests(memory_tests.MemoryTests):
             self.assertEqual(second.get(self.path).status_code,404)
             self.assertEqual(second.post(self.path,json={'text':'Unauthorized','request_id':str(uuid.uuid4())}).status_code,404)
 
+    def test_remember_request_never_claims_or_performs_a_model_save(self):
+        before = self.client.get('/v1/memories').json()['items']
+        request = str(uuid.uuid4())
+        reply = self.turn('Can you remember that the fictional cutter is model TEST-42?', request_id=request)
+        self.assertEqual(reply.status_code, 200, reply.text)
+        self.assertIn('has not been saved', reply.json()['text'])
+        self.assertEqual(reply.json()['model_name'], 'Juno memory review')
+        self.assertEqual(FakeModel.calls, [])
+        self.assertEqual(self.client.get('/v1/memories').json()['items'], before)
+        self.assertEqual(self.turn('Can you remember that the fictional cutter is model TEST-42?', request_id=request).json()['id'], reply.json()['id'])
+        saved = self.client.post('/v1/memories', json={'text':'The fictional cutter is model TEST-42.', 'source':'Reviewed chat', 'confidence':'confirmed'})
+        self.assertEqual(saved.status_code, 201, saved.text)
+        self.assertEqual(self.client.get('/v1/memories/'+saved.json()['id']).json()['text'], 'The fictional cutter is model TEST-42.')
+
+    def test_memory_review_needs_no_model_but_recall_is_normal_chat(self):
+        from juno.models import ModelConnection
+        from juno.companion import memory_request
+        self.assertIsNone(memory_request('Do you remember that fictional cutter?'))
+        self.assertIsNone(memory_request('Remember when we fixed the printer?'))
+        self.assertEqual(memory_request('Please remember this: Fictional note'), 'Fictional note')
+        with self.factory() as session:
+            connection = session.get(ModelConnection, self.actor.owner_id)
+            session.delete(connection);session.commit()
+        self.assertEqual(self.turn('Remember this: Fictional note').status_code, 200)
+        self.assertEqual(self.turn('Do you remember that fictional cutter?').status_code, 503)
+
     def test_failed_turn_can_retry_without_duplicate_user_message(self):
         request=str(uuid.uuid4());FakeModel.failure=True
         self.assertEqual(self.turn(request_id=request).json()['status'],'failed')

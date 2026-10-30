@@ -2,6 +2,16 @@
 
 Updated: October 30, 2026.
 
+## Memory review and guided clarification — mission 7
+
+Supported explicit “remember this/that” requests open a prefilled memory review form in Chat; user messages also have Save as memory. No model reply is used as proof of saving. The app confirms only after the canonical save succeeds, labels offline saves queued for sync, retains the composer draft on Cancel, and leaves save errors in the editor. These requests work without a configured model. The API also intercepts supported memory-write phrases without a model call or implicit memory creation; normal recall questions remain chat. Model instructions prohibit claiming memory writes. Historical model statements are not canonical memory records.
+
+Plan adds **Clarify with Juno**: five draft questions for duration, room, person, support and blockers, then a review step before Apply to draft. Save planning remains explicit. Unknowns stay unknown and Cancel leaves the parent plan draft untouched. This increment does not assign tasks or generate suggested placements.
+
+Verification: 105 PostgreSQL backend tests pass (zero skips); native memory-intent and existing planning validation checks pass; native cache/queue and actual JunoStore offline regressions pass, including intent review without a queued write. The work Mac is updated, and native screenshots/interactions verify memory review, Cancel retaining the composer, five guided questions, the review gate and Cancel leaving Save planning disabled. Real work records were not created or modified during the interaction checks. Final host-preservation check and source distribution are recorded with mission 7. The laptop installer remains the previous release.
+
+See [mission 7](missions/2026-10-30-07-memory-and-guidance.md).
+
 ## Installed usability increment — mission 6
 
 The native source now has a grouped collapsible sidebar and Today landing screen with dated unfinished/due/recorded-blocker counts, issue search/filter, today's local holds, and direct chat/check-in/schedule/memory actions. Daily work is separate from source review and setup. No assignments, external messages, new permissions or model/cloud connections are created.
