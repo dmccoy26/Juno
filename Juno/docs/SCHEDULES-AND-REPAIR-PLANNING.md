@@ -57,3 +57,9 @@ Choose **Room + person** to compare a selected room and person side by side for 
 Schedule times display and edit in 12-hour AM/PM format. New rule/exception date defaults and date selections on view entry start at today; saved semester dates remain unchanged. The comparison uses compact panels close together, with horizontal scrolling on smaller windows.
 
 The third **Possible work times** column recalculates when the selected room, person or date changes, using the same authenticated availability engine as Plan. It shows same-day openings of at least five minutes, excludes past times, classes/closures/holds, and respects confirmed staff status and weekly limits. Staff calculations assume independent work; use Plan for task-specific skills, supervision, blockers and a reviewed reservation. Durations shown describe the opening; a weekly remaining-hours limit may shorten usable work. Unsaved schedule edits or an offline connection require saving/reconnecting before calculation. No hold or assignment is created automatically.
+
+## Room issues in the comparison screen
+
+Below Room + person, **TaskDock issues** lists unfinished tasks for the selected room. Saved planning room links take precedence; otherwise a room alias in the title is labeled as an unconfirmed match. Use **Show all rooms / unlinked issues** and search to find tasks without room information. Priority labels come from TaskDock definitions; expandable details retain the original fields. Recorded planning facts appear only for the same workspace.
+
+Selecting a person does not assign those tasks to them. Unknown estimates, capability or ownership remain unknown. **Open planning details** opens the existing Plan editor. This first step displays information; suggested task placements remain later work.

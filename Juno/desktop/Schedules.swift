@@ -120,6 +120,7 @@ struct SchedulesWorkspace: View {
                                 Divider()
                                 RoomPersonWindows(store:store,day:comparisonDate,room:comparisonRoom,person:comparisonPerson,revision:record.revision,dirty:dirty).frame(width:320,alignment:.leading)
                             } }
+                            RoomTaskDockIssues(store:store,room:comparisonRoom,person:comparisonPerson)
                         } else {
                             ScheduleWeekView(record:record, byRoom:scheduleView == "Week by room").id(scheduleView)
                         }
@@ -451,5 +452,102 @@ struct RoomPersonWindows: View {
             Text("Openings of at least 5 minutes, excluding classes, closures and existing holds. Independent staff work is assumed; task skills, supervision and blockers still need review. Weekly limits can shorten usable time. Past times are excluded.").font(.caption).foregroundStyle(.secondary)
             Button("Refresh matching times") { Task { await load() } }.disabled(loading || store.offline || dirty)
         }.task(id:signature) { await load() }
+    }
+}
+
+
+func scheduleRoomKey(_ value: String) -> String {
+    let compact = value.uppercased().filter { $0.isLetter || $0.isNumber }
+    return ["A121":"ARTS121","A140":"ARTS140","LIB115":"LIBR115","LIBRARY115":"LIBR115","MH301":"MOOD301","MOODY301":"MOOD301","TH108":"TRUS108","TRUSTEE108":"TRUS108"][compact] ?? compact
+}
+func scheduleTitleMentionsRoom(_ title: String, _ room: String) -> Bool {
+    let key = scheduleRoomKey(room)
+    guard !key.isEmpty else { return false }
+    let aliases = ["ARTS121":["ARTS", "A"],"ARTS140":["ARTS","A"],"LIBR115":["LIBR","LIB","LIBRARY"],"MOOD301":["MOOD","MH","MOODY"],"TRUS108":["TRUS","TH","TRUSTEE"]]
+    let digits = String(key.suffix(3))
+    if let prefixes = aliases[key] {
+        return prefixes.contains { title.range(of:"(?i)(?<![A-Z0-9])" + $0 + "[ -]*" + digits + "(?![0-9])",options:.regularExpression) != nil }
+    }
+    return title.range(of:NSRegularExpression.escapedPattern(for:room),options:.caseInsensitive) != nil
+}
+
+struct RoomTaskDockIssues: View {
+    @ObservedObject var store: JunoStore
+    let room: String; let person: String
+    @State private var snapshot: TaskDockSnapshot?
+    @State private var planning: PlanningRecord?
+    @State private var issue: String?
+    @State private var busy = false
+    @State private var search = ""
+    @State private var showAll = false
+    private func facts(_ task: TaskDockTask) -> PlanningFacts? {
+        guard planning?.workspace_id == snapshot?.info.workspace_id else { return nil }
+        return planning?.tasks.first { $0.task_id == task.id }
+    }
+    private func open(_ task: TaskDockTask) -> Bool {
+        if case .object(let fields) = task.fields, case .bool(true) = fields["source_completed"] { return false }
+        return (task.text("completed_at") ?? "").isEmpty && !["done","completed","archived"].contains((task.text("behavior") ?? "").lowercased())
+    }
+    private func linked(_ task: TaskDockTask) -> Bool {
+        if let saved = facts(task), !saved.room.isEmpty { return scheduleRoomKey(saved.room) == scheduleRoomKey(room) }
+        return scheduleTitleMentionsRoom(task.title,room)
+    }
+    private func display(_ task: TaskDockTask,_ key: String) -> String {
+        guard case .object(let fields) = task.fields, let value = fields[key] else { return "Not recorded" }
+        if case .null = value { return "Not recorded" }
+        if case .string(let text) = value { return text.isEmpty ? "Not recorded" : text }
+        return value.pretty
+    }
+    private func priority(_ task: TaskDockTask, _ snapshot: TaskDockSnapshot) -> String {
+        guard case .object(let values) = task.fields, let id = values["priority"], case .object(let definitions) = snapshot.info.definitions, case .array(let rows) = definitions["priorities"] else { return display(task,"priority") }
+        for row in rows {
+            if case .object(let fields) = row, (fields["id"] ?? fields["value"])?.pretty == id.pretty, case .string(let name) = fields["name"] { return name }
+        }
+        return display(task,"priority")
+    }
+    private func load() async {
+        busy = true; defer { busy = false }
+        do {
+            let state = try await store.decode(TaskDockState.self,"/v1/taskdock")
+            snapshot = state.snapshot; issue = state.error
+            do { planning = try await store.decode(PlanningRecord.self,"/v1/planning") }
+            catch { planning = nil; issue = "Saved task planning details unavailable; showing TaskDock records only." }
+        } catch { issue = (error as? APIProblem)?.message ?? "Could not load saved TaskDock issues." }
+    }
+    var body: some View {
+        GroupBox("TaskDock issues • " + room) {
+            VStack(alignment:.leading,spacing:12) {
+                Text("Room issues are shown for reference alongside " + (person == "My work" ? "your schedule" : person + "’s schedule") + ". They are not assigned or scheduled automatically.").foregroundStyle(.secondary)
+                HStack {
+                    TextField("Search issues",text:$search)
+                    Toggle("Show all rooms / unlinked issues",isOn:$showAll)
+                    Button("Reload saved issues") { Task { await load() } }.disabled(busy)
+                    if busy { ProgressView().controlSize(.small) }
+                }
+                if let issue { Text(issue).foregroundStyle(.orange) }
+                if let snapshot {
+                    Text("TaskDock snapshot: " + scheduleDate(snapshot.fetched_at) + (snapshot.stale ? " • stale" : "") + (store.offline ? " • offline copy" : "")).font(.caption).foregroundStyle(.secondary)
+                    if let error = snapshot.error { Text(error).foregroundStyle(.orange) }
+                    let tasks = snapshot.items.filter { open($0) && (showAll || linked($0)) && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search)) }
+                    Text("\(tasks.count) unfinished issues").font(.headline)
+                    if tasks.isEmpty { Text("No matching issues in the saved snapshot. Show all rooms to find issues without a room link.").foregroundStyle(.secondary) }
+                    ForEach(tasks) { task in
+                        VStack(alignment:.leading,spacing:7) {
+                            HStack { Text(task.title).font(.headline);Spacer();Button("Open planning details") { store.planningTaskID = task.id;store.section = "Plan" } }
+                            Text("Status: " + display(task,"status_name") + " • Priority: " + priority(task,snapshot) + " • Due: " + display(task,"due_date"))
+                            if let f = facts(task) {
+                                Text("Room: " + (f.room.isEmpty ? "Title match — unconfirmed" : f.room) + " • Estimate: " + (f.minutes.map { "\($0) minutes" } ?? "Unknown"))
+                                Text("Person: " + (f.employee.isEmpty ? "Not confirmed" : f.employee) + " • Capability: " + (f.supervision == true ? "Needs supervision" : f.independent ? "Independent" : "Not confirmed"))
+                                if !f.capability.isEmpty { Text(f.capability).font(.caption) }
+                                Text("Planning blocker: " + (f.blocker.isEmpty ? "None recorded" : f.blocker) + " • Waiting on: " + (f.waiting_on.isEmpty ? "Not recorded" : f.waiting_on))
+                            } else { Text("Estimate, responsible person and capability: unknown").foregroundStyle(.secondary);Text(linked(task) ? "Room inferred from title — unconfirmed" : "Room link not confirmed").font(.caption) }
+                            Text("TaskDock blocker: " + display(task,"blocked_reason"))
+                            DisclosureGroup("TaskDock record details") { TaskDockDetails(task:task,info:snapshot.info) }
+                        }.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color.secondary.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius:8))
+                    }
+                    Text("Reads Juno’s saved TaskDock snapshot. Reloading here does not refresh TaskDock’s upstream services. Suggested placements can be added later.").font(.caption).foregroundStyle(.secondary)
+                } else if !busy { Text("No TaskDock snapshot saved. Connect or refresh TaskDock in its Juno tab.").foregroundStyle(.secondary) }
+            }.padding(8).frame(maxWidth:.infinity,alignment:.leading)
+        }.task { await load() }
     }
 }
