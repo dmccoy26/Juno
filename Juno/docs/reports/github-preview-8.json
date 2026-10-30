@@ -1,0 +1,10 @@
+{
+  "url": "https://github.com/dmccoy26/Juno/releases/tag/untagged-84f39cc4e96115b7a3b0",
+  "isDraft": true,
+  "isPrerelease": true,
+  "source_commit": "5c99f420fc40937d73d100aac5eec39b2c745e4e",
+  "package": "Juno-0.1.0-preview.8-macOS-arm64.pkg",
+  "bytes": 156197270,
+  "sha256": "9bb86f5b5244e28ee75f5537d798899df0236697a9083c494fcdaccc414b019b",
+  "github_digest_matches": true
+}

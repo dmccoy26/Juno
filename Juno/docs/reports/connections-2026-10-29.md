@@ -30,3 +30,7 @@ TaskDock's original checkout and installed build 14 are unchanged. Candidate sou
 ## Remaining user acceptance
 
 Enter approved client IDs/secrets/tokens, perform actual provider consent, choose resources and refresh a small live selection. Institution API enablement/consent policy, account retention/scopes and real native TaskDock installation have not been verified by fictional fixtures. Actual laptop offline-edit/reconnect, multi-day usage and HumanLab native testing remain manual. There is no cloud model fallback, provider background refresh, automatic employee-performance scoring or universal cross-system deduplication. These integrations do not complete every item in the original full beta mission.
+
+## Distribution verification
+
+[Juno draft release](https://github.com/dmccoy26/Juno/releases/tag/untagged-84f39cc4e96115b7a3b0) and [TaskDock draft candidate](https://github.com/dmccoy26/TaskDock/releases/tag/untagged-26bc656c6d8593c9a698) contain the verified installers. GitHub SHA-256/size checks match local extracted-package reports. Downloads copies match the same digests. Reports: [Juno](github-preview-8.json), [TaskDock](taskdock-build15-github.json). No draft was publicly published, and TaskDock’s PR was not merged.

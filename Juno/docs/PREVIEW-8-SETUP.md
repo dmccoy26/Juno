@@ -11,3 +11,12 @@ Juno remains a standalone native app. This preview adds **Connections**, with a 
 Both installers are internal Apple Silicon previews, ad hoc signed app bundles with unsigned/not-notarized packages. Use the normal institution/macOS approval process; no trust or security settings were changed. TaskDock's candidate is distributed separately and its source is on a review branch. Its existing live installation was not silently updated or granted additional access.
 
 Still manual: actual Google/Microsoft consent with your registration, Slack/Smartsheet live authorization and resource policy, HumanLab interaction testing, and the real laptop offline edit/reconnect check. Automated isolated equivalents and packaged-runtime checks are recorded with the release. No background provider refresh is enabled; use the explicit Refresh action.
+
+## Downloads and source
+
+Installers and both setup guides are in `/Users/dmccoy/Downloads/Juno-0.1.0-preview.8`; the TaskDock candidate has its own `TaskDock-build-15-candidate` subfolder. Both were extracted and verified; GitHub package byte counts and SHA-256 digests match the local reports.
+
+- [Juno preview 8 draft release](https://github.com/dmccoy26/Juno/releases/tag/untagged-84f39cc4e96115b7a3b0)
+- [TaskDock build 15 draft release](https://github.com/dmccoy26/TaskDock/releases/tag/untagged-26bc656c6d8593c9a698) and [review PR #1](https://github.com/dmccoy26/TaskDock/pull/1)
+
+Draft releases are accessible to repository owners/collaborators and have not been publicly published. Source changes are pushed; the TaskDock PR is deliberately unmerged.
