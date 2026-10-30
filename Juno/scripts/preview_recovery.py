@@ -26,5 +26,5 @@ import SwiftUI
     }
 }
 ''')
-subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-target','arm64-apple-macosx13.5',str(folder/'Juno.swift'),*[str(ROOT/'desktop'/n) for n in ['Companion.swift','TaskDock.swift','Shared.swift','Integrations.swift']],str(folder/'QA.swift'),'-o',str(app/'Contents/MacOS/Juno')],check=True)
+subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-target','arm64-apple-macosx13.5',str(folder/'Juno.swift'),*[str(ROOT/'desktop'/n) for n in ['Companion.swift','TaskDock.swift','Shared.swift','Integrations.swift','Connections.swift']],str(folder/'QA.swift'),'-o',str(app/'Contents/MacOS/Juno')],check=True)
 print(app)

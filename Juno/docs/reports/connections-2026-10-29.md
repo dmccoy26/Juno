@@ -1,0 +1,32 @@
+# Both connection paths — preview 8
+
+Dan authorized both the supported TaskDock bridge extension and direct program readers, with credentials/consent to be entered tomorrow. Both are implemented as native setup and working read paths; TaskDock remains the task authority.
+
+## Delivered
+
+- Native Connections route chooser: Through TaskDock / Direct programs. The TaskDock catalog states exact source coverage and offers provider setup shortcuts without copying credentials.
+- Separate TaskDock build 15 candidate with reviewed opt-in grants for stored event/session/recurrence definitions, notebook bodies, recorded time and expenses. Old task-only tokens remain task-only. Content-hash pagination, identity checks, explicit grant enforcement and size caps fail without importing partial results. Hourly rates, budgets and private ledger fingerprints are excluded.
+- Gmail, Google Calendar, Google Tasks, Google Chat, Slack, Smartsheet and Outlook Calendar direct readers. Fixed HTTPS GET endpoints, selected resources/query/windows, safe text/MIME extraction, no attachment/remote image fetching, no writes or automatic TaskDock task creation.
+- Registered Google/Microsoft desktop authorization with state/S256 PKCE, ten-minute pending sessions, callback replay prevention, protected repeatable delivery until native Keychain acknowledgment, expiry/cancellation and refresh-token rotation. Slack/Smartsheet accept approved supplied tokens. No live account registration, consent or credential extraction occurred.
+- Native account/resource discovery and review, selected coverage, manual refresh, retry cooldown, saved status, disconnect and credential forget. Credential inputs and persistent tokens stay in native Keychain; providers are administered only on the approved work Mac.
+- Dated evidence feeds existing local-model context and owner-scoped laptop cache. Replacement/removal invalidates derived replies; revoked/denied resources retain an inactive historical copy. A shared owner-wide 40 MB evidence bound applies to manual imports, bridge and providers.
+
+## Verification
+
+- 73 backend tests passed against actual disposable PostgreSQL, no skipped integration tests. All seven reader fixtures assert GET-only fixed origins and account review; additional tests cover MIME/HTML, scope rejection, changed sheet versions, repeated cursors, unsafe next links, cancellation/expiry/replay, callback/renew/ACK routes, owner isolation, denial/429 retention and total evidence bounds.
+- Actual two-app loopback HTTP interoperability read 501 synthetic notes across pages. Existing task-only reads, explicit grant requirement, workspace review, no credential in cache, owner isolation, stale replacement prevention and grant revocation passed. [Bridge report](connections-bridge-preview-8.json).
+- Actual native offline queue/store and pinned-certificate TLS/Keychain client passed host outage, offline memory/diary writes, separate-process restart, dependent-ID mapping, replay and complete synchronization. IP/hostname strict TLS validation passed again.
+- Native Keychain persisted a synthetic connection between separate processes, preserved provider isolation and replaced a rotating refresh token. Native OAuth URL checks reject unexpected origins, duplicate state, wrong client, nonloopback callbacks and missing/invalid S256 challenge. Temporary test Keychain items were removed.
+- A separate fictional-data SwiftUI app exercised Slack credential save/discovery, account/resource selection, review, refresh and date-window change clearing review. Evidence displayed connected Gmail body and unread status. A lazy-stack layout hang discovered during refresh was fixed by using a bounded regular stack in the forms, then the complete refresh sequence passed. [Native report](connections-native-preview-8.json).
+- TaskDock's full isolated release gate passed 613 API tests, 53 JavaScript tests and 118 Chromium/WebKit browser tests, including review/save/revoke optional grants. An existing Smartsheet test was isolated from developer configuration by supplying fictional sheet configuration before its mocked fetch.
+- Both actual packages were extracted/relocated and exercised with bundled runtimes. Juno's provider fixtures run against the bundled source with networking disabled; baseline migration backup, pairing/revocation, cache/restart/removal, watchdog and resource seals also pass. TaskDock checks cover bridge grants/revocation/restart, source manifest/runtime imports, upgrade/identity preservation and file archives. Exact hashes live in package reports.
+
+## Deployment and GitHub
+
+The existing development Juno host was rebuilt to preview 8 and resumed at `https://10.3.66.50:8443`. A private read-only before/after check verified unchanged owner, work-record counts (including source/task snapshots), certificate/key and existing paired-device states. The temporary local app credential rotated normally. No sleep/firewall/router/trust setting changed. The previous app is retained privately under `.local/host-app-before-preview8`.
+
+TaskDock's original checkout and installed build 14 are unchanged. Candidate source is on `codex/juno-saved-evidence`, [draft PR #1](https://github.com/dmccoy26/TaskDock/pull/1). The candidate must be installed and optional sharing reviewed explicitly before Juno can use its additional sections. Both installers are internal Apple Silicon packages: apps are ad hoc signed; packages are unsigned/not notarized.
+
+## Remaining user acceptance
+
+Enter approved client IDs/secrets/tokens, perform actual provider consent, choose resources and refresh a small live selection. Institution API enablement/consent policy, account retention/scopes and real native TaskDock installation have not been verified by fictional fixtures. Actual laptop offline-edit/reconnect, multi-day usage and HumanLab native testing remain manual. There is no cloud model fallback, provider background refresh, automatic employee-performance scoring or universal cross-system deduplication. These integrations do not complete every item in the original full beta mission.

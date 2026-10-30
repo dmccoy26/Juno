@@ -1,0 +1,11 @@
+{
+  "url": "https://github.com/dmccoy26/TaskDock/releases/tag/untagged-26bc656c6d8593c9a698",
+  "isDraft": true,
+  "isPrerelease": true,
+  "source_commit": "1d165dd21375494979c88ab10ff0b83b60565f2c",
+  "package": "TaskDock-0.2.0-beta.3-macOS-arm64.pkg",
+  "bytes": 120803353,
+  "sha256": "52f28320dbc3a3c00abde6f4bf31cd0eac610f2fada41ac8a7af15b6e9c32ee3",
+  "github_digest_matches": true,
+  "pull_request": "https://github.com/dmccoy26/TaskDock/pull/1"
+}

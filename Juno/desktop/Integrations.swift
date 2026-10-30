@@ -7,6 +7,11 @@ struct EvidenceRow: Decodable, Identifiable {
     let title: String?; let item: String?; let location: String?; let problem: String?; let action: String?
     let category: String?; let source: String?; let evidence: String?; let detail: String?; let observed_at: String?
     let start: String?; let end: String?; let kind: String?; let notes: String?; let busy: Bool?; let all_day: Bool?
+    let sender: String?; let status: String?; let due_date: String?; let unread: Bool?; let content_truncated: Bool?
+    let worker: String?; let minutes: Double?; let amount_cents: Double?; let work_date: String?
+    let date: String?; let start_date: String?; let end_date: String?; let start_time: String?; let end_time: String?
+    let frequency: String?; let interval: Int?; let anchor_date: String?; let paused: Bool?
+    var kindLabel: String { ["classroom_busy":"Classroom occupied", "staff_available":"Employee scheduled availability; capability unknown", "meeting":"Meeting", "calendar_event":"Calendar event", "event":"TaskDock event", "event_session":"TaskDock scheduled session", "event_recurrence":"TaskDock recurrence definition; not expanded", "note":"Notebook note", "time":"Reported work time", "expense":"Recorded expense; currency unknown", "message":"Message", "email":"Email", "task":"Provider task", "external_task":"Provider task", "sheet_row":"Smartsheet row"][kind ?? ""] ?? (kind ?? "Recorded evidence").replacingOccurrences(of:"_",with:" ").capitalized }
     var heading: String { title ?? item ?? "Recorded item" }
 }
 struct BusyDay: Decodable, Identifiable {
@@ -14,7 +19,7 @@ struct BusyDay: Decodable, Identifiable {
     var id: String { date }
 }
 struct EvidenceDetails: Decodable {
-    let notice: String?; let start: String?; let end: String?; let timezone: String?; let generated_at: String?; let busy_days: [BusyDay]?
+    let notice: String?; let start: String?; let end: String?; let timezone: String?; let generated_at: String?; let active: Bool?; let route: String?; let busy_days: [BusyDay]?
 }
 struct EvidenceSnapshot: Decodable, Identifiable {
     let id: String; let kind: String; let origin: String; let count: Int; let items: [EvidenceRow]
@@ -115,13 +120,13 @@ struct IntegrationsWorkspace: View {
         catch { notice = "The template could not be saved." }
     }
     func timestamp(_ value:String) -> String {
-        ISO8601DateFormatter().date(from:value)?.formatted(date:.abbreviated,time:.shortened) ?? value
+        providerDate(value)?.formatted(date:.abbreviated,time:.shortened) ?? value
     }
     var body: some View {
         ScrollView {
             LazyVStack(alignment:.leading,spacing:16) {
                 Text("Work evidence").font(.title2.bold())
-                Text("Beacon observations, calendar commitments and semester schedules help Juno understand your day. TaskDock remains your task hub.").foregroundStyle(.secondary)
+                Text("Connected programs, Beacon observations and manually imported schedules help Juno understand your day. Configure direct readers and TaskDock sharing in Connections. TaskDock remains your task hub.").foregroundStyle(.secondary)
                 if store.sharedProfile == nil {
                     VStack(alignment:.leading,spacing:8) {
                         Text("Import a dated copy").font(.headline)
@@ -165,7 +170,7 @@ struct IntegrationsWorkspace: View {
                             Divider()
                             VStack(alignment:.leading,spacing:10) {
                                 HStack {
-                                    Text(source.kind.capitalized).font(.headline);Text("\(source.count) records").foregroundStyle(.secondary)
+                                    Text(WorkProvider(rawValue:source.kind)?.label ?? source.kind.replacingOccurrences(of:"_",with:" ").capitalized).font(.headline);Text("\(source.count) records").foregroundStyle(.secondary)
                                     Spacer()
                                     if store.sharedProfile == nil { Button("Remove copy…",role:.destructive) { deleting = source }.disabled(busy) }
                                 }
@@ -173,6 +178,7 @@ struct IntegrationsWorkspace: View {
                                 if let generated = source.details.generated_at { Text("Provider generated " + timestamp(generated)).font(.caption) }
                                 if let start = source.details.start,let end = source.details.end { Text("Coverage: \(start) until \(end) (exclusive) · \(source.details.timezone ?? "")").font(.caption) }
                                 if let error = source.error { Text("Last attempt failed: " + error).foregroundStyle(.orange) }
+                                if source.details.active == false { Text("Disconnected — retained for review and excluded from new AI context.").font(.caption).foregroundStyle(.orange) }
                                 if source.stale { Text("Dated copy — verify current conditions before acting.").font(.caption).foregroundStyle(.orange) }
                                 Text(source.details.notice ?? "").font(.caption).foregroundStyle(.secondary)
                                 if let days = source.details.busy_days, !days.isEmpty {
@@ -181,11 +187,22 @@ struct IntegrationsWorkspace: View {
                                         ForEach(days) { day in HStack { Text(day.date);Text(String(format:"%.1f hours",day.busy_minutes / 60));if day.all_day_event { Text("Includes all-day event").foregroundStyle(.secondary) } }.font(.caption) }
                                     }
                                 }
-                                let filtered = source.items.filter { search.isEmpty || [$0.heading,$0.location ?? "",$0.problem ?? ""].joined(separator:" ").localizedCaseInsensitiveContains(search) }
+                                let filtered = source.items.filter { search.isEmpty || [$0.heading,$0.location ?? "",$0.problem ?? "",$0.notes ?? "",$0.sender ?? "",$0.worker ?? ""].joined(separator:" ").localizedCaseInsensitiveContains(search) }
                                 ForEach(Array(filtered.prefix(100))) { row in
                                     DisclosureGroup(row.heading + (row.location?.isEmpty == false ? " · " + row.location! : "")) {
                                         VStack(alignment:.leading,spacing:6) {
-                                            if let kind = row.kind { Text(kind == "classroom_busy" ? "Classroom occupied" : kind == "staff_available" ? "Employee scheduled availability; capability unknown" : "Calendar commitment").font(.caption) }
+                                            Text(row.kindLabel).font(.caption)
+                                            if let sender = row.sender { Text("From: " + sender) }
+                                            if row.unread == true { Text("Unread at last refresh; Juno did not mark it read.").font(.caption) }
+                                            if let status = row.status { Text("Status: " + status) }
+                                            if let due = row.due_date { Text("Due date: " + due + " (not scheduled work time)") }
+                                            if let worker = row.worker { Text("Reported worker: " + worker) }
+                                            if let minutes = row.minutes { Text(String(format:"Reported time: %.0f minutes",minutes)) }
+                                            if let amount = row.amount_cents { Text(String(format:"Recorded amount: %.2f (currency unknown)",amount / 100)) }
+                                            if let day = row.work_date ?? row.date ?? row.start_date { Text("Recorded date: " + day + (row.end_date.map { " through " + $0 } ?? "")) }
+                                            if let time = row.start_time { Text(time + (row.end_time.map { " – " + $0 } ?? "")) }
+                                            if let frequency = row.frequency { Text("Recurrence: " + frequency + " · interval " + String(row.interval ?? 1) + " · anchor " + (row.anchor_date ?? "unknown") + (row.paused == true ? " · paused" : "")) }
+                                            if row.content_truncated == true { Text("Excerpt shortened. Consult the original for full context.").foregroundStyle(.orange) }
                                             if let start = row.start,let end = row.end { Text(timestamp(start) + " – " + timestamp(end)) }
                                             if row.all_day == true { Text("All-day event") }
                                             if row.busy == false { Text("Does not block your personal calendar") }

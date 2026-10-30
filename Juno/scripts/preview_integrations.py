@@ -1,7 +1,7 @@
 """Isolated native QA backed by disposable PostgreSQL and fictional integration records.
 Run with JUNO_TEST_ADMIN_URL and the project venv; close with Ctrl-C after UI inspection.
 """
-import json, os, plistlib, socket, subprocess, sys, tempfile, threading, time
+import json, os, plistlib, uuid, socket, subprocess, sys, tempfile, threading, time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT/'backend/src'),str(ROOT/'backend/tests')]
@@ -9,6 +9,8 @@ from test_memory_api import MemoryTests
 from test_integrations import ICS,CSV,FEED
 from juno.api import create_app
 import uvicorn
+from test_providers import ProviderFixture,config,TOKEN
+from fastapi.testclient import TestClient
 
 
 def main():
@@ -19,11 +21,18 @@ def main():
             response=case.client.post('/v1/integrations/import',json={'kind':kind,'content':content,'label':'fictional-'+kind,'start':'2026-10-26','end':'2026-11-17','timezone':'America/Chicago'})
             assert response.status_code==200,response.text
         listener=socket.socket();listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
-        server=uvicorn.Server(uvicorn.Config(create_app(case.engine),log_level='error',access_log=False))
+        fixture=ProviderFixture()
+        provider_app=create_app(case.engine,provider_transport=fixture)
+        with TestClient(provider_app,base_url='http://127.0.0.1:18123',client=('127.0.0.1',50000)) as local:
+            local.headers['Authorization']='Bearer '+case.token
+            for provider in ('gmail','google_calendar','google_tasks','google_chat','slack','smartsheet','outlook_calendar'):
+                response=local.post('/v1/providers/'+provider+'/refresh',json={'token':TOKEN,'selection':config(provider)})
+                assert response.status_code==200,response.text
+        server=uvicorn.Server(uvicorn.Config(provider_app,log_level='error',access_log=False))
         worker=threading.Thread(target=lambda:server.run(sockets=[listener]),daemon=True);worker.start()
         folder=Path(tempfile.mkdtemp(prefix='juno-evidence-ui-'));folder.chmod(0o700)
         app=folder/'Juno Evidence QA.app';(app/'Contents/MacOS').mkdir(parents=True)
-        (app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'com.dmccoy.juno.evidence.qa','CFBundleName':'Juno Evidence QA','CFBundleExecutable':'Juno','CFBundlePackageType':'APPL','LSMinimumSystemVersion':'13.5'}))
+        (app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'com.dmccoy.juno.evidence.qa.'+uuid.uuid4().hex,'CFBundleName':'Juno Evidence QA','CFBundleExecutable':'Juno','CFBundlePackageType':'APPL','LSMinimumSystemVersion':'13.5'}))
         source=(ROOT/'desktop/Juno.swift').read_text().split('@main\nstruct JunoApplication',1)[0]
         (folder/'Juno.swift').write_text(source)
         (folder/'QA.swift').write_text('''import SwiftUI
@@ -41,9 +50,9 @@ def main():
         }
     }
 }
-'''.replace('PORT',str(port)).replace('TOKEN',json.dumps(case.token)))
+'''.replace('PORT',str(port)).replace('TOKEN',json.dumps(case.token)).replace('value.section = "Evidence"','value.section = "Connections"' if '--connections' in sys.argv else 'value.section = "Evidence"'))
         (folder/'QA.swift').chmod(0o600)
-        subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-O','-target','arm64-apple-macosx13.5',str(folder/'Juno.swift'),*[str(ROOT/'desktop'/n) for n in ['Companion.swift','TaskDock.swift','Shared.swift','Integrations.swift']],str(folder/'QA.swift'),'-o',str(app/'Contents/MacOS/Juno')],check=True)
+        subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-O','-target','arm64-apple-macosx13.5',str(folder/'Juno.swift'),*[str(ROOT/'desktop'/n) for n in ['Companion.swift','TaskDock.swift','Shared.swift','Integrations.swift','Connections.swift']],str(folder/'QA.swift'),'-o',str(app/'Contents/MacOS/Juno')],check=True)
         print(app,flush=True)
         while True:time.sleep(1)
     except KeyboardInterrupt:pass

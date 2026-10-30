@@ -1,4 +1,6 @@
-# Local work evidence — preview 7
+# Local work evidence — preview 8
+
+For the TaskDock source catalog, optional saved evidence and direct Gmail/Google Calendar/Tasks/Chat, Slack, Smartsheet and Outlook Calendar setup, see [Connections](CONNECTIONS.md). The file/Beacon readers below remain available.
 
 Open the native **Evidence** tab. TaskDock remains the task system of record. These inputs supply dated observations and commitments to Juno's local model; they never create tasks, change inventory or send messages.
 
@@ -22,7 +24,7 @@ Daily/weekly/monthly/yearly recurrence is supported. Dense sub-day rules, BYSECO
 
 Busy-time totals count overlapping intervals once **within each source**. They are recorded commitments, not remaining work hours: Juno does not assume a 9-to-5 schedule, subtract from 40 hours without your work windows, merge personal and staff calendars, or infer that a room is accessible just because no class was listed.
 
-The pinned parser dependencies use the maintainers' APIs: [icalendar](https://icalendar.readthedocs.io/) and [recurring-ical-events](https://recurring-ical-events.readthedocs.io/en/v3.8.2/). No cloud calendar SDK or OAuth scope was introduced.
+The pinned parser dependencies use the maintainers' APIs: [icalendar](https://icalendar.readthedocs.io/) and [recurring-ical-events](https://recurring-ical-events.readthedocs.io/en/v3.8.2/). This file reader needs no OAuth scope; direct connections use the separate reviewed setup described above.
 
 ## Semester schedules
 

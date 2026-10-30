@@ -103,6 +103,27 @@ def stop(process, app, state):
 
 
 
+def verify_provider_runtime(app):
+    """Run the same fictional provider contract checks against relocated bundled modules."""
+    code = """
+import socket,sys,unittest
+from pathlib import Path
+sys.path.append(sys.argv[1])
+import juno.providers.readers
+assert Path(juno.providers.readers.__file__).resolve().is_relative_to(Path(sys.argv[2]).resolve())
+def denied(*args,**kwargs):raise AssertionError('No network is allowed in packaged provider fixtures')
+socket.socket.connect=denied
+from test_providers import ProviderReaderTests,OAuthTests
+suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (ProviderReaderTests,OAuthTests)])
+result=unittest.TextTestRunner(verbosity=0).run(suite)
+sys.exit(0 if result.wasSuccessful() else 1)
+"""
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix='juno-provider-payload-') as folder:
+        env=local_environment(app,Path(folder));env['PYTHONPATH']=str(app/'Contents/Resources/app/backend/src')
+        subprocess.run([str(app/'Contents/Resources/runtime/python/bin/python3'),'-c',code,str(Path(__file__).resolve().parents[1]/'backend/tests'),str(app/'Contents/Resources/app')],env=env,cwd=folder,check=True,timeout=45)
+
+
 def verify_taskdock_cache(url, token):
     """Disposable strict local API fixture; never reads an installed TaskDock workspace."""
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -228,6 +249,8 @@ def verify(package, report):
         shutil.copytree(apps[0],relocated,symlinks=True)
         count=check_payload(relocated)
         checks.append(f'payload seals, internal symlinks and {count} Mach-O dependency checks')
+        verify_provider_runtime(relocated)
+        checks.append('relocated bundled seven-provider readers, account review, pagination limits, fixed read destinations and PKCE OAuth delivery/renewal fixtures with network disabled')
         state=root/'state'
         hostdir=state/'shared-host';hostdir.mkdir(parents=True,mode=0o700)
         (hostdir/'settings.json').write_text(json.dumps({'enabled':False,'port':0}))

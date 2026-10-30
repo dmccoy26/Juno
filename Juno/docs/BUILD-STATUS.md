@@ -2,17 +2,18 @@
 
 Updated: October 29, 2026.
 
-## Current verified release — preview 7
+## Current release — preview 8
 
-The two overnight missions are implemented: durable offline recovery and operational evidence integrations. See [overnight report](reports/overnight-2026-10-29.md), [source setup](INTEGRATIONS.md) and [final installer verification](reports/installer-preview-7.json).
+Both connection paths are implemented. Start with [morning setup](PREVIEW-8-SETUP.md), [connection details](CONNECTIONS.md), [connection verification](reports/connections-native-preview-8.json) and [installer verification](reports/installer-preview-8.json).
 
-- Native Mac app with memory, local-model chat, guided diaries, TaskDock, shared-host/offline edits and an Evidence tab.
-- Scoped conflict comparison/rebase/host-version decisions, deleted-memory recovery, durable acknowledgment IDs and persisted revoked queues.
-- Read-only Beacon alert API/JSON import, recurring calendar .ics import and weekly semester CSV import. Source replacement/removal invalidates derived model replies; imports stay on the work Mac and enter the paired laptop cache.
-- 59 backend tests passed with isolated PostgreSQL (no skipped integration tests), actual native queue/store and pinned-TLS outage/restart checks, native fictional-data UI/file-picker checks, and final extracted-installer checks.
-- Dan reported real wired/Wi-Fi laptop sync working. Actual laptop offline-edit/reconnect acceptance and multi-day use remain pending.
-- No live Beacon key or calendar file was supplied overnight; those sources are implemented and fixture-verified, not connected to live work data. HumanLab native acceptance is unverified. Email/Slack OAuth, cloud model approval, background hosting, semantic retrieval and the full beta mission remain later work.
-- Package: `dist/Juno-0.1.0-preview.7-macOS-arm64.pkg`, self-contained arm64, macOS 13.5+, ad hoc app signature, unsigned/not notarized installer.
+- Native Connections UI supports a TaskDock source catalog and separately reviewed saved evidence, plus direct Gmail, Google Calendar, Google Tasks, Google Chat, Slack, Smartsheet and Outlook Calendar readers.
+- Google/Microsoft use registered desktop clients, loopback state/S256 PKCE and renewable authorization; persistent credentials remain in native Keychain. Slack/Smartsheet accept approved user-supplied tokens. Nothing imports provider secrets from TaskDock.
+- Read-only, explicit selection and identity review, bounded complete reads, failure retention, disconnect/removal and local-model/cache integration. An owner-wide 40 MB evidence bound protects export size.
+- 73 backend tests passed with isolated PostgreSQL; native offline/store, pinned-TLS outage/restart, Keychain persistence and fictional native UI checks passed. A real local-HTTP two-app bridge test read 501 synthetic notes and exercised permission revocation. Extracted/relocated package verification includes seven-provider fixtures with networking disabled.
+- TaskDock source is separately pushed on a draft review branch/PR with a build 15 candidate. Its full isolated gate passed 613 API, 53 JavaScript and 118 browser tests. The installed TaskDock build 14 was left intact with existing grants unchanged.
+- The existing development Juno work host is updated without changing its owner, work-record counts, certificate/key or laptop pairing. Only the temporary local app credential rotated normally.
+- Actual provider consent/approved credentials and real-account resource policy remain tomorrow's setup. No new live account reads, cloud model approval, background provider polling, automatic task creation or full beta completion is claimed. HumanLab native and actual laptop offline-edit/reconnect acceptance remain manual.
+- Package: `dist/Juno-0.1.0-preview.8-macOS-arm64.pkg`, self-contained Apple Silicon, macOS 13.5+, ad hoc app signature, unsigned/not-notarized installer.
 
 ## Historical implementation notes (through preview 5)
 

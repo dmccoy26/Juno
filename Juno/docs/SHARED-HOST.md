@@ -56,7 +56,7 @@ A laptop copy and queued edits are stored in its application-support directory, 
 - The native Computers screen confirmed this Mac's live host address and enabled state. The live TLS endpoint rejected unauthenticated access.
 - The packaged installer verifier checks shared-host TLS startup, one-use invitations, owner-scoped export, replay-safe offline operations, forbidden remote administration and revocation, alongside existing migration/runtime tests.
 
-Dan confirmed actual laptop sync and wired/Wi-Fi reachability. Actual laptop offline-edit/reconnect and multi-day use still require acceptance. The app is ad hoc signed and the installer remains unsigned/not notarized. Shared preferences, a background host daemon, formatted TaskDock rich text, automatic TaskDock source refresh, live calendar OAuth and HumanLab native acceptance remain outside this increment.
+Dan confirmed actual laptop sync and wired/Wi-Fi reachability. Actual laptop offline-edit/reconnect and multi-day use still require acceptance. The app is ad hoc signed and the installer remains unsigned/not notarized. Shared preferences, a background host daemon, formatted TaskDock rich text, automatic TaskDock source refresh and HumanLab native acceptance remain outside this increment. Preview 8 adds native direct calendar/provider OAuth setup; live consent remains user setup. See [Connections](CONNECTIONS.md).
 
 ## Wired/Wi-Fi connection troubleshooting
 

@@ -1,0 +1,11 @@
+{
+  "taskdock_build": 15,
+  "actual_http_bridge": true,
+  "task_only_backward_compatibility": true,
+  "explicit_grants": true,
+  "paged_notes": 501,
+  "owner_isolation": true,
+  "credential_excluded_from_cache": true,
+  "revocation_retains_inactive_copy": true,
+  "synthetic_only": true
+}

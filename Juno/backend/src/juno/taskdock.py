@@ -93,7 +93,47 @@ class TaskDockReader:
                 or any(not isinstance(info['definitions'].get(k), list) for k in ('statuses', 'categories', 'custom_fields', 'priorities'))):
             raise TaskDockError('TaskDock does not advertise a supported read-only API v1 workspace.')
         # Fixed supported paths, never follow arbitrary discovery-supplied URLs.
-        return {k: info[k] for k in ('api_version', 'workspace_id', 'device_id', 'capabilities', 'definitions')} | {'taskdock': info.get('taskdock', {})}
+        return {k: info[k] for k in ('api_version', 'workspace_id', 'device_id', 'capabilities', 'definitions')} | {'taskdock': info.get('taskdock', {}), 'evidence_grants':info.get('evidence_grants',[])}
+
+    def catalog(self):
+        info=self.discover()
+        if info['capabilities'].get('read_source_catalog') is not True:raise TaskDockError('Update TaskDock to build 15 or later to discover saved-evidence sharing. Existing task reads still work.')
+        value=self.get('/integrations/juno/v1/catalog')
+        sources=value.get('sources');grants=value.get('grants')
+        kinds={'events','notes','time','expenses'}
+        if value.get('version')!=1 or not isinstance(sources,list) or not isinstance(grants,list) or any(not isinstance(k,str) or k not in kinds for k in grants) or len(set(grants))!=len(grants):raise TaskDockError('TaskDock returned an invalid connection catalog.')
+        safe=[];seen=set()
+        for row in sources:
+            if not isinstance(row,dict) or not isinstance(row.get('id'),str) or row['id'] in seen:raise TaskDockError('TaskDock returned invalid source identities.')
+            seen.add(row['id']);safe.append({k:row.get(k) for k in ('id','mode','health','last_attempt_at','last_success_at','coverage')})
+        return {'info':info,'sources':safe,'grants':grants,'notice':'TaskDock shares saved records through its own connections. Provider credentials and broader live inbox/chat/calendar access are not imported.'}
+
+    def evidence(self,kinds):
+        if not isinstance(kinds,list) or not kinds or any(k not in ('events','notes','time','expenses') for k in kinds) or len(set(kinds))!=len(kinds):raise TaskDockError('Select supported saved-evidence sections.')
+        catalog=self.catalog();info=catalog['info']
+        if any(k not in catalog['grants'] for k in kinds):raise TaskDockError('Enable the selected sharing grants in TaskDock Settings, then discover again.',403)
+        rows=[];seen=set();revision=None;total=None;encoded_bytes=0
+        for offset in range(0,20000,500):
+            params={'kinds':','.join(sorted(kinds)),'limit':500,'offset':offset}
+            if revision:params['expected_snapshot']=revision
+            page=self.get('/integrations/juno/v1/evidence',params)
+            values=page.get('items');count=page.get('total');current=page.get('snapshot')
+            if (page.get('version')!=1 or page.get('workspace_id')!=info['workspace_id'] or page.get('device_id')!=info['device_id'] or
+                page.get('kinds')!=sorted(kinds) or page.get('grants')!=catalog['grants'] or not isinstance(values,list) or len(values)>500 or type(count) is not int or not 0<=count<=20000 or
+                page.get('offset')!=offset or page.get('limit')!=500 or type(page.get('has_more')) is not bool or not isinstance(current,str) or not current):raise TaskDockError('TaskDock returned invalid saved-evidence pagination or identity.')
+            if revision and (revision!=current or total!=count):raise TaskDockError('TaskDock saved evidence changed while paging. The previous copy was retained.',409)
+            revision=current;total=count
+            for row in values:
+                if not isinstance(row,dict) or not isinstance(row.get('id'),str) or not row['id'] or row['id'] in seen:raise TaskDockError('TaskDock repeated or returned an invalid evidence identity.')
+                encoded_bytes+=len(json.dumps(row,ensure_ascii=False).encode())
+                if encoded_bytes>16_000_000:raise TaskDockError('TaskDock saved evidence exceeded 16 MB. Narrow the selected sections.',413)
+                seen.add(row['id']);rows.append(row)
+            if len(rows)>total:raise TaskDockError('TaskDock returned inconsistent evidence counts.')
+            if not page['has_more']:
+                if len(rows)!=total:raise TaskDockError('TaskDock returned an incomplete evidence snapshot.')
+                return {'catalog':catalog,'items':rows,'snapshot':revision}
+            if not values:raise TaskDockError('TaskDock returned an empty evidence page before completion.')
+        raise TaskDockError('TaskDock saved-evidence page limit was reached. The previous copy was retained.')
 
     def fetch(self, max_pages=100, attempts=3):
         if max_pages < 1 or not 1 <= attempts <= 3:

@@ -14,7 +14,7 @@ from .models import Audit, Memory, Suppression, now
 from .companion import install, invalidate_context
 from .local_model import LocalModel
 from .taskdock import TaskDockReader
-from . import taskdock_api, shared_host, offline_cache, integrations_api
+from . import taskdock_api, shared_host, offline_cache, integrations_api, provider_api, taskdock_evidence_api
 
 
 class MemoryInput(BaseModel):
@@ -37,10 +37,18 @@ def view(row):
             ("id", "text", "source", "confidence", "revision", "created_at", "updated_at")}
 
 
-def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockReader, host_manager=None):
+def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockReader, host_manager=None, provider_transport=None, oauth_manager=None):
     engine = engine if engine is not None else engine_for()
     factory = sessions(engine)
-    app = FastAPI(title="Juno companion service", version="0.1.0-preview.7")
+    app = FastAPI(title="Juno companion service", version="0.1.0-preview.8")
+    from fastapi.exceptions import RequestValidationError
+    from fastapi.responses import JSONResponse
+    @app.exception_handler(RequestValidationError)
+    async def safe_connection_validation(request,error):
+        if request.url.path.startswith(('/v1/providers','/v1/taskdock','/v1/integrations/beacon')):
+            return JSONResponse({'detail':'Connection settings are invalid. Check the required fields; private input is not echoed.'},status_code=422,headers={'Cache-Control':'no-store'})
+        from fastapi.exception_handlers import request_validation_exception_handler
+        return await request_validation_exception_handler(request,error)
     bearer = HTTPBearer(auto_error=False)
 
     @app.middleware("http")
@@ -92,7 +100,7 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
 
     @app.get("/health")
     def health():
-        return {"service": "juno", "version": "0.1.0-preview.7"}
+        return {"service": "juno", "version": "0.1.0-preview.8"}
 
     @app.get("/v1/memories")
     def memories(q: str = Query(default="", max_length=200),
@@ -166,4 +174,6 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
     shared_host.install(app, db, device, lock_owner, host_manager)
     offline_cache.install(app, db, device, lock_owner)
     integrations_api.install(app, db, device, lock_owner)
+    provider_api.install(app, db, device, lock_owner, provider_transport, oauth_manager)
+    taskdock_evidence_api.install(app, db, device, lock_owner, taskdock_factory)
     return app

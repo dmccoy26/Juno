@@ -39,6 +39,16 @@ def state_view(session,owner):
         'notice':'Dated read-only evidence. TaskDock remains the task system of record. Missing evidence is unknown, not proof of availability or health.'}
 
 
+EVIDENCE_BYTES=40_000_000
+
+def check_evidence_size(session,owner,kind,items,details):
+    """One owner-wide bound, shared by imports, bridge reads and direct providers."""
+    total=len(json.dumps({'items':items,'details':details},ensure_ascii=False).encode())
+    others=session.scalars(select(IntegrationSnapshot).where(IntegrationSnapshot.owner_id==owner,IntegrationSnapshot.kind!=kind)).all()
+    total+=sum(len(json.dumps({'items':r.items,'details':r.details},ensure_ascii=False).encode()) for r in others)
+    if total>EVIDENCE_BYTES:raise HTTPException(413,'The combined evidence copy exceeds 40 MB. Remove unused copies or narrow this source before refreshing.')
+
+
 def install(app,db,device,lock_owner,beacon_factory=BeaconReader):
     def owned(session,owner,kind):return session.scalar(select(IntegrationSnapshot).where(IntegrationSnapshot.owner_id==owner,IntegrationSnapshot.kind==kind).execution_options(populate_existing=True))
     def check(row,expected):
@@ -46,6 +56,7 @@ def install(app,db,device,lock_owner,beacon_factory=BeaconReader):
     def save(session,actor,kind,origin,items,details,expected):
         if len(json.dumps({'items':items,'details':details},ensure_ascii=False).encode())>16_000_000:raise HTTPException(413,'The expanded source exceeds 16 MB. Use a smaller window; the previous copy was retained.')
         lock_owner(session,actor.owner_id);row=owned(session,actor.owner_id,kind);check(row,expected)
+        check_evidence_size(session,actor.owner_id,kind,items,details)
         from .companion import invalidate_context
         if row:invalidate_context(session,actor.owner_id,'integration:'+row.kind)
         else:row=IntegrationSnapshot(owner_id=actor.owner_id,kind=kind);session.add(row)
@@ -87,7 +98,7 @@ def install(app,db,device,lock_owner,beacon_factory=BeaconReader):
         return save(session,actor,'beacon',reader.origin,items,details,value.expected_id)
 
     @app.delete('/v1/integrations/{kind}')
-    def remove(kind:Literal['beacon','calendar','schedules'],expected_id:str=Query(max_length=36),actor=Depends(device),session=Depends(db)):
+    def remove(kind:Literal['beacon','calendar','schedules','taskdock_saved','gmail','google_calendar','google_tasks','google_chat','slack','smartsheet','outlook_calendar'],expected_id:str=Query(max_length=36),actor=Depends(device),session=Depends(db)):
         lock_owner(session,actor.owner_id);row=owned(session,actor.owner_id,kind);check(row,expected_id)
         if row:
             from .companion import invalidate_context

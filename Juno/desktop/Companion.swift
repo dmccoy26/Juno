@@ -160,7 +160,7 @@ struct RootView: View {
                 Toggle("Meeting mode", isOn: $store.meeting).toggleStyle(.switch).help("New replies use a professional tone. Private-mode replies are hidden while this is on.")
             }.padding(18)
             Picker("Workspace", selection: $store.section) {
-                Text("Chat").tag("Chat"); Text("Daily check-in").tag("Check-in"); Text("Memories").tag("Memories"); Text("Model connection").tag("Model"); Text("TaskDock").tag("TaskDock"); Text("Evidence").tag("Evidence"); Text("Computers").tag("Computers")
+                Text("Chat").tag("Chat"); Text("Daily check-in").tag("Check-in"); Text("Memories").tag("Memories"); Text("Model connection").tag("Model"); Text("TaskDock").tag("TaskDock"); Text("Evidence").tag("Evidence"); Text("Connections").tag("Connections"); Text("Computers").tag("Computers")
             }.pickerStyle(.segmented).padding(.horizontal, 20).padding(.bottom, 14)
             if store.sharedProfile != nil {
                 HStack {
@@ -178,13 +178,14 @@ struct RootView: View {
             case "Model":
                 if store.sharedProfile == nil { ModelWorkspace(store: store) } else { VStack(spacing:16) { Text("The work Mac runs Juno’s model").font(.title2.bold()); Text("Configure LM Studio on the work Mac. AI replies need that Mac to be awake and reachable; memories and diary edits work offline.").foregroundStyle(.secondary) }.padding(32) }
             case "TaskDock": TaskDockWorkspace(store: store)
+            case "Connections": ConnectionsWorkspace(store: store)
             case "Evidence": IntegrationsWorkspace(store: store)
             case "Computers": ComputersWorkspace(store: store)
             default: ChatWorkspace(store: store)
             }
             if let issue = store.problem { HStack { Text(issue).foregroundStyle(.orange); Spacer(); Button("Dismiss") { store.problem = nil } }.padding(12) }
             Divider()
-            HStack { Text(store.sharedProfile == nil ? "Stored on this Mac" : "Work Mac + offline laptop copy"); Spacer(); Text("Juno 0.1.0-preview.7") }.font(.caption).foregroundStyle(.secondary).padding(12)
+            HStack { Text(store.sharedProfile == nil ? "Stored on this Mac" : "Work Mac + offline laptop copy"); Spacer(); Text("Juno 0.1.0-preview.8") }.font(.caption).foregroundStyle(.secondary).padding(12)
         }.frame(minWidth: 920, minHeight: 650)
     }
 }
