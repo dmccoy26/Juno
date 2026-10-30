@@ -2,7 +2,13 @@
 
 Updated: October 30, 2026.
 
-## Current increment — preview 10 schedules and repair windows
+## Desktop follow-up — weekly person and room views
+
+Schedules now opens with a selectable **By person**, **By room**, or **List & edit** view. Weekly day columns show work/building hours, occupied classes, local planning holds and daily exceptions, with dated navigation and staff status/limits. This is an overview of saved facts; Plan remains responsible for repair feasibility. No assignments or schedule records were changed by adding these views.
+
+The development app on the work Mac is updated. Native optimized compilation and synthetic projection checks pass (person/room isolation, supervised holds, candidates without shifts, daily overrides, semester boundaries and the daylight-saving week). Actual native controls were checked for person/room selection; Sammy's revised shifts and room occupancy were observed, and the room layout was visually inspected. Host owner, record counts, certificate/key and existing paired-device states are preserved. The published preview 10 installer remains the earlier build; this desktop follow-up is not yet included in a new laptop installer.
+
+## Current installer — preview 10 schedules and repair windows
 
 Native **Schedules** adds recurring semester rules, classroom occupancy, building access, personal/staff hours, dated exceptions and explicit active/tentative/candidate status with funded/agreed weekly limits. **Plan → When could we work on this?** intersects those inputs, distinguishes independent from supervised work and shows possible windows. Reviewed local planning holds reject room/person conflicts and excess weekly hours. TaskDock remains read-only and authoritative.
 

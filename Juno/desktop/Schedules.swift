@@ -45,6 +45,7 @@ struct SchedulesWorkspace: View {
     @State private var busy = false; @State private var dirty = false; @State private var issue: String?
     @State private var rule = RecurringSchedule(); @State private var person = StaffSchedule(); @State private var exception = DailyScheduleException()
     @State private var ruleEditor = false; @State private var personEditor = false; @State private var exceptionEditor = false
+    @State private var scheduleView = "Week by person"
     @State private var editingPersonName: String?
     @State private var limitHours = "20"; @State private var desiredHours = ""
     private let weekdays = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
@@ -75,6 +76,15 @@ struct SchedulesWorkspace: View {
                 if store.offline { Text("Dated offline schedule copy. Reconnect to edit schedules or reserve work.").foregroundStyle(.orange) }
                 if let issue { Text(issue).foregroundStyle(.orange).textSelection(.enabled) }
                 if let record {
+                    Picker("Schedule view", selection:$scheduleView) {
+                        Text("By person").tag("Week by person")
+                        Text("By room").tag("Week by room")
+                        Text("List & edit").tag("List & edit")
+                    }.pickerStyle(.segmented).frame(maxWidth:600)
+                    if scheduleView != "List & edit" {
+                        ScheduleWeekView(record:record, byRoom:scheduleView == "Week by room")
+                        Button("Edit schedules and people") { scheduleView = "List & edit" }
+                    } else {
                     GroupBox("People and weekly limits") {
                         VStack(alignment:.leading,spacing:10) {
                             ForEach(record.people) { p in
@@ -110,6 +120,7 @@ struct SchedulesWorkspace: View {
                                 }.disabled(dirty || store.offline) }
                             }
                         }.frame(maxWidth:.infinity,alignment:.leading).padding(6)
+                    }
                     }
                 }
             }.padding(24).disabled(busy)
@@ -207,5 +218,120 @@ struct RepairWindowsView: View {
                 } else if searched != nil { Text("Inputs changed; find windows again before using a result.").font(.caption).foregroundStyle(.orange) }
             }.frame(maxWidth:.infinity,alignment:.leading).padding(6).disabled(busy)
         }.task { if !store.offline { await find() } }
+    }
+}
+
+// A dated overview of saved schedule facts. Feasibility remains the Plan API's job.
+struct ScheduleWeekItem: Identifiable {
+    var id: String; var time: String; var title: String; var detail: String; var kind: String
+    var order: String
+}
+
+struct ScheduleWeekView: View {
+    let record: ScheduleRecord
+    let byRoom: Bool
+    @State private var selected = ""
+    @State private var anchor = Date()
+    private var calendar: Calendar {
+        var c = Calendar(identifier:.gregorian)
+        c.timeZone = TimeZone(identifier:"America/Chicago")!
+        c.firstWeekday = 2
+        return c
+    }
+    private var week: [Date] {
+        let start = calendar.startOfDay(for:anchor)
+        let offset = (calendar.component(.weekday,from:start) + 5) % 7
+        let monday = calendar.date(byAdding:.day,value:-offset,to:start)!
+        return (0..<7).map { calendar.date(byAdding:.day,value:$0,to:monday)! }
+    }
+    private func format(_ date: Date, _ pattern: String) -> String {
+        let f = DateFormatter(); f.calendar = calendar; f.timeZone = calendar.timeZone
+        f.locale = Locale(identifier:"en_US"); f.dateFormat = pattern
+        return f.string(from:date)
+    }
+    private var choices: [String] {
+        if byRoom {
+            return Array(Set(record.rules.compactMap { r -> String? in
+                r.kind == "room" ? r.name : r.kind == "classroom_busy" ? r.location : nil
+            } + record.reservations.map(\.room) + record.exceptions.filter { ["room","classroom_busy"].contains($0.kind) }.map(\.name))).filter { !$0.isEmpty }.sorted()
+        }
+        return ["My work"] + Array(Set(record.people.map(\.name) + record.rules.filter { $0.kind == "staff_available" }.map(\.name))).filter { !$0.isEmpty && $0 != "My work" }.sorted()
+    }
+    private var selection: String { choices.contains(selected) ? selected : choices.first ?? "" }
+    private func matching(_ kind: String, _ name: String, _ location: String = "") -> Bool {
+        if byRoom { return kind == "room" && name == selection || kind == "classroom_busy" && location == selection }
+        return selection == "My work" ? kind == "work" : kind == "staff_available" && name == selection
+    }
+    private func items(_ date: Date) -> [ScheduleWeekItem] {
+        let day = format(date,"yyyy-MM-dd")
+        let weekday = (calendar.component(.weekday,from:date) + 5) % 7
+        let exceptions = record.exceptions.filter { e in
+            e.day == day && (byRoom ? ["room","classroom_busy"].contains(e.kind) && e.name == selection : matching(e.kind,e.name))
+        }
+        var result = record.rules.filter { r in
+            matching(r.kind,r.name,r.location) && r.start_date <= day && day <= r.end_date && r.days.contains(weekday)
+                && !exceptions.contains { $0.kind == r.kind }
+        }.map { r in
+            ScheduleWeekItem(id:r.id,time:r.start_time + "–" + r.end_time,title:scheduleKind(r.kind),detail:r.kind == "classroom_busy" ? r.name : r.timezone,kind:r.kind,order:r.start_time)
+        }
+        result += exceptions.map { e in
+            ScheduleWeekItem(id:e.id,time:e.closed ? "All day" : (e.start_time ?? "") + "–" + (e.end_time ?? ""),title:e.closed ? (e.kind == "classroom_busy" ? "No classes" : "Unavailable / closed") : scheduleKind(e.kind),detail:e.note,kind:"exception",order:e.start_time ?? "00:00")
+        }
+        result += record.reservations.compactMap { r -> ScheduleWeekItem? in
+            guard let start = providerDate(r.start), let end = providerDate(r.end),
+                  (byRoom ? r.room == selection : selection == "My work" ? r.employee.isEmpty || r.uses_owner : r.employee == selection),
+                  start < calendar.date(byAdding:.day,value:1,to:date)!, end > date else { return nil }
+            return ScheduleWeekItem(id:r.id,time:format(start,"HH:mm") + "–" + format(end,"HH:mm"),title:"Planning hold",detail:byRoom ? (r.employee.isEmpty ? "My work" : r.employee) : r.room,kind:"hold",order:format(start,"HH:mm"))
+        }
+        return result.sorted { $0.order == $1.order ? $0.id < $1.id : $0.order < $1.order }
+    }
+    private func color(_ kind: String) -> Color {
+        switch kind { case "classroom_busy":return .orange;case "hold":return .purple;case "exception":return .red;default:return .blue }
+    }
+    var body: some View {
+        VStack(alignment:.leading,spacing:12) {
+            HStack {
+                Picker(byRoom ? "Room" : "Person",selection:Binding(get:{selection},set:{selected = $0})) {
+                    ForEach(choices,id:\.self) { Text($0).tag($0) }
+                }.frame(maxWidth:320)
+                Spacer()
+                Button("Previous week") { anchor = calendar.date(byAdding:.day,value:-7,to:anchor)! }
+                Button("This week") { anchor = Date() }
+                Button("Next week") { anchor = calendar.date(byAdding:.day,value:7,to:anchor)! }
+            }
+            DatePicker("Week containing",selection:$anchor,displayedComponents:.date).environment(\.timeZone,calendar.timeZone)
+            Text(format(week[0],"MMM d") + " – " + format(week[6],"MMM d, yyyy") + " • America/Chicago").font(.headline)
+            if !byRoom, let p = record.people.first(where: { $0.name == selection }) {
+                Text(p.name + " • " + p.status + " • funded limit " + String(p.weekly_limit_minutes / 60) + "h/week").font(.headline)
+                if !p.notes.isEmpty { Text(p.notes).foregroundStyle(.secondary) }
+                if p.status != "active" { Text("Availability is unconfirmed; this person is excluded from confirmed capacity.").foregroundStyle(.orange) }
+            }
+            Text(byRoom ? "Blue: building access • Orange: classes (unavailable) • Purple: local holds • Red: daily exceptions" : "Blue: work hours • Purple: local holds • Red: daily exceptions").font(.caption)
+            ScrollView(.horizontal) {
+                HStack(alignment:.top,spacing:8) {
+                    ForEach(week,id:\.self) { date in
+                        VStack(alignment:.leading,spacing:8) {
+                            Text(format(date,"EEE MMM d")).font(.headline)
+                            let entries = items(date)
+                            if entries.isEmpty { Text("No saved hours or events").font(.caption).foregroundStyle(.secondary) }
+                            ForEach(entries) { item in
+                                VStack(alignment:.leading,spacing:4) {
+                                    Text(item.time).font(.headline).monospacedDigit()
+                                    Text(item.title).font(.subheadline.bold())
+                                    if !item.detail.isEmpty { Text(item.detail).font(.caption) }
+                                }.frame(maxWidth:.infinity,alignment:.leading).padding(8)
+                                    .background(color(item.kind).opacity(0.12)).overlay(alignment:.leading) { Rectangle().fill(color(item.kind)).frame(width:3) }
+                                    .accessibilityElement(children:.combine)
+                            }
+                            Spacer(minLength:0)
+                        }.padding(10).frame(width:170,alignment:.topLeading).frame(minHeight:230,alignment:.topLeading)
+                            .background(Color.secondary.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius:8))
+                    }
+                }.padding(.bottom,4)
+            }
+            Text("This overview shows saved schedules, not confirmed free time. Meetings, closures, capability and task blockers still need review. Use Plan to find a possible repair window.").font(.caption).foregroundStyle(.secondary)
+            if let notice = record.reservation_notice, !notice.isEmpty { Text(notice).foregroundStyle(.orange) }
+            if choices.isEmpty { Text("Add room schedules in List & edit to start this view.").foregroundStyle(.secondary) }
+        }
     }
 }

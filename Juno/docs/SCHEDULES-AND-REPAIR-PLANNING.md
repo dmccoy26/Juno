@@ -45,3 +45,9 @@ Using the midpoint updates only your draft. Apply/save it explicitly before rese
 - The Google/Outlook readers exist, but real account approval, client registration, consent and selected calendar coverage still need acceptance. No recorded meeting does not prove free time.
 - The approved operational schedules were migrated privately. Real work records, staff details, credentials and task payloads are excluded from the repository and installer.
 - Actual laptop installation/offline-reconnect and hands-on acceptance of all new controls remain required. The native automation service failed intermittently during the new-screen checks; compiled Swift/model decoding and API/package verification are separate evidence, not a substitute for those interaction checks.
+
+## Weekly views (desktop follow-up)
+
+In **Schedules**, choose **By person** for a person's work hours and local holds, or **By room** for building access, occupied classes and holds. Pick the person/room and browse weeks with Previous week, This week, Next week or the date control. Daily exceptions replace that day's rules of the same kind. Candidate/unsettled profiles remain visibly unconfirmed. Empty days mean no saved facts, not permission to work. Scroll horizontally to see all seven days on smaller windows.
+
+Use **List & edit** to change the underlying records, and **Plan** to check possible repair windows against task requirements and constraints. The overview does not turn funding into agreed shifts or classify blank periods as free time.
