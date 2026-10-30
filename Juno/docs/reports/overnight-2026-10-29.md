@@ -23,3 +23,7 @@ The real development host was cleanly quit, rebuilt and relaunched after package
 Final installer: `dist/Juno-0.1.0-preview.7-macOS-arm64.pkg`; report: `docs/reports/installer-preview-7.json`. A laptop-ready copy with checksums, setup notes and templates is under `/Users/dmccoy/Downloads/Juno-0.1.0-preview.7`. See `docs/PREVIEW-7-SETUP.md` before updating the laptop.
 
 No live Beacon key/calendar file was supplied; both are ready for user setup. Manual imports are not live calendar sync. Actual laptop offline-edit/reconnect acceptance and multi-day use remain pending. Cloud services, external messages, employee outreach, firewall/sleep/router changes and existing pairing-secret rotation were not performed. The unrelated pre-existing repository-root README deletion remains untouched.
+
+## GitHub distribution
+
+Both missions were pushed to `main`. The installer, checksum, verification report, setup guide, integration guide and fictional schedule CSV were uploaded to the [draft preview 7 prerelease](https://github.com/dmccoy26/Juno/releases/tag/untagged-f6dbf85a985530bf5974). GitHub's package SHA-256 and byte size match the verified local package. The draft targets build commit `45a3bb403a5ea662cfd5ee847d1e3d964e5311ec`; subsequent documentation commits only record distribution evidence. See `docs/reports/github-preview-7.json`. The draft is visible to repository maintainers while signed in; it has not been publicly published.

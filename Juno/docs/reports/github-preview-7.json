@@ -1,0 +1,42 @@
+{
+  "status": "verified",
+  "release_url": "https://github.com/dmccoy26/Juno/releases/tag/untagged-f6dbf85a985530bf5974",
+  "draft": true,
+  "prerelease": true,
+  "build_commit": "45a3bb403a5ea662cfd5ee847d1e3d964e5311ec",
+  "package": "Juno-0.1.0-preview.7-macOS-arm64.pkg",
+  "bytes": 156263012,
+  "sha256": "9f2dd396a04737793efbda0e28594d6a90519bcead2ea0c60f6618b26ab3d551",
+  "assets": [
+    {
+      "name": "installer-preview-7.json",
+      "bytes": 1536,
+      "digest": "sha256:e73d7de1c149839817e8854ed247cfb8ee44e824847b9473021b9148f772d7ae"
+    },
+    {
+      "name": "INTEGRATIONS.md",
+      "bytes": 6569,
+      "digest": "sha256:8259ae06f2ccfd2cbc4bc4ca0db6c079d7479a8ae7460bd2237c9153e737724e"
+    },
+    {
+      "name": "Juno-0.1.0-preview.7-macOS-arm64.pkg",
+      "bytes": 156263012,
+      "digest": "sha256:9f2dd396a04737793efbda0e28594d6a90519bcead2ea0c60f6618b26ab3d551"
+    },
+    {
+      "name": "Juno-0.1.0-preview.7-macOS-arm64.pkg.sha256",
+      "bytes": 103,
+      "digest": "sha256:22fa35df2dccd0607b0b582e1566e995ba735bed914376a13e58fe459d2a6ae6"
+    },
+    {
+      "name": "semester-schedule.csv",
+      "bytes": 383,
+      "digest": "sha256:e7567162ba878ca390b91c98cca42112f3d974497df6133120cc3a38bc2cace4"
+    },
+    {
+      "name": "START-HERE.md",
+      "bytes": 4370,
+      "digest": "sha256:0dc591a9e41bcc59ae1ed4a4709c3979d5c5788d6e6231a4cd32a9ac7e2d632f"
+    }
+  ]
+}
