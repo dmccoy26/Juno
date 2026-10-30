@@ -47,7 +47,7 @@ class LANBoundary:
         except ValueError: allowed = False
         path, method = scope['path'], scope['method']
         permitted = (path == '/v1/pair' and method == 'POST' or
-            path in {'/','/v1/cache','/v1/ping'} and method == 'GET' or path in {'/v1/offline-operations','/v1/offline-review'} and method == 'POST' or
+            path in {'/','/v1/cache','/v1/ping','/v1/integrations'} and method == 'GET' or path in {'/v1/offline-operations','/v1/offline-review'} and method == 'POST' or
             path.startswith('/v1/memories') and method in {'GET','POST','PUT','DELETE'} or
             path.startswith('/v1/conversations') and method in {'GET','POST'} or
             path.startswith('/v1/check-ins') and method in {'GET','POST','PUT'} or

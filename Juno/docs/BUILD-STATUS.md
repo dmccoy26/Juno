@@ -2,6 +2,22 @@
 
 Updated: October 29, 2026.
 
+## Current verified release — preview 7
+
+The two overnight missions are implemented: durable offline recovery and operational evidence integrations. See [overnight report](reports/overnight-2026-10-29.md), [source setup](INTEGRATIONS.md) and [final installer verification](reports/installer-preview-7.json).
+
+- Native Mac app with memory, local-model chat, guided diaries, TaskDock, shared-host/offline edits and an Evidence tab.
+- Scoped conflict comparison/rebase/host-version decisions, deleted-memory recovery, durable acknowledgment IDs and persisted revoked queues.
+- Read-only Beacon alert API/JSON import, recurring calendar .ics import and weekly semester CSV import. Source replacement/removal invalidates derived model replies; imports stay on the work Mac and enter the paired laptop cache.
+- 59 backend tests passed with isolated PostgreSQL (no skipped integration tests), actual native queue/store and pinned-TLS outage/restart checks, native fictional-data UI/file-picker checks, and final extracted-installer checks.
+- Dan reported real wired/Wi-Fi laptop sync working. Actual laptop offline-edit/reconnect acceptance and multi-day use remain pending.
+- No live Beacon key or calendar file was supplied overnight; those sources are implemented and fixture-verified, not connected to live work data. HumanLab native acceptance is unverified. Email/Slack OAuth, cloud model approval, background hosting, semantic retrieval and the full beta mission remain later work.
+- Package: `dist/Juno-0.1.0-preview.7-macOS-arm64.pkg`, self-contained arm64, macOS 13.5+, ad hoc app signature, unsigned/not notarized installer.
+
+## Historical implementation notes (through preview 5)
+
+The entries below describe earlier increments; statements that an integration or two-Mac test had not happened apply to those increments. Use the current verified release and overnight report above for present status.
+
 ## Completed
 
 - Product mission and beta acceptance criteria captured.

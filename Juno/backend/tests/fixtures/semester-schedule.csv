@@ -1,0 +1,4 @@
+kind,name,location,start_date,end_date,days,start_time,end_time,timezone
+classroom_busy,Fictional animation class,Example Room,2026-10-26,2026-11-16,MO,09:00,10:00,America/Chicago
+staff_available,Fictional employee,Example Lab,2026-10-26,2026-11-16,MO,08:00,12:00,America/Chicago
+meeting,Fictional planning meeting,Example Office,2026-10-26,2026-11-16,MO,10:00,11:00,America/Chicago

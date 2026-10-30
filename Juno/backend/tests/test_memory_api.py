@@ -62,7 +62,7 @@ class MemoryTests(unittest.TestCase):
         from juno.models import Base
         with self.engine.connect() as connection:
             self.assertEqual(compare_metadata(MigrationContext.configure(connection), Base.metadata), [])
-            self.assertEqual(connection.scalar(text('SELECT version_num FROM alembic_version')), '0004_pairing')
+            self.assertEqual(connection.scalar(text('SELECT version_num FROM alembic_version')), '0005_integrations')
 
     def test_missing_invalid_revoked_auth(self):
         for headers in [{}, {'Authorization': 'Bearer invalid'}]:

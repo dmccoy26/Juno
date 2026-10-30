@@ -155,3 +155,16 @@ class OfflineOperation(Base):
     operation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     fingerprint: Mapped[str] = mapped_column(String(64))
     result: Mapped[dict] = mapped_column(JSONB)
+
+
+class IntegrationSnapshot(Base):
+    """Latest validated source per owner. Replacement removes superseded source text."""
+    __tablename__ = 'integration_snapshots'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(30), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), default=ident)
+    origin: Mapped[str] = mapped_column(String(500))
+    items: Mapped[list] = mapped_column(JSONB)
+    details: Mapped[dict] = mapped_column(JSONB)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)

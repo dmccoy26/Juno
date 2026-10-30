@@ -14,7 +14,7 @@ from .models import Audit, Memory, Suppression, now
 from .companion import install, invalidate_context
 from .local_model import LocalModel
 from .taskdock import TaskDockReader
-from . import taskdock_api, shared_host, offline_cache
+from . import taskdock_api, shared_host, offline_cache, integrations_api
 
 
 class MemoryInput(BaseModel):
@@ -40,7 +40,7 @@ def view(row):
 def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockReader, host_manager=None):
     engine = engine if engine is not None else engine_for()
     factory = sessions(engine)
-    app = FastAPI(title="Juno companion service", version="0.1.0-preview.6")
+    app = FastAPI(title="Juno companion service", version="0.1.0-preview.7")
     bearer = HTTPBearer(auto_error=False)
 
     @app.middleware("http")
@@ -92,7 +92,7 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
 
     @app.get("/health")
     def health():
-        return {"service": "juno", "version": "0.1.0-preview.6"}
+        return {"service": "juno", "version": "0.1.0-preview.7"}
 
     @app.get("/v1/memories")
     def memories(q: str = Query(default="", max_length=200),
@@ -165,4 +165,5 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
     taskdock_api.install(app, db, device, lock_owner, taskdock_factory)
     shared_host.install(app, db, device, lock_owner, host_manager)
     offline_cache.install(app, db, device, lock_owner)
+    integrations_api.install(app, db, device, lock_owner)
     return app

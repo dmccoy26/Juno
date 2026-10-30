@@ -145,6 +145,42 @@ def verify_taskdock_cache(url, token):
 
 
 
+def verify_integrations(url,token):
+    """Exercise all new readers using only supplied fictional files and an isolated HTTP fixture."""
+    from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+    from threading import Thread
+    fixtures=Path(__file__).resolve().parents[1]/'backend/tests/fixtures'
+    identities={}
+    for kind,name in [('calendar','calendar.ics'),('schedules','semester-schedule.csv'),('beacon','beacon-alerts.json')]:
+        body={'kind':kind,'content':(fixtures/name).read_text(),'label':name,'start':'2026-10-26','end':'2026-11-17','timezone':'America/Chicago'}
+        result=api(url,token,'/v1/integrations/import',method='POST',body=body)
+        identities[kind]=result['id']
+        if kind=='calendar':
+            assert result['count']==5 and result['details']['busy_days'][0]['busy_minutes']==90
+            api(url,token,'/v1/integrations/import',method='POST',body={**body,'expected_id':result['id'],'content':body['content'].replace('FREQ=WEEKLY','FREQ=SECONDLY')},expected=422)
+        if kind=='schedules':assert result['count']==12 and all(d['busy_minutes']==60 for d in result['details']['busy_days'])
+    feed=json.loads((fixtures/'beacon-alerts.json').read_text());calls=[]
+    secret='synthetic-packaged-beacon-key'
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self,*args):pass
+        def do_GET(self):
+            assert self.path=='/api/alerts' and self.headers.get('Authorization')=='Bearer '+secret
+            calls.append(self.path);payload=feed if len(calls)==1 else {**feed,'complete':False}
+            self.send_response(200);self.end_headers();self.wfile.write(json.dumps(payload).encode())
+    server=ThreadingHTTPServer(('127.0.0.1',0),Handler);worker=Thread(target=server.serve_forever,daemon=True);worker.start()
+    try:
+        body={'base_url':'http://127.0.0.1:'+str(server.server_port),'token':secret,'expected_id':identities['beacon']}
+        result=api(url,token,'/v1/integrations/beacon/refresh',method='POST',body=body);identities['beacon']=result['id']
+        api(url,token,'/v1/integrations/beacon/refresh',method='POST',body={**body,'expected_id':result['id']},expected=502)
+        saved=api(url,token,'/v1/integrations')
+        assert len(saved['items'])==3 and secret not in json.dumps(saved)
+        assert next(r for r in saved['items'] if r['kind']=='beacon')['id']==identities['beacon']
+        pages=api(url,token,'/v1/cache')['pages']
+        assert len(next(p['body'] for p in pages if p['path']=='/v1/integrations')['items'])==3
+    finally:server.shutdown();server.server_close();worker.join(3)
+    return identities
+
+
 def verify_shared_host(url, token, state):
     import ssl
     from urllib.parse import urlsplit
@@ -169,6 +205,7 @@ def verify_shared_host(url, token, state):
     assert exported['owner_id']==paired['owner_id']
     assert paired['token'] not in json.dumps(exported)
     operation={'operation_id':'00000000-0000-0000-0000-000000000099','kind':'memory.create','body':{'text':'Synthetic packaged offline memory','source':'verification:shared','confidence':'confirmed'}}
+    assert len(tls('/v1/integrations',paired['token'])['items'])==3
     first=tls('/v1/offline-operations',paired['token'],operation)
     assert tls('/v1/offline-operations',paired['token'],operation)==first
     tls('/v1/host',paired['token'],expected=403)
@@ -228,7 +265,9 @@ def verify(package, report):
                     body={'text':diary['diary_text'],'expected_revision':diary['revision'],'confirm':True})
                 assert diary['status']=='confirmed'
                 taskdock_snapshot_id=verify_taskdock_cache(url,token)
+                integration_ids=verify_integrations(url,token)
                 verify_shared_host(url,token,state)
+                checks.append("packaged Beacon HTTP reader, calendar recurrence/DST/overlap, semester CSV, error retention and offline export")
                 checks.append('packaged TLS pairing, one-use invitations, offline-operation idempotency, administration scope and device revocation')
                 checks.append('packaged TaskDock identity review, dated snapshot, provider freshness and outage retention')
                 stop(process,relocated,state);process=None
@@ -240,6 +279,10 @@ def verify(package, report):
                 token=second['token']
                 assert api(url,token,'/v1/taskdock')['snapshot']['id']==taskdock_snapshot_id
                 checks.append('TaskDock snapshot persists across packaged service restart')
+                assert {r['kind']:r['id'] for r in api(url,token,'/v1/integrations')['items']}==integration_ids
+                for kind,identity in integration_ids.items():api(url,token,'/v1/integrations/'+kind+'?expected_id='+identity,method='DELETE')
+                assert api(url,token,'/v1/integrations')['items']==[]
+                checks.append('integration snapshots persist across restart and can be removed without provider writes')
                 assert api(url,token,path)['text']==edit['text']
                 assert api(url,token,'/v1/check-ins',method='POST',body={'local_date':'2026-10-29'})['status']=='confirmed'
                 api(url,token,path+'?expected_revision=2',method='DELETE',expected=204)

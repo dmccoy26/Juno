@@ -272,6 +272,14 @@ extension OfflineCopy {
                 }
             }
             archive.pending.removeAll { $0.id == edit.id }
+            if let object = try JSONSerialization.jsonObject(with:result) as? [String:Any],object["invalidated"] as? Bool == true,
+               let real = object["id"] as? String,!archive.pending.contains(where: { $0.recordID == real }) {
+                try memories(objects("/v1/memories").filter { $0["id"] as? String != real })
+                for (key,data) in archive.pages where key.hasPrefix("/v1/check-ins/by-date/") {
+                    if let row = try JSONSerialization.jsonObject(with:data) as? [String:Any], row["id"] as? String == real { archive.pages.removeValue(forKey:key) }
+                }
+                try invalidateReplies()
+            }
             if archive.block?.operationID == edit.id { archive.block = nil }
             try save()
         } catch { archive = old; throw error }
@@ -297,6 +305,10 @@ extension OfflineCopy {
             try memories(objects("/v1/memories").filter { $0["id"] as? String != identity })
             _ = try perform("/v1/memories",method:"POST",body:body)
         } catch { archive = old; throw error }
+    }
+    func discardAll() throws {
+        let old = archive;archive.pending = [];archive.block = nil
+        do { try save() } catch { archive = old;throw error }
     }
     func resolve(_ edit:OfflineEdit,current:[String:Any]?,keepLaptop:Bool) throws {
         let old = archive
@@ -378,7 +390,12 @@ extension JunoStore {
     }
     func syncOfflineCopy() async throws {
         guard let profile = sharedProfile, let endpoint, let hostSession, let copy = offlineCopy else { return }
-        if let block = copy.archive.block { throw APIProblem(message:"Review the queued conflict in Computers: " + block.message,status:block.status) }
+        if let block = copy.archive.block {
+            do { _ = try await wire("/v1/ping",endpoint:endpoint,token:token,session:hostSession,method:"GET",body:nil) }
+            catch { if (error as? APIProblem)?.status == 401 { sharedRevoked() };throw error }
+            offline = false
+            throw APIProblem(message:"Review the queued conflict in Computers: " + block.message,status:block.status)
+        }
         while let edit = copy.archive.pending.first {
             var body:[String:Any] = ["operation_id":edit.id,"kind":edit.kind,"body":try JSONSerialization.jsonObject(with:edit.body)]
             if let record = edit.recordID { body["record_id"] = record }
@@ -558,7 +575,9 @@ struct ComputersWorkspace: View {
                         }
                         Button("Export queued edits…") {
                             let panel = NSSavePanel(); panel.nameFieldStringValue = "Juno-unsynchronized-edits.json"
-                            if panel.runModal() == .OK, let url = panel.url, let data = try? JSONEncoder().encode(store.pendingEdits) { _ = FileManager.default.createFile(atPath:url.path,contents:data,attributes:[.posixPermissions:0o600]) }
+                            if panel.runModal() == .OK, let url = panel.url, let data = try? JSONSerialization.data(withJSONObject:store.pendingEdits.map { edit -> [String:Any] in
+                                ["operation_id":edit.id,"kind":edit.kind,"record_id":edit.recordID ?? "","local_id":edit.localID ?? "","created_at":ISO8601DateFormatter().string(from:edit.createdAt),"body":(try? JSONSerialization.jsonObject(with:edit.body)) ?? [:]]
+                            },options:[.prettyPrinted,.sortedKeys]) { _ = FileManager.default.createFile(atPath:url.path,contents:data,attributes:[.posixPermissions:0o600]) }
                         }
                         Button("Discard queued edits and use the work Mac's versions…",role:.destructive) { discard = true }
                     }
@@ -607,8 +626,7 @@ struct ComputersWorkspace: View {
             Button("Keep edits",role:.cancel) {}
             Button("Discard queued edits",role:.destructive) {
                 guard let copy = store.offlineCopy else { return }
-                copy.archive.pending = []; copy.archive.block = nil
-                do { try copy.save(); store.pendingEdits = []; store.reconnectShared() }
+                do { try copy.discardAll(); store.pendingEdits = []; store.reconnectShared() }
                 catch { notice = "The queue could not be changed." }
             }
         } message: { Text("This removes unsynchronized laptop changes. Export them first if you want a separate copy. Juno will then reload the work Mac's records.") }

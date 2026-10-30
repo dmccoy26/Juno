@@ -93,3 +93,11 @@ The user designated this computer as the approved shared system and explicitly r
 ## IP-based LAN pairing repair — October 29, 2026
 
 Use the work Mac’s private IPv4 address in new pairing files, per the user’s wired-desktop/Wi-Fi-laptop preference. Include IP and hostname SANs in generated certificates and keep exact certificate pinning. Do not install a trust root or disable hostname/certificate verification to make browser tests pass. The localhost-only initial certificate was replaced only after confirming no active laptop pairing; old files were retained privately and unused invitations invalidated. Native errors distinguish network reachability from pairing/identity failures.
+
+## Overnight reliability and evidence — October 29, 2026
+
+Preview 6 makes offline operation acknowledgments and host-record mappings durable, retains revoked queues on disk and introduces explicit scoped conflict decisions. Cache identity is pinned certificate plus owner, allowing a fresh verified invitation at a changed IP. Known conflicts pause writes until reviewed; unrelated queued work is preserved.
+
+Preview 7 adds one validated current source per owner/provider: Beacon complete alert feed, manual calendar exports and semester schedules. Imports stay on the approved work Mac and are exported read-only to paired laptop caches. Beacon uses a dedicated user-supplied Keychain key and loopback-only GET, with no credential discovery. Calendar recurrence uses pinned icalendar/recurring-ical-events libraries inside bounded date windows; no OAuth or network subscriptions. Manual semester rows distinguish occupied rooms, employee scheduled availability and personal meetings. No employee capability/performance is inferred from availability. Source replacement/deletion removes superseded canonical source text and invalidates dependent replies, including in-flight generation checks.
+
+No new cloud provider, external messaging or institutional scope was introduced. A real Beacon key, calendar file, actual laptop offline-edit acceptance and HumanLab native acceptance remain user setup/acceptance work, not code blockers.

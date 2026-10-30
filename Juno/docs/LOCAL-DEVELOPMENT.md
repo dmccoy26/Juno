@@ -1,6 +1,6 @@
 # Local synthetic-data memory service
 
-The service now supports memory, persistent chat through a configured local model, and offline-capable daily check-ins. No live work integrations or cloud fallback are connected. Keep all records synthetic until institutional hosting and model permissions are established. See `CHAT-AND-CHECKINS.md` for the new native workflows.
+The service now supports memory, persistent chat through a configured local model, and offline-capable daily check-ins. The user approved this work Mac as the local shared system. Use synthetic data in automated tests; external/cloud processing remains unapproved. Beacon, calendar and semester import setup is in `INTEGRATIONS.md`; no live Beacon key or calendar file was provided overnight. See `CHAT-AND-CHECKINS.md` for the new native workflows.
 
 ## Setup
 

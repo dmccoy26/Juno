@@ -4,15 +4,15 @@ A Mac AI work companion that helps Dan decide what to do next, retain work conte
 
 The agreed product direction and first beta build mission are in [MISSION-0.1.0.md](MISSION-0.1.0.md).
 
-Current state: a native Mac development application with a working memory interface, a PostgreSQL-backed memory API, and a read-only TaskDock connector. Persistent local-model chat and guided daily check-ins are implemented.
+Current state: a native Mac development application with a working memory interface, a PostgreSQL-backed memory API, and a read-only TaskDock connector. Persistent local-model chat, guided daily check-ins, scoped offline conflict recovery and dated Beacon/calendar/semester-schedule evidence are implemented.
 
-The latest self-contained installer is `dist/Juno-0.1.0-preview.5-macOS-arm64.pkg`. Install it, then open `/Applications/Juno.app` in Finder. Python and PostgreSQL are included; no terminal, Homebrew, checkout, or browser tab is required on the recipient Mac. This Mac is approved as the work host. A paired laptop uses encrypted local-network access and keeps an offline copy with queued memory/diary edits. The host must be awake with Juno open. Chat runs through the host’s local model; no cloud fallback is enabled. Independent standalone data is not automatically merged.
+The latest self-contained installer is `dist/Juno-0.1.0-preview.7-macOS-arm64.pkg`. Install it, then open `/Applications/Juno.app` in Finder. Python and PostgreSQL are included; no terminal, Homebrew, checkout, or browser tab is required on the recipient Mac. This Mac is approved as the work host. A paired laptop uses encrypted local-network access and keeps an offline copy with queued memory/diary edits. The host must be awake with Juno open. Chat runs through the host’s local model; no cloud fallback is enabled. Independent standalone data is not automatically merged.
 
-See [work Mac hosting, laptop pairing and offline edits](docs/SHARED-HOST.md).
+See [work Mac hosting, laptop pairing and offline edits](docs/SHARED-HOST.md) and [new evidence integrations and setup](docs/INTEGRATIONS.md).
 
 The native TaskDock tab now supports read-only pairing with TaskDock build 13, Keychain credentials, dated task snapshots, source freshness and cached history. See [TaskDock pairing and verification](docs/TASKDOCK-CONNECTION.md).
 
-See [chat, LM Studio setup and check-ins](docs/CHAT-AND-CHECKINS.md), plus [latest installer verification](docs/reports/installer-preview-5.json). This internal preview is not Developer ID signed or notarized. Actual M5 laptop installation is still pending.
+See [chat, LM Studio setup and check-ins](docs/CHAT-AND-CHECKINS.md), plus [latest installer verification](docs/reports/installer-preview-7.json). This internal preview is not Developer ID signed or notarized. Dan confirmed real laptop synchronization; actual laptop offline-edit/reconnect acceptance remains pending.
 
 Rebuild the source-dependent development app after quitting Juno:
 

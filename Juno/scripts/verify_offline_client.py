@@ -67,6 +67,11 @@ try final.resolve(recovered,current:nil,keepLaptop:false)
 guard final.archive.pending.count == unrelatedCount, final.archive.block == nil else { fatalError("Scoped discard lost unrelated work") }
 let legacy = try JSONSerialization.data(withJSONObject:["savedAt":0,"pages":[String:String]()])
 guard try JSONDecoder().decode(OfflineArchive.self,from:legacy).pending.isEmpty else { fatalError("Old cache format cannot upgrade") }
+try final.discardAll()
+_ = try final.perform("/v1/memories",method:"POST",body:["text":"Must disappear after an invalidated receipt","source":"synthetic-receipt","confidence":"confirmed"])
+let invalidatedEdit = final.archive.pending.last!
+try final.acknowledge(invalidatedEdit,result:JSONSerialization.data(withJSONObject:["id":"invalidated-server-id","invalidated":true]))
+guard final.archive.pending.isEmpty, !String(data:try final.read("/v1/memories"),encoding:.utf8)!.contains("Must disappear") else { fatalError("Invalidated acknowledgment exposed stale canonical text") }
 print("PASS native offline memory edits, diary chain, restart, dependency mapping, conflict retention, local search, stale-reply removal and private file permissions")
 '''
 
@@ -111,7 +116,7 @@ def main():
         subprocess.run([str(path/'check')],check=True)
         (path/'Juno.swift').write_text((ROOT/'desktop/Juno.swift').read_text().split('@main\nstruct JunoApplication',1)[0])
         (path/'StoreCheck.swift').write_text(STORE_TEST)
-        subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-target','arm64-apple-macosx13.5',str(path/'Juno.swift'),str(ROOT/'desktop/Companion.swift'),str(ROOT/'desktop/TaskDock.swift'),str(ROOT/'desktop/Shared.swift'),str(path/'StoreCheck.swift'),'-o',str(path/'store-check')],check=True)
+        subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-target','arm64-apple-macosx13.5',str(path/'Juno.swift'),str(ROOT/'desktop/Companion.swift'),str(ROOT/'desktop/TaskDock.swift'),str(ROOT/'desktop/Shared.swift'),str(ROOT/'desktop/Integrations.swift'),str(path/'StoreCheck.swift'),'-o',str(path/'store-check')],check=True)
         subprocess.run([str(path/'store-check')],check=True,timeout=20)
 
 if __name__=='__main__':main()

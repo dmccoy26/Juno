@@ -1,6 +1,6 @@
 # First laptop installer: 0.1.0-preview.1
 
-Historical first package. The latest package is `0.1.0-preview.2`, adding persistent local-model chat and daily check-ins; see `CHAT-AND-CHECKINS.md`. The installation and verification approach below remains applicable.
+Historical first package. The latest package is `0.1.0-preview.7`, adding durable offline recovery and Beacon/calendar/semester-schedule evidence; see `SHARED-HOST.md` and `INTEGRATIONS.md`. The installation and verification approach below remains applicable.
 
 Target: Apple Silicon, including Dan's M5 MacBook Air on macOS 26.5. This is the first installable memory preview, not completion of the entire 0.1.0 beta mission.
 
