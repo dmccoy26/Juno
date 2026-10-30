@@ -18,5 +18,11 @@
     "browser_tests": 118
   },
   "packaged_production_source_matches_144_current_files": true,
-  "test_only_followup_commit": "3660631ee762cccaab9008d68e363baacdfc85a9"
+  "test_only_followup_commit": "3660631ee762cccaab9008d68e363baacdfc85a9",
+  "linux_duplicate_push_gate": {
+    "conclusion": "success",
+    "attempt": 2,
+    "url": "https://github.com/dmccoy26/TaskDock/actions/runs/41004744697",
+    "note": "Initial attempt hit an intermittent pre-existing initial-load sort assertion. Unchanged-source rerun passed; no assertion was weakened."
+  }
 }
