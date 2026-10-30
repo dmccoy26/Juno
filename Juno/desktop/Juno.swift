@@ -9,6 +9,7 @@ struct Memory: Codable, Identifiable, Equatable {
     let revision: Int
     let created_at: String
     let updated_at: String
+    var source_message_id: String? = nil
     var updatedLabel: String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -37,6 +38,7 @@ final class JunoStore: ObservableObject {
     @Published var planningTaskID: String?
     @Published var memoryReviewText: String?
     @Published var memoryReviewOriginal: String?
+    @Published var memoryReviewMessageID: String?
     @Published var memoryNotice: String?
     @Published var conversations: [ConversationRecord] = []
     @Published var conversationMore = false
@@ -223,9 +225,10 @@ final class JunoStore: ObservableObject {
         else { problem = "Could not reach Juno’s service. Try refreshing. Unsaved edits have been kept."; connected = false; status = "Disconnected" }
     }
     @discardableResult
-    func save(original: Memory?, text: String, source: String, confidence: String) async throws -> Memory {
+    func save(original: Memory?, text: String, source: String, confidence: String, sourceMessageID: String? = nil) async throws -> Memory {
         var body: [String: Any] = ["text": text, "source": source, "confidence": confidence]
         if let original { body["expected_revision"] = original.revision }
+        if let sourceMessageID { body["source_message_id"] = sourceMessageID }
         let data = try await request(original.map { "/v1/memories/" + $0.id } ?? "/v1/memories", method: original == nil ? "POST" : "PUT", body: body)
         let saved = try JSONDecoder().decode(Memory.self, from: data)
         query = ""; items.removeAll { $0.id == saved.id }; items.insert(saved, at: 0); selected = saved.id
@@ -249,13 +252,14 @@ struct Editor: View {
     @ObservedObject var store: JunoStore
     let original: Memory?
     var onSaved: ((Memory) -> Void)?
+    let sourceMessageID: String?
     @State var text: String
     @State var source: String
     @State var confidence: String
     @State private var saving = false
     @State private var issue: String?
-    init(store: JunoStore, original: Memory?, initialText: String = "", onSaved: ((Memory) -> Void)? = nil) {
-        self.store = store; self.original = original;self.onSaved = onSaved
+    init(store: JunoStore, original: Memory?, initialText: String = "", sourceMessageID: String? = nil, onSaved: ((Memory) -> Void)? = nil) {
+        self.store = store; self.original = original;self.onSaved = onSaved;self.sourceMessageID = sourceMessageID
         _text = State(initialValue: original?.text ?? initialText)
         _source = State(initialValue: original?.source ?? "Manual entry")
         _confidence = State(initialValue: original?.confidence ?? "confirmed")
@@ -278,7 +282,7 @@ struct Editor: View {
                 Button(saving ? "Saving…" : "Save memory") {
                     saving = true
                     Task {
-                        do { let saved = try await store.save(original: original, text: text, source: source, confidence: confidence);onSaved?(saved); dismiss() }
+                        do { let saved = try await store.save(original: original, text: text, source: source, confidence: confidence,sourceMessageID:sourceMessageID);onSaved?(saved); dismiss() }
                         catch { issue = (error as? APIProblem)?.message ?? "Could not save. Your draft is still here."; saving = false }
                     }
                 }.keyboardShortcut(.defaultAction).disabled(saving || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || text.count > 10000 || source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || source.count > 500)

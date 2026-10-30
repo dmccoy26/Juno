@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from .auth import authenticate
 from .database import engine_for, sessions
-from .models import Audit, Memory, Suppression, now
+from .models import Audit, Memory, Suppression, Message, Conversation, now
 from .companion import install, invalidate_context
 from .local_model import LocalModel
 from .taskdock import TaskDockReader
@@ -22,6 +22,7 @@ class MemoryInput(BaseModel):
     text: str = Field(min_length=1, max_length=10000)
     source: str = Field(min_length=1, max_length=500)
     confidence: Literal["confirmed", "observed", "inferred"]
+    source_message_id: str | None = Field(default=None,min_length=36,max_length=36)
 
 
 class MemoryEdit(MemoryInput):
@@ -34,7 +35,7 @@ def fingerprint(value):
 
 def view(row):
     return {key: getattr(row, key) for key in
-            ("id", "text", "source", "confidence", "revision", "created_at", "updated_at")}
+            ("id", "text", "source", "confidence", "revision", "created_at", "updated_at", "source_message_id")}
 
 
 def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockReader, host_manager=None, provider_transport=None, oauth_manager=None):
@@ -117,6 +118,9 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
     @app.post("/v1/memories", status_code=201)
     def create(value: MemoryInput, actor=Depends(device), session=Depends(db)):
         lock_owner(session, actor.owner_id)
+        if value.source_message_id is not None:
+            message = session.scalar(select(Message).join(Conversation,Conversation.id==Message.conversation_id).where(Message.id==value.source_message_id,Conversation.owner_id==actor.owner_id,Message.role=='user',Message.status=='complete'))
+            if message is None: raise HTTPException(404,'Source message not found.')
         fp = fingerprint(value)
         ensure_allowed(session, actor.owner_id, fp)
         row = Memory(owner_id=actor.owner_id, fingerprint=fp, **value.model_dump())
@@ -140,12 +144,14 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
         row = owned(session, actor.owner_id, memory_id)
         if row.revision != value.expected_revision:
             raise HTTPException(409, "Memory changed; reload before editing.")
+        if value.source_message_id is not None and value.source_message_id != row.source_message_id:
+            raise HTTPException(409,"A memory's originating message cannot be reassigned.")
         fp = fingerprint(value)
         ensure_allowed(session, actor.owner_id, fp)
         if fp != row.fingerprint:
             suppress(session, actor.owner_id, row.fingerprint)
         invalidate_context(session, actor.owner_id, 'memory:'+row.id)
-        for key, content in value.model_dump(exclude={"expected_revision"}).items():
+        for key, content in value.model_dump(exclude={"expected_revision","source_message_id"}).items():
             setattr(row, key, content)
         row.fingerprint = fp
         row.revision += 1

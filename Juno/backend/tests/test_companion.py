@@ -104,6 +104,69 @@ class CompanionTests(memory_tests.MemoryTests):
         self.assertEqual(self.client.delete('/v1/conversations/'+self.conv).status_code,409)
         self.assertEqual(self.client.get(self.path).status_code,200)
 
+    def test_message_memory_badge_survives_edit_and_disappears_after_memory_delete(self):
+        self.turn('Fictional original note')
+        user=next(m for m in self.client.get(self.path).json()['items'] if m['role']=='user')
+        value={'text':'Reviewed fictional fact','source':'Chat review','confidence':'confirmed','source_message_id':user['id']}
+        saved=self.client.post('/v1/memories',json=value)
+        self.assertEqual(saved.status_code,201,saved.text);memory=saved.json()
+        def badge():return next(m for m in self.client.get(self.path).json()['items'] if m['id']==user['id'])['saved_memory_id']
+        self.assertEqual(badge(),memory['id'])
+        changed=self.client.put('/v1/memories/'+memory['id'],json={'text':'Corrected fictional fact','source':'Corrected source','confidence':'confirmed','expected_revision':1})
+        self.assertEqual(changed.status_code,200,changed.text)
+        self.assertEqual(changed.json()['source_message_id'],user['id'])
+        self.assertEqual(badge(),memory['id'])
+        exported=self.client.get('/v1/cache').json()
+        self.assertIn(memory['id'],str(exported))
+        self.assertEqual(self.client.post('/v1/memories',json={**value,'text':'Another fact from same message'}).status_code,409)
+        self.assertEqual(self.client.delete('/v1/memories/'+memory['id']+'?expected_revision=2').status_code,204)
+        self.assertIsNone(badge())
+
+    def test_message_memory_origin_is_owner_scoped_and_chat_delete_keeps_memory(self):
+        self.turn('Fictional note to save')
+        user=next(m for m in self.client.get(self.path).json()['items'] if m['role']=='user')
+        value={'text':'Independent reviewed note','source':'Chat','confidence':'confirmed','source_message_id':user['id']}
+        self.client.headers['Authorization']='Bearer '+self.other_token
+        self.assertEqual(self.client.post('/v1/memories',json=value).status_code,404)
+        self.client.headers['Authorization']='Bearer '+self.token
+        memory=self.client.post('/v1/memories',json=value).json()
+        self.assertEqual(self.client.delete('/v1/conversations/'+self.conv).status_code,200)
+        kept=self.client.get('/v1/memories/'+memory['id'])
+        self.assertEqual(kept.status_code,200,kept.text)
+        self.assertIsNone(kept.json()['source_message_id'])
+
+    def test_legacy_badge_uses_exact_memory_content_not_model_prose(self):
+        self.turn('A fictional exact note')
+        def badge():return next(m for m in self.client.get(self.path).json()['items'] if m['role']=='user')['saved_memory_id']
+        self.assertIsNone(badge())
+        saved=self.client.post('/v1/memories',json={'text':'A fictional exact note','source':'Legacy manual','confidence':'confirmed'}).json()
+        self.assertEqual(badge(),saved['id'])
+
+    def test_memory_origin_upgrade_backfills_only_unambiguous_exact_owner_matches(self):
+        from pathlib import Path
+        from alembic import command
+        from alembic.config import Config
+        exact='Exact fictional note '+str(uuid.uuid4())
+        ambiguous='Repeated fictional note '+str(uuid.uuid4())
+        self.turn(exact)
+        original=next(m for m in self.client.get(self.path).json()['items'] if m['role']=='user')
+        def save(text):return self.client.post('/v1/memories',json={'text':text,'source':'Legacy','confidence':'confirmed'}).json()
+        first=save(exact)
+        self.turn(ambiguous);self.turn(ambiguous)
+        repeated=save(ambiguous)
+        self.client.headers['Authorization']='Bearer '+self.other_token
+        foreign=save(exact)
+        self.client.headers['Authorization']='Bearer '+self.token
+        cfg=Config(str(Path(__file__).resolve().parents[1]/'alembic.ini'))
+        with self.engine.connect() as connection:
+            cfg.attributes['connection']=connection
+            command.downgrade(cfg,'0007_schedules')
+            command.upgrade(cfg,'head')
+        self.assertEqual(self.client.get('/v1/memories/'+first['id']).json()['source_message_id'],original['id'])
+        self.assertIsNone(self.client.get('/v1/memories/'+repeated['id']).json()['source_message_id'])
+        self.client.headers['Authorization']='Bearer '+self.other_token
+        self.assertIsNone(self.client.get('/v1/memories/'+foreign['id']).json()['source_message_id'])
+
     def test_failed_turn_can_retry_without_duplicate_user_message(self):
         request=str(uuid.uuid4());FakeModel.failure=True
         self.assertEqual(self.turn(request_id=request).json()['status'],'failed')

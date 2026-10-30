@@ -191,11 +191,19 @@ extension OfflineCopy {
         }
     }
     func invalidateReplies() throws {
+        let memories = objects("/v1/memories")
+        let memoryIDs = Set(memories.compactMap { $0["id"] as? String })
+        var origins: [String:String] = [:]
+        for memory in memories { if let origin = memory["source_message_id"] as? String,let id = memory["id"] as? String { origins[origin] = id } }
         for (key, data) in archive.pages where key.contains("/messages") {
             guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any], var items = object["items"] as? [[String: Any]] else { continue }
             for i in items.indices where items[i]["role"] as? String == "assistant" {
                 items[i]["text"] = "This saved reply was hidden because you edited work context offline. Reconnect for current context."
                 items[i]["status"] = "invalidated"
+            }
+            for i in items.indices where items[i]["role"] as? String == "user" {
+                if let origin = items[i]["id"] as? String,let memory = origins[origin] { items[i]["saved_memory_id"] = memory }
+                else if let memory = items[i]["saved_memory_id"] as? String,!memoryIDs.contains(memory) { items[i].removeValue(forKey:"saved_memory_id") }
             }
             object["items"] = items; archive.pages[key] = try JSONSerialization.data(withJSONObject: object)
         }
@@ -209,7 +217,7 @@ extension OfflineCopy {
             if path == "/v1/memories", method == "POST" {
                 kind = "memory.create"; localID = "offline-" + UUID().uuidString
                 result = body; result["id"] = localID!; result["revision"] = 1; result["created_at"] = stamp; result["updated_at"] = stamp
-                var rows = objects("/v1/memories"); rows.insert(result, at: 0); try memories(rows)
+                var rows = objects("/v1/memories"); rows.insert(result, at: 0); try memories(rows);try invalidateReplies()
             } else if pieces.count == 3 && pieces[1] == "memories" && ["PUT","DELETE"].contains(method) {
                 recordID = pieces[2]
                 var rows = objects("/v1/memories")
@@ -264,7 +272,7 @@ extension OfflineCopy {
                 // Preserve newer optimistic fields, while making their identity durable before cache refresh.
                 var rows = objects("/v1/memories")
                 for index in rows.indices where rows[index]["id"] as? String == local { rows[index]["id"] = real }
-                try memories(rows)
+                try memories(rows);try invalidateReplies()
                 for (key,data) in archive.pages where key.hasPrefix("/v1/check-ins/by-date/") {
                     if var row = try JSONSerialization.jsonObject(with:data) as? [String:Any], row["id"] as? String == local {
                         row["id"] = real; archive.pages[key] = try JSONSerialization.data(withJSONObject:row)

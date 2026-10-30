@@ -39,10 +39,11 @@ class Memory(Base):
     source: Mapped[str] = mapped_column(String(500))
     confidence: Mapped[str] = mapped_column(String(20))
     fingerprint: Mapped[str] = mapped_column(String(64))
+    source_message_id: Mapped[str | None] = mapped_column(ForeignKey("messages.id",ondelete="SET NULL",name="fk_memory_source_message"),nullable=True)
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    __table_args__ = (UniqueConstraint("owner_id", "fingerprint"),)
+    __table_args__ = (UniqueConstraint("owner_id", "fingerprint"),UniqueConstraint("owner_id","source_message_id",name="uq_memory_owner_source_message"))
 
 
 class Suppression(Base):

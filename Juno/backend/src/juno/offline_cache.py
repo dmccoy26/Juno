@@ -15,7 +15,7 @@ class OfflineInput(BaseModel):
 
 from sqlalchemy import select
 from .models import OfflineOperation, Memory, Conversation, Message, CheckIn, ModelConnection, TaskDockState, TaskDockHistory, now
-from .companion import message_view, conversation_view, checkin_view
+from .companion import message_view, conversation_view, checkin_view, saved_memory_links
 from .taskdock_api import active_snapshot, snapshot_view
 
 
@@ -41,7 +41,7 @@ def install(app,db,device,lock_owner):
             if len(rows)>maximum:raise HTTPException(413,'The offline copy exceeds this preview’s size limit. The previous copy has been retained.')
             return rows
         memories=bounded(select(Memory).where(Memory.owner_id==actor.owner_id).order_by(Memory.updated_at.desc(),Memory.id),10000)
-        memory_view=lambda r:{k:getattr(r,k) for k in ('id','text','source','confidence','revision','created_at','updated_at')}
+        memory_view=lambda r:{k:getattr(r,k) for k in ('id','text','source','confidence','revision','created_at','updated_at','source_message_id')}
         for offset in range(0,max(1,len(memories)),50):
             add('/v1/memories?'+urlencode({'q':'','offset':offset}),{'items':[memory_view(r) for r in memories[offset:offset+50]],'has_more':offset+50<len(memories),'offset':offset,'limit':50})
         conversations=bounded(select(Conversation).where(Conversation.owner_id==actor.owner_id).order_by(Conversation.created_at.desc(),Conversation.id),1000)
@@ -52,10 +52,11 @@ def install(app,db,device,lock_owner):
             rows=bounded(select(Message).where(Message.conversation_id==conv.id).order_by(Message.order_key.desc()),10000)
             count+=len(rows)
             if count>50000:raise HTTPException(413,'The offline history exceeds this preview’s size limit.')
+            links=saved_memory_links(session,actor.owner_id,rows,memories)
             for offset in range(0,max(1,len(rows)),100):
                 path='/v1/conversations/'+conv.id+'/messages'
                 if offset:path+='?before='+str(rows[offset-1].order_key)
-                add(path,{'items':[message_view(r) for r in reversed(rows[offset:offset+100])],'has_more':offset+100<len(rows)})
+                add(path,{'items':[message_view(r,links.get(r.id)) for r in reversed(rows[offset:offset+100])],'has_more':offset+100<len(rows)})
         diaries=bounded(select(CheckIn).where(CheckIn.owner_id==actor.owner_id),10000)
         for row in diaries:add('/v1/check-ins/by-date/'+str(row.local_date),checkin_view(row))
         config=session.get(ModelConnection,actor.owner_id)

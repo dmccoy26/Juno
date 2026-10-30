@@ -2,6 +2,14 @@
 
 Updated: October 30, 2026.
 
+## Saved-memory status — desktop follow-up
+
+Saved chat messages now show **Saved to memory** and **Review memory** instead of Save as memory. Canonical memory provenance persists the originating user-message ID, preserving status when the fact or human-readable source is corrected. Owner validation prevents cross-account origins, one linked memory per message prevents duplicate writes, and deleting a conversation sets the origin null while retaining the independent memory. Deleting a memory clears its message status on reload/sync. Exact existing saved text can be recognized for older clients; schema **0008_memory_origin** backfills only unambiguous, owner-matched exact copies. Model claims alone never establish a saved record.
+
+Message API/cache exports include saved-memory IDs. Offline copies preserve/remap them across create, restart and acknowledgement and clear them after local deletion. Canonical memory corrections preserve the provenance even when older clients omit it. No data is sent to an external model for this feature.
+
+Verification: optimized native build; 112 PostgreSQL tests (zero skips), including migration backfill ambiguity/owner isolation, save/edit/delete status and independent memory preservation; native offline badge create/restart/remap/correction/deletion and actual JunoStore checks pass. Work-Mac startup created a private verified database backup before migration. Native controls confirm the already-saved messages show status/review links and that Review opens the memory record. Host identity, work-record counts, certificate/key and prior pairing are preserved. The updated app is installed; the laptop installer remains unchanged.
+
 ## Chat deletion — desktop follow-up
 
 Chat now has **Delete conversation…** in each row’s context menu and below the selected conversation list. A confirmation names the chat and explains permanent removal of its active messages, preservation of separately saved memories/diaries, and retained offline copies/backups. Cancel makes no change. Deletion requires a connection and is rejected during a pending reply. The owner-scoped API cascades message deletion; a paired laptop may use it while connected, and the next cache export omits the deleted chat. No offline deletion is queued.

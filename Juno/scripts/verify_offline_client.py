@@ -72,6 +72,24 @@ _ = try final.perform("/v1/memories",method:"POST",body:["text":"Must disappear 
 let invalidatedEdit = final.archive.pending.last!
 try final.acknowledge(invalidatedEdit,result:JSONSerialization.data(withJSONObject:["id":"invalidated-server-id","invalidated":true]))
 guard final.archive.pending.isEmpty, !String(data:try final.read("/v1/memories"),encoding:.utf8)!.contains("Must disappear") else { fatalError("Invalidated acknowledgment exposed stale canonical text") }
+let badgeProfile = SharedProfile(address:"https://synthetic.local:8443",certificate_sha256:String(repeating:"a",count:64),owner_id:UUID().uuidString,device_id:"badges")
+let badgeCopy = try OfflineCopy(profile:badgeProfile)
+defer { try? FileManager.default.removeItem(at:badgeCopy.file) }
+let origin = "00000000-0000-0000-0000-000000000001"
+let badgePages:[[String:Any]] = [["path":"/v1/memories","body":["items":[[String:Any]](),"has_more":false]],["path":"/v1/conversations/badge/messages","body":["items":[["id":origin,"role":"user","text":"Synthetic origin","status":"complete"]],"has_more":false]]]
+try badgeCopy.replace(JSONSerialization.data(withJSONObject:["version":1,"owner_id":badgeProfile.owner_id,"pages":badgePages]),owner:badgeProfile.owner_id)
+let badgeCreated = try JSONSerialization.jsonObject(with:badgeCopy.perform("/v1/memories",method:"POST",body:["text":"Reviewed fact","source":"Chat","confidence":"confirmed","source_message_id":origin])) as! [String:Any]
+let badgeID = badgeCreated["id"] as! String
+precondition(badgeCopy.objects("/v1/conversations/badge/messages").first?["saved_memory_id"] as? String == badgeID)
+let badgeRestart = try OfflineCopy(profile:badgeProfile)
+precondition(badgeRestart.objects("/v1/conversations/badge/messages").first?["saved_memory_id"] as? String == badgeID)
+try badgeRestart.acknowledge(badgeRestart.archive.pending[0],result:JSONSerialization.data(withJSONObject:["id":"server-badge-memory"]))
+precondition(badgeRestart.objects("/v1/conversations/badge/messages").first?["saved_memory_id"] as? String == "server-badge-memory")
+_ = try badgeRestart.perform("/v1/memories/server-badge-memory",method:"PUT",body:["text":"Corrected fact","source":"Updated","confidence":"confirmed","expected_revision":1])
+precondition(badgeRestart.objects("/v1/conversations/badge/messages").first?["saved_memory_id"] as? String == "server-badge-memory")
+_ = try badgeRestart.perform("/v1/memories/server-badge-memory",method:"DELETE",body:["expected_revision":2])
+precondition(badgeRestart.objects("/v1/conversations/badge/messages").first?["saved_memory_id"] == nil)
+print("PASS offline saved-memory badge create/restart/remap/correction/deletion")
 print("PASS native offline memory edits, diary chain, restart, dependency mapping, conflict retention, local search, stale-reply removal and private file permissions")
 '''
 

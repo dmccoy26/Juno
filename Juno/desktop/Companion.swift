@@ -5,6 +5,7 @@ struct ConversationPage: Decodable { let items: [ConversationRecord]; let has_mo
 struct ChatMessage: Decodable, Identifiable {
     let id: String; let role: String; let text: String; let request_id: String
     let status: String; let order_key: Int64; let model_name: String?; let meeting_mode: Bool
+    var saved_memory_id: String? = nil
 }
 struct MessagePage: Decodable { let items: [ChatMessage]; let has_more: Bool }
 struct ModelSettings: Decodable { let base_url: String; let model: String; let configured: Bool }
@@ -70,7 +71,7 @@ extension JunoStore {
         guard !chatSending else { return }
         let text = retry.flatMap { failed in messages.first { $0.request_id == failed.request_id && $0.role == "user" }?.text } ?? chatDraft
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        if retry == nil, let draft = memoryRequestText(text) { memoryReviewOriginal = text;memoryReviewText = draft;memoryNotice = nil;return }
+        if retry == nil, let draft = memoryRequestText(text) { memoryReviewMessageID = nil;memoryReviewOriginal = text;memoryReviewText = draft;memoryNotice = nil;return }
         chatSending = true; chatIssue = nil
         let mode = meeting
         Task {
@@ -275,7 +276,19 @@ struct ChatWorkspace: View {
                                     else if message.status == "invalidated" { Text(message.text).italic().foregroundStyle(.secondary) }
                                     else if store.meeting && message.role == "assistant" && !message.meeting_mode { Text("Private-mode reply hidden during Meeting mode.").italic().foregroundStyle(.secondary) }
                                     else { Text(message.text).textSelection(.enabled) }
-                                    if message.role == "user" && message.status == "complete" { Button("Save as memory…") { store.memoryReviewOriginal = nil;store.memoryReviewText = memoryRequestText(message.text) ?? message.text;store.memoryNotice = nil }.font(.caption).disabled(!store.connected) }
+                                    if message.role == "user" && message.status == "complete" {
+                                        if let memoryID = message.saved_memory_id {
+                                            HStack {
+                                                Label("Saved to memory",systemImage:"checkmark.circle.fill").foregroundStyle(.secondary)
+                                                Button("Review memory") { Task { do {
+                                                    if !store.items.contains(where:{$0.id == memoryID}) { store.items.insert(try await store.decode(Memory.self,"/v1/memories/"+memoryID),at:0) }
+                                                    store.selected = memoryID;store.section = "Memories"
+                                                } catch { store.report(error) } } }
+                                            }.font(.caption)
+                                        } else {
+                                            Button("Save as memory…") { store.memoryReviewOriginal = nil;store.memoryReviewMessageID = message.id;store.memoryReviewText = memoryRequestText(message.text) ?? message.text;store.memoryNotice = nil }.font(.caption).disabled(!store.connected)
+                                        }
+                                    }
                                     if message.status == "failed" { Button("Retry this reply") { store.sendChat(retry: message) }.disabled(store.chatSending) }
                                 }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(message.role == "user" ? Color.purple.opacity(0.08) : Color.secondary.opacity(0.04)).clipShape(RoundedRectangle(cornerRadius: 10)).id(message.id)
                             }
@@ -300,13 +313,13 @@ struct ChatWorkspace: View {
                 Task { defer { deletingConversation = false };do { try await store.deleteConversation(target.id) } catch { deleteIssue = (error as? APIProblem)?.message ?? "Could not delete the conversation. It is still saved." } }
             }
         } message: { Text("“" + (deleteTarget?.title ?? "") + "” and all its messages will be permanently removed from Juno’s active records. Saved memories and diary entries stay intact. Other devices may retain an older copy until they sync; old backups are unchanged.") }
-        .sheet(isPresented:Binding(get:{store.memoryReviewText != nil},set:{if !$0 {store.memoryReviewText = nil;store.memoryReviewOriginal = nil}})) {
-            Editor(store:store,original:nil,initialText:store.memoryReviewText ?? "") { saved in
+        .sheet(isPresented:Binding(get:{store.memoryReviewText != nil},set:{if !$0 {store.memoryReviewText = nil;store.memoryReviewOriginal = nil;store.memoryReviewMessageID = nil}})) {
+            Editor(store:store,original:nil,initialText:store.memoryReviewText ?? "",sourceMessageID:store.memoryReviewMessageID) { saved in
                 store.memoryNotice = store.offline ? "Memory saved on this laptop and queued for sync." : "Memory saved. You can review, correct or delete it in Memories."
                 if let original = store.memoryReviewOriginal,store.chatDraft == original {
                     store.chatDraft = "";UserDefaults.standard.removeObject(forKey:"chatDraft." + (store.currentConversation ?? "new"))
                 }
-                store.selected = saved.id;store.memoryReviewOriginal = nil;store.memoryReviewText = nil
+                store.selected = saved.id;store.memoryReviewOriginal = nil;store.memoryReviewMessageID = nil;store.memoryReviewText = nil
             }
         }
     }

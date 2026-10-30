@@ -56,8 +56,17 @@ class DiaryInput(Strict):
     confirm: bool = False
 
 
-def message_view(row):
-    return {k: getattr(row, k) for k in ('id', 'role', 'text', 'request_id', 'status', 'order_key', 'created_at', 'model_name', 'meeting_mode')}
+def message_view(row, saved_memory_id=None):
+    return {**{k: getattr(row, k) for k in ('id', 'role', 'text', 'request_id', 'status', 'order_key', 'created_at', 'model_name', 'meeting_mode')},'saved_memory_id':saved_memory_id}
+
+
+def saved_memory_links(session, owner_id, messages, memories=None):
+    rows = memories if memories is not None else session.scalars(select(Memory).where(Memory.owner_id == owner_id)).all()
+    by_message = {r.source_message_id:r.id for r in rows if r.source_message_id}
+    # Older clients supplied no provenance: exact current text is evidence of saved content,
+    # never infer a link from a model's prose or approximate semantic similarity.
+    by_text = {r.text:r.id for r in rows}
+    return {m.id:by_message.get(m.id) or by_text.get(m.text) or by_text.get(memory_request(m.text)) for m in messages if m.role == 'user'}
 
 
 def conversation_view(row):
@@ -274,7 +283,8 @@ def install(app, db, device, lock_owner, model_factory=LocalModel):
         query = select(Message).where(Message.conversation_id == identity)
         if before is not None: query = query.where(Message.order_key < before)
         rows = session.scalars(query.order_by(Message.order_key.desc()).limit(101)).all()
-        return {'items':[message_view(r) for r in reversed(rows[:100])], 'has_more':len(rows)>100}
+        links = saved_memory_links(session,actor.owner_id,rows[:100])
+        return {'items':[message_view(r,links.get(r.id)) for r in reversed(rows[:100])], 'has_more':len(rows)>100}
 
     @app.post('/v1/conversations/{identity}/messages')
     def send(identity: str, value: TurnInput, actor=Depends(device), session=Depends(db)):
