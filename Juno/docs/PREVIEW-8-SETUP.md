@@ -16,7 +16,7 @@ Still manual: actual Google/Microsoft consent with your registration, Slack/Smar
 
 Installers and both setup guides are in `/Users/dmccoy/Downloads/Juno-0.1.0-preview.8`; the TaskDock candidate has its own `TaskDock-build-15-candidate` subfolder. Both were extracted and verified; GitHub package byte counts and SHA-256 digests match the local reports.
 
-- [Juno preview 8 draft release](https://github.com/dmccoy26/Juno/releases/tag/untagged-84f39cc4e96115b7a3b0)
+- [Juno preview 8 draft release](https://github.com/dmccoy26/Juno/releases/tag/untagged-5293b211c9510fd8c7c5)
 - [TaskDock build 15 draft release](https://github.com/dmccoy26/TaskDock/releases/tag/untagged-26bc656c6d8593c9a698) and [review PR #1](https://github.com/dmccoy26/TaskDock/pull/1)
 
 Draft releases are accessible to repository owners/collaborators and have not been publicly published. Source changes are pushed; the TaskDock PR is deliberately unmerged.

@@ -36,4 +36,4 @@ Enter approved client IDs/secrets/tokens, perform actual provider consent, choos
 
 ## Distribution verification
 
-[Juno draft release](https://github.com/dmccoy26/Juno/releases/tag/untagged-84f39cc4e96115b7a3b0) and [TaskDock draft candidate](https://github.com/dmccoy26/TaskDock/releases/tag/untagged-26bc656c6d8593c9a698) contain the verified installers. GitHub SHA-256/size checks match local extracted-package reports. Downloads copies match the same digests. Reports: [Juno](github-preview-8.json), [TaskDock](taskdock-build15-github.json). No draft was publicly published, and TaskDock’s PR was not merged.
+[Juno draft release](https://github.com/dmccoy26/Juno/releases/tag/untagged-5293b211c9510fd8c7c5) and [TaskDock draft candidate](https://github.com/dmccoy26/TaskDock/releases/tag/untagged-26bc656c6d8593c9a698) contain the verified installers. GitHub SHA-256/size checks match local extracted-package reports. Downloads copies match the same digests. Reports: [Juno](github-preview-8.json), [TaskDock](taskdock-build15-github.json). No draft was publicly published, and TaskDock’s PR was not merged.
