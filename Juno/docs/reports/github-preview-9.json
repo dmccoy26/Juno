@@ -1,0 +1,38 @@
+{
+  "release": "https://github.com/dmccoy26/Juno/releases/tag/untagged-a10467c73761a2cab077",
+  "draft": true,
+  "source_commit": "65c2613ab433d27f4e253981c3830c1c4e32757e",
+  "status": "all six published draft asset sizes and SHA-256 digests match verified local files",
+  "assets": [
+    {
+      "name": "installer-preview-9.json",
+      "size": 1792,
+      "digest": "sha256:f0d70eb007c72d61ad05c5bc8f9f3c148cb0198e45af3442659e88c550c66b30"
+    },
+    {
+      "name": "Juno-0.1.0-preview.9-macOS-arm64.pkg",
+      "size": 156558430,
+      "digest": "sha256:294606d6d0841d7b3f9b7be51f56b26e87fe56fdbf4d20a0099011cf97fd0ec3"
+    },
+    {
+      "name": "Juno-0.1.0-preview.9-macOS-arm64.pkg.sha256",
+      "size": 103,
+      "digest": "sha256:b9412613b061efb13d338b6d8d435a0a3d00c41c279a756add1f3c446c86054e"
+    },
+    {
+      "name": "planning-preview-9.json",
+      "size": 1766,
+      "digest": "sha256:5ff67fc9c49eedef931b7ee01c66bf0bb07b23e5de4d1de2ed25254a154a95cf"
+    },
+    {
+      "name": "PLANNING.md",
+      "size": 5659,
+      "digest": "sha256:1b8e32574fa9f87c2591a8fbe920085bfcd0fecc136d39b9c1580475fe6f284a"
+    },
+    {
+      "name": "PREVIEW-9-SETUP.md",
+      "size": 3073,
+      "digest": "sha256:57a8b22e95d36dc9cb9491155d3844809f7f743d46d1a3a60b96bbda6e5adbc0"
+    }
+  ]
+}
