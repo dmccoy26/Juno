@@ -1,0 +1,38 @@
+{
+  "release": "https://github.com/dmccoy26/Juno/releases/tag/untagged-f95efedce68fc11a1b72",
+  "draft": true,
+  "source_commit": "45379a4040223ac44ab1a0cc00efc52e465313e6",
+  "status": "All six asset sizes and SHA-256 digests match verified local artifacts.",
+  "assets": [
+    {
+      "name": "installer-preview-10.json",
+      "size": 1840,
+      "digest": "sha256:20bcbb75d3b51191ff5eacbdbc29086a9b00435fbfddc12bc65b68e7b8703f6a"
+    },
+    {
+      "name": "Juno-0.1.0-preview.10-macOS-arm64.pkg",
+      "size": 156488013,
+      "digest": "sha256:3a5ee85fb906ddc0bb47bd135df4ac63cc053ad53c9f2b24c241c0926d72f31f"
+    },
+    {
+      "name": "Juno-0.1.0-preview.10-macOS-arm64.pkg.sha256",
+      "size": 104,
+      "digest": "sha256:1166a89510a3aa3cc6283ff8a56b16424306435427c29f87b097118749a53344"
+    },
+    {
+      "name": "PREVIEW-10-SETUP.md",
+      "size": 2685,
+      "digest": "sha256:db23462062a559093b1d0245c6fa933130aa42858effefc46b3d7f97fc776b95"
+    },
+    {
+      "name": "SCHEDULES-AND-REPAIR-PLANNING.md",
+      "size": 5916,
+      "digest": "sha256:40ff013f531c9c2ee7f649d210fe4c3ede40a6108d552ac0e41e2146dcbadf25"
+    },
+    {
+      "name": "schedules-preview-10.json",
+      "size": 2252,
+      "digest": "sha256:173d51e280dad15b1c66f3a8900156ddd86a773ac96356dbe3cf8cfd6b51e94a"
+    }
+  ]
+}
