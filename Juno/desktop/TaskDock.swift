@@ -29,11 +29,18 @@ indirect enum TaskJSON: Decodable {
 }
 struct TaskDockInfo: Decodable {
     let workspace_id: String; let device_id: String; let definitions: TaskJSON; let capabilities: [String: Bool]
+    var sharing_version: Int?;var sharing: TaskJSON?;var retention_notice: String?;var sharing_restricted: Bool?
 }
 struct TaskDockTask: Decodable, Identifiable {
     let id: String; let fields: TaskJSON
     var title: String { text("title") ?? "Untitled task" }
     func text(_ key: String) -> String? { if case .object(let fields) = fields, case .string(let text) = fields[key] { return text }; return nil }
+    func planningText(_ key: String) -> String? {
+        guard case .object(let fields) = fields,case .object(let details) = fields["planning_details"],case .object(let fact) = details[key],case .string("provided") = fact["state"],case .string(let value) = fact["value"] else { return nil };return value
+    }
+    var planningBlockerFlag: String? {
+        guard case .object(let fields) = fields,case .object(let details) = fields["planning_details"],case .object(let fact) = details["blockers"],case .string(let value) = fact["taskdock_flag"] else { return nil };return value
+    }
     init(from decoder: Decoder) throws {
         fields = try TaskJSON(from: decoder)
         guard case .object(let object) = fields, case .string(let ident) = object["id"] else { throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Missing task identity")) }
@@ -191,6 +198,11 @@ struct TaskDockWorkspace: View {
             } else { Text("This laptop reads the work Mac’s dated TaskDock snapshot. Manage pairing and refresh TaskDock on the work Mac.").foregroundStyle(.secondary) }
             if let notice { Text(notice).foregroundStyle(.secondary).textSelection(.enabled) }
             if let snapshot = state?.snapshot {
+                if let version = snapshot.info.sharing_version {
+                    Text("Controlled sharing • version \(version). Change shared fields in TaskDock Settings → Juno.").font(.caption).foregroundStyle(.secondary)
+                    DisclosureGroup("Shared information groups") { Text(snapshot.info.sharing?.pretty ?? "Unknown selection").font(.caption).textSelection(.enabled) }
+                } else { Text("Legacy task scope. Optional planning facts are not shared. Choose them in TaskDock Settings → Juno.").font(.caption).foregroundStyle(.secondary) }
+                if let notice = snapshot.info.retention_notice { Text(notice).foregroundStyle(.orange) }
                 TimelineView(.periodic(from: .now, by: 60)) { tick in
                     let parser = ISO8601DateFormatter()
                     let _ = parser.formatOptions.insert(.withFractionalSeconds)
@@ -277,9 +289,55 @@ struct TaskDockDetails: View {
             Text("Blocked since: \(display("blocked_since"))")
             Text("Parent: \(task.text("parent_title") ?? task.text("parent_id") ?? "None recorded")")
             Text("Category: \(display("category_name"))")
+            TaskDockRequestFacts(task:task)
             Text("Description").font(.caption.bold()); Text(display("description"))
             Text("Latest update").font(.caption.bold()); Text(display("latest_update"))
             ForEach(Array(custom.enumerated()), id: \.offset) { _, field in Text("\(field.0): \(field.1)") }
         }.textSelection(.enabled)
+    }
+}
+
+
+struct TaskDockRequestFacts: View {
+    let task: TaskDockTask
+    private let labels = ["issue_description":"Issue description","requested_outcome":"Requested outcome","building":"Building","room":"Room","equipment":"Affected equipment","requester":"Requester","contact":"Access / contact person","impact":"Operational impact","reported_priority":"Reported priority","troubleshooting":"Troubleshooting attempted","blockers":"Blockers","dependencies":"Dependencies"]
+    private func text(_ fields:[String:TaskJSON],_ key:String) -> String? { if case .string(let value) = fields[key] { return value };return nil }
+    var body: some View {
+        if case .object(let fields) = task.fields {
+            if case .object(let details) = fields["planning_details"], !details.isEmpty {
+                GroupBox("Shared request facts") {
+                    VStack(alignment:.leading,spacing:10) {
+                        ForEach(details.keys.sorted(),id:\.self) { key in
+                            if case .object(let fact) = details[key] {
+                                VStack(alignment:.leading,spacing:3) {
+                                    Text(labels[key] ?? key).font(.subheadline.bold())
+                                    Text(text(fact,"state") == "none" ? "Explicitly none" : text(fact,"state") == "provided" ? text(fact,"value") ?? "Not supplied" : "Not supplied / unknown")
+                                    if let origin = text(fact,"origin") { Text("Source: " + origin).font(.caption).foregroundStyle(.secondary) }
+                                    if let observed = text(fact,"updated_at") { Text("Recorded: " + scheduleDate(observed)).font(.caption).foregroundStyle(.secondary) }
+                                    if let stamp = text(fact,"source_updated_at") { Text("Source updated: " + scheduleDate(stamp)).font(.caption).foregroundStyle(.secondary) }
+                                    if case .bool(true) = fact["review_conflict"] { Text("Conflicts with TaskDock’s blocked flag — review before planning.").font(.caption).foregroundStyle(.orange) }
+                                    if let flag = text(fact,"taskdock_flag") { Text("TaskDock flag: " + flag).font(.caption).foregroundStyle(.orange) }
+                                }
+                            }
+                        }
+                        if case .object(let readiness) = fields["planning_readiness"],let state = text(readiness,"state") {
+                            Text(state == "limited_sharing" ? "Request completeness is limited by sharing." : state == "needs_information" ? "Request information is missing." : "Shared request details are complete; staffing still needs review.").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Text("Only selected shared facts are shown. Estimates, skills, supervision, preparation and staffing still need your review.").font(.caption).foregroundStyle(.secondary)
+                    }.padding(6).frame(maxWidth:.infinity,alignment:.leading)
+                }
+            }
+            if case .object(let sample) = fields["source_updates"],case .array(let comments) = sample["items"] {
+                DisclosureGroup("Saved source comment sample (\(comments.count))") {
+                    Text("This is a dated sample, not a complete or live conversation.").font(.caption).foregroundStyle(.secondary)
+                    if let read = text(sample,"read_at") { Text("Read: " + scheduleDate(read)).font(.caption) }
+                    if let scope = text(sample,"scope") { Text(scope).font(.caption) }
+                    if case .bool(let complete) = sample["complete"] { Text(complete ? "Sample reports complete within its stated scope." : "Partial sample — additional comments may be missing.").font(.caption) }
+                    ForEach(Array(comments.enumerated()),id:\.offset) { _,item in
+                        if case .object(let comment) = item { VStack(alignment:.leading) { if let author = text(comment,"author") { Text(author).font(.caption.bold()) };Text(text(comment,"body") ?? "");if let date = text(comment,"created_at") { Text(scheduleDate(date)).font(.caption).foregroundStyle(.secondary) } }.padding(.vertical,6) }
+                    }
+                }
+            }
+        }
     }
 }

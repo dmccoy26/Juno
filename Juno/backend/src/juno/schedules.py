@@ -297,7 +297,8 @@ def install(app,db,device,lock_owner):
         tdstate=session.get(TaskDockState,actor.owner_id)
         if task.get('start_date') and str(value.start.astimezone(ZONE).date())<str(task['start_date'])[:10]:raise HTTPException(409,'The task start date is later; review before scheduling early.')
         if (tdstate and tdstate.error) or (now()-snapshot.fetched_at).total_seconds()>86400:raise HTTPException(409,'Refresh the TaskDock copy before reserving work.')
-        if task.get('blocked_reason') or task.get('behavior')=='waiting' or facts.get('blocker'):raise HTTPException(409,'Resolve the task blocker before reserving work.')
+        from .taskdock_planning import blockers
+        if blockers(task) or task.get('behavior')=='waiting' or facts.get('blocker'):raise HTTPException(409,'Resolve the task blocker before reserving work.')
         if room_key(facts.get('room',''))!=room_key(value.room) or facts.get('employee','').casefold()!=value.employee.casefold():raise HTTPException(409,'Save and review the task’s room and employee first.')
         minutes=int((value.end-value.start).total_seconds()/60)
         if facts.get('minutes')!=minutes:raise HTTPException(409,'Review the task duration before reserving this window.')

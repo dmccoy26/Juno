@@ -13,6 +13,7 @@ from juno.taskdock import TaskDockReader, TaskDockError
 
 
 class ReaderFactory:
+    controlled_version = None
     workspace = None
     device = None
     failure = None
@@ -20,7 +21,12 @@ class ReaderFactory:
     release = None
     calls = []
     def __new__(cls, base_url, token):
-        transport=Transport()
+        if cls.controlled_version is not None:
+            from test_taskdock_sharing import Controlled
+            transport=Controlled()
+            transport.discovery['sharing_version']=cls.controlled_version
+            for page in transport.pages:page['sharing_version']=cls.controlled_version
+        else:transport=Transport()
         if cls.workspace: transport.discovery['workspace_id']=cls.workspace
         if cls.device: transport.discovery['device_id']=cls.device
         transport.fail=cls.failure
@@ -37,6 +43,7 @@ class ReaderFactory:
 class TaskDockAPITests(memory_tests.MemoryTests):
     def setUp(self):
         super().setUp();self.client.close()
+        ReaderFactory.controlled_version=None
         ReaderFactory.workspace=None;ReaderFactory.device=None;ReaderFactory.failure=None
         ReaderFactory.entered=None;ReaderFactory.release=None;ReaderFactory.calls=[]
         FakeModel.calls=[];FakeModel.failure=False;FakeModel.entered=None;FakeModel.release=None
@@ -72,7 +79,7 @@ class TaskDockAPITests(memory_tests.MemoryTests):
             self.assertNotIn(self.body['token'],str(vars(row)))
             self.assertNotIn(self.body['token'],str(vars(session.get(TaskDockState,self.actor.owner_id))))
 
-    def test_outage_and_revocation_keep_last_snapshot_and_stop_auth_retries(self):
+    def test_outage_retains_but_revocation_clears_saved_content_without_retries(self):
         snapshot=self.pair()
         for code in (None,401,403,422,500):
             ReaderFactory.failure=TaskDockError('Synthetic outage or revoked access.',code)
@@ -82,10 +89,29 @@ class TaskDockAPITests(memory_tests.MemoryTests):
             self.assertEqual(len(ReaderFactory.calls)-before,1)
             saved=self.client.get('/v1/taskdock').json()['snapshot']
             self.assertEqual(saved['id'],snapshot['id']);self.assertTrue(saved['stale'])
-            self.assertEqual(saved['items'],snapshot['items'])
+            self.assertEqual(saved['items'],snapshot['items'] if code is None else [])
+            if code in (401,403):
+                self.assertTrue(saved['info']['sharing_restricted'])
+                self.assertEqual(saved['sources'],[])
         ReaderFactory.failure=None
         fresh=self.refresh(expected_snapshot_id=snapshot['id']).json()['snapshot']
         self.assertNotEqual(fresh['id'],snapshot['id']);self.assertFalse(fresh['stale'])
+
+    def test_changed_policy_clears_old_archives_and_replaces_active_copy(self):
+        old=self.pair()
+        ReaderFactory.controlled_version=7
+        result=self.refresh(expected_snapshot_id=old['id'])
+        self.assertEqual(result.status_code,200,result.text)
+        fresh=result.json()['snapshot']
+        self.assertEqual(fresh['info']['sharing_version'],7)
+        self.assertTrue(fresh['items'])
+        archived=self.client.get('/v1/taskdock/snapshots/'+old['id']).json()
+        self.assertEqual(archived['items'],[])
+        self.assertTrue(archived['info']['sharing_restricted'])
+        ReaderFactory.controlled_version=8
+        newer=self.refresh(expected_snapshot_id=fresh['id'])
+        self.assertEqual(newer.status_code,200,newer.text)
+        self.assertEqual(self.client.get('/v1/taskdock/snapshots/'+fresh['id']).json()['items'],[])
 
     def test_both_identity_changes_require_review_and_preserve_archive(self):
         for field in ('workspace','device'):

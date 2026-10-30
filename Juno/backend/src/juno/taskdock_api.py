@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from .models import TaskDockSnapshot, TaskDockState, TaskDockHistory, now
 from .taskdock import TaskDockReader, TaskDockError
 
@@ -20,6 +20,22 @@ def active_snapshot(session, owner_id):
     state = session.get(TaskDockState, owner_id)
     return session.scalar(select(TaskDockSnapshot).where(TaskDockSnapshot.id == state.active_id,
         TaskDockSnapshot.owner_id == owner_id)) if state and state.active_id else None
+
+
+def restrict_copies(session, owner, origin, reason):
+    """Policy changes withdraw Juno's copies; independent user facts stay intact."""
+    from .companion import invalidate_context
+    rows=session.scalars(select(TaskDockSnapshot).where(TaskDockSnapshot.owner_id==owner,TaskDockSnapshot.origin==origin)).all()
+    for row in rows:
+        invalidate_context(session,owner,'taskdock:'+row.id)
+        row.items=[];row.sources=[]
+        row.info={**row.info,'definitions':{k:[] for k in ('statuses','categories','custom_fields','priorities')},'sharing_restricted':True,'retention_notice':reason}
+        session.execute(delete(TaskDockHistory).where(TaskDockHistory.owner_id==owner,TaskDockHistory.snapshot_id==row.id))
+
+
+def policy_changed(first, second):
+    from .taskdock_planning import sharing
+    return sharing(first)!=sharing(second)
 
 
 def snapshot_view(row, error=None, include_items=True):
@@ -63,6 +79,12 @@ def install(app, db, device, lock_owner, reader_factory=TaskDockReader):
             discovered = reader.discover()
             identity = (discovered['workspace_id'], discovered['device_id'])
             reviewed = (value.reviewed_workspace_id, value.reviewed_device_id)
+            if current and identity == previous_identity and policy_changed(current.info,discovered):
+                lock_owner(session,actor.owner_id)
+                latest=active_snapshot(session,actor.owner_id)
+                if latest is None or latest.id!=current_id:raise HTTPException(409,'The selected copy changed; reload before refreshing.')
+                restrict_copies(session,actor.owner_id,reader.base_url,'TaskDock sharing changed. Earlier saved task content was cleared; refresh under the current selection.')
+                session.commit()
             if (previous_identity is None or identity != previous_identity) and reviewed != identity:
                 lock_owner(session, actor.owner_id)
                 state = session.get(TaskDockState, actor.owner_id)
@@ -79,6 +101,8 @@ def install(app, db, device, lock_owner, reader_factory=TaskDockReader):
             raise HTTPException(422, str(error)) from None
         except TaskDockError as error:
             lock_owner(session, actor.owner_id)
+            if error.status in (401,403) or 'sharing' in str(error).lower():
+                restrict_copies(session,actor.owner_id,value.base_url.rstrip('/'),'TaskDock access or sharing changed. Saved task content was cleared.')
             state = session.get(TaskDockState, actor.owner_id)
             if state is None: state = TaskDockState(owner_id=actor.owner_id); session.add(state)
             from .companion import invalidate_context
@@ -88,6 +112,8 @@ def install(app, db, device, lock_owner, reader_factory=TaskDockReader):
             raise HTTPException(502, str(error)) from None
         lock_owner(session, actor.owner_id)
         state = session.get(TaskDockState, actor.owner_id)
+        if current and policy_changed(current.info,result.info):
+            restrict_copies(session,actor.owner_id,reader.base_url,'TaskDock sharing changed. Earlier saved task content was cleared.')
         if (state.active_id if state else None) != current_id:
             raise HTTPException(409, 'Another refresh finished first. Reload the current snapshot.')
         from .companion import invalidate_context
@@ -119,12 +145,22 @@ def install(app, db, device, lock_owner, reader_factory=TaskDockReader):
             info = reader.discover()
             if (info['workspace_id'], info['device_id']) != expected:
                 raise TaskDockError('TaskDock identity changed. Refresh and review the connection first.')
+            if policy_changed(current.info,info):
+                lock_owner(session,actor.owner_id)
+                restrict_copies(session,actor.owner_id,current.origin,'TaskDock sharing changed. Refresh tasks before reading history.')
+                session.commit()
+                raise TaskDockError('TaskDock sharing changed. Refresh tasks before reading history.',409)
             rows = reader.history(task_id, kind)
             final = reader.discover()
-            if (final['workspace_id'], final['device_id']) != expected:
-                raise TaskDockError('TaskDock identity changed during the history read.')
+            if (final['workspace_id'], final['device_id']) != expected or policy_changed(info,final):
+                raise TaskDockError('TaskDock identity or sharing changed during the history read.')
         except ValueError as error: raise HTTPException(422, str(error)) from None
-        except TaskDockError as error: raise HTTPException(502, str(error)) from None
+        except TaskDockError as error:
+            if error.status in (401,403) or 'sharing' in str(error).lower():
+                lock_owner(session,actor.owner_id)
+                restrict_copies(session,actor.owner_id,current.origin,'TaskDock history access or sharing changed. Refresh tasks before use.')
+                session.commit()
+            raise HTTPException(502,str(error)) from None
         lock_owner(session, actor.owner_id)
         latest = active_snapshot(session, actor.owner_id)
         if latest is None or latest.id != value.expected_snapshot_id:

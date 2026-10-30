@@ -93,7 +93,20 @@ class TaskDockReader:
                 or any(not isinstance(info['definitions'].get(k), list) for k in ('statuses', 'categories', 'custom_fields', 'priorities'))):
             raise TaskDockError('TaskDock does not advertise a supported read-only API v1 workspace.')
         # Fixed supported paths, never follow arbitrary discovery-supplied URLs.
-        return {k: info[k] for k in ('api_version', 'workspace_id', 'device_id', 'capabilities', 'definitions')} | {'taskdock': info.get('taskdock', {}), 'evidence_grants':info.get('evidence_grants',[])}
+        from .taskdock_planning import sharing
+        try: policy = sharing(info)
+        except ValueError as error: raise TaskDockError(str(error)) from None
+        extra = {'sharing_version':policy[0],'sharing':policy[1]} if policy else {}
+        return extra | {k: info[k] for k in ('api_version', 'workspace_id', 'device_id', 'capabilities', 'definitions')} | {'taskdock': info.get('taskdock', {}), 'evidence_grants':info.get('evidence_grants',[])}
+
+    def check_sharing(self, value, info, with_policy=False):
+        from .taskdock_planning import sharing
+        policy=sharing(info)
+        if policy:
+            if type(value.get('sharing_version')) is not int or value['sharing_version']!=policy[0] or (with_policy and value.get('sharing')!=policy[1]):
+                raise TaskDockError('TaskDock sharing changed during this read. Restart the complete collection.',409)
+        elif 'sharing_version' in value or 'sharing' in value:
+            raise TaskDockError('TaskDock sharing changed during this read.',409)
 
     def catalog(self):
         info=self.discover()
@@ -150,7 +163,9 @@ class TaskDockReader:
         info = self.discover()
         sources = []
         if info['capabilities'].get('read_source_freshness') is True:
-            sources = self.get('/integrations/juno/v1/sources').get('items')
+            source_page = self.get('/integrations/juno/v1/sources')
+            self.check_sharing(source_page,info)
+            sources = source_page.get('items')
             if not isinstance(sources, list) or any(not isinstance(s, dict) or not isinstance(s.get('id'), str) for s in sources):
                 raise TaskDockError('TaskDock source freshness response is invalid.')
             sources = [{k: s.get(k) for k in ('id', 'mode', 'health', 'last_attempt_at', 'last_success_at')} for s in sources]
@@ -160,9 +175,11 @@ class TaskDockReader:
         for _ in range(max_pages):
             query = dict(include_completed='true', include_archived='false', show_subtasks='true',
                          parents_only='false', limit=500, offset=offset)
+            if 'sharing_version' in info: query['expected_sharing_version'] = info['sharing_version']
             if revision is not None:
                 query['expected_snapshot'] = revision
             page = self.get('/workspace/tasks', query)
+            self.check_sharing(page,info,True)
             rows, current, count = page.get('items'), page.get('snapshot'), page.get('total')
             if (not isinstance(rows, list) or len(rows) > 500 or
                 not isinstance(current, str) or not current or type(count) is not int or count < 0 or
@@ -178,6 +195,9 @@ class TaskDockReader:
                     row['id'] in ids or row.get('parent_id') == row['id'] or
                     row.get('parent_id') is not None and not isinstance(row['parent_id'], str)):
                     raise TaskDockError('TaskDock returned invalid or duplicate task identities.')
+                from .taskdock_planning import validate_task
+                try: row = validate_task(row,info)
+                except ValueError as error: raise TaskDockError(str(error)) from None
                 ids.add(row['id']); items.append(row)
             if len(items) > total:
                 raise TaskDockError('TaskDock returned inconsistent task counts.')
@@ -193,8 +213,8 @@ class TaskDockReader:
                         trail.add(node); node = parents[node]
                     done.update(trail)
                 final = self.discover()
-                if any(final[k] != info[k] for k in ('workspace_id', 'device_id', 'definitions', 'capabilities')):
-                    raise TaskDockError('TaskDock workspace or definitions changed during refresh.', 409)
+                if any(final.get(k) != info.get(k) for k in ('workspace_id', 'device_id', 'definitions', 'capabilities', 'sharing_version', 'sharing')):
+                    raise TaskDockError('TaskDock workspace, sharing or definitions changed during refresh.', 409)
                 return WorkspaceSnapshot(tuple(items), revision, datetime.now(timezone.utc).isoformat(), info, tuple(sources))
             if not rows or len(items) >= total or len(rows) != page['limit']:
                 raise TaskDockError('TaskDock returned inconsistent pagination.')
@@ -219,8 +239,10 @@ class TaskDockReader:
         cursor = None
         for _ in range(max_pages):
             params = {'kind': kind, 'limit': 100}
+            if 'sharing_version' in info: params['expected_sharing_version'] = info['sharing_version']
             if cursor is not None: params['before_id'] = cursor
             page = self.get('/workspace/tasks/' + quote(task_id, safe='') + '/timeline', params)
+            self.check_sharing(page,info)
             rows = page.get('items'); cursor = page.get('next_cursor')
             if not isinstance(rows, list) or len(rows) > 100 or cursor is not None and (not isinstance(cursor, (str, int)) or isinstance(cursor, bool)):
                 raise TaskDockError('TaskDock returned invalid history pagination.')
@@ -230,8 +252,8 @@ class TaskDockReader:
                 ids.add(str(row['id'])); items.append(row)
             if cursor is None:
                 final = self.discover()
-                if any(final[k] != info[k] for k in ('workspace_id', 'device_id')):
-                    raise TaskDockError('TaskDock identity changed during the history read.')
+                if any(final.get(k) != info.get(k) for k in ('workspace_id', 'device_id', 'sharing_version', 'sharing')):
+                    raise TaskDockError('TaskDock identity or sharing changed during the history read.')
                 return items
             if not rows or str(cursor) in cursors: raise TaskDockError('TaskDock history did not advance.')
             cursors.add(str(cursor))

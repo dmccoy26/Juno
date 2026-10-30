@@ -396,7 +396,7 @@ func taskDueDay(_ task: TaskDockTask) -> String? {
     guard let date = f.date(from:value),f.string(from:date) == value else { return nil };return value
 }
 func taskHasRecordedBlocker(_ task: TaskDockTask, _ facts: PlanningFacts?) -> Bool {
-    [task.text("blocked_reason") ?? "",facts?.blocker ?? "",facts?.waiting_on ?? ""].contains { !$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty }
+    [task.text("blocked_reason") ?? "",task.planningText("blockers") ?? "",task.planningText("dependencies") ?? "",task.planningBlockerFlag ?? "",facts?.blocker ?? "",facts?.waiting_on ?? ""].contains { !$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty }
 }
 
 struct TodayWorkspace: View {
@@ -466,7 +466,7 @@ struct TodayWorkspace: View {
                                 VStack(alignment:.leading,spacing:5) {
                                     HStack { Text(task.title).font(.headline);Spacer();Button("Review") { store.planningTaskID = task.id;store.section = "Plan" } }
                                     Text((task.text("status_name") ?? "Status unknown") + " • Due: " + (taskDueDay(task) ?? "Not recorded")).font(.caption).foregroundStyle(.secondary)
-                                    if taskHasRecordedBlocker(task,facts(task)) { Text("Blocker: " + ([task.text("blocked_reason"),facts(task)?.blocker,facts(task)?.waiting_on].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator:" • "))).font(.caption).foregroundStyle(.orange) }
+                                    if taskHasRecordedBlocker(task,facts(task)) { Text("Blocker: " + ([task.text("blocked_reason"),task.planningText("blockers"),task.planningText("dependencies"),task.planningBlockerFlag,facts(task)?.blocker,facts(task)?.waiting_on].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator:" • "))).font(.caption).foregroundStyle(.orange) }
                                 }.padding(.vertical,8)
                                 Divider()
                             }

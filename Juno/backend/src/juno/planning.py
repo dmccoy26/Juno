@@ -189,7 +189,9 @@ def build_plan(session, owner, day):
             missing.append('Confirm the task room before planning employee work.')
         if employee and not f.get('supervision'):
             if not f.get('independent') or not f.get('capability'): missing.append('Confirm '+employee+' can do this independently, with supporting experience.')
-        blocker = f.get('blocker') or task.get('blocked_reason') or ''
+        from .taskdock_planning import blockers,provided
+        from .schedules import room_hint
+        blocker = f.get('blocker') or blockers(task)
         if str(task.get('behavior', '')).lower() == 'waiting' and not blocker:
             blocker = 'TaskDock marks this task waiting; confirm the dependency.'
         if blocker: missing.append('Blocked: '+str(blocker))
@@ -211,7 +213,7 @@ def build_plan(session, owner, day):
                      'actual_minutes':f.get('actual_minutes'),'dean':f.get('dean',False),'operational':f.get('operational',False),
                      'blocker':str(blocker),'waiting_on':f.get('waiting_on',''),'next_action':f.get('next_action',''),
                      'next_check':f.get('next_check'),'resume':f.get('resume',''),'employee':employee,'room':room,
-                     'room_hint':__import__('juno.schedules',fromlist=['room_hint']).room_hint(str(task.get('title',''))),
+                     'room_hint':room_hint(provided(task,'room')) or provided(task,'room') or room_hint(str(task.get('title',''))),
                      'missing':missing,'actionable':not missing,'slot_start':slot[0].isoformat() if slot and not missing else None,
                      'reason':'Dean request' if f.get('dean') else 'Teaching/operations need' if f.get('operational') else 'Due date and recorded TaskDock priority; impact needs your review.', '_rank':rank})
     rows.sort(key=lambda r:r['_rank'])

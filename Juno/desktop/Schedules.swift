@@ -488,6 +488,7 @@ struct RoomTaskDockIssues: View {
     private func open(_ task: TaskDockTask) -> Bool { taskIsUnfinished(task) }
     private func linked(_ task: TaskDockTask) -> Bool {
         if let saved = facts(task), !saved.room.isEmpty { return scheduleRoomKey(saved.room) == scheduleRoomKey(room) }
+        if let supplied = task.planningText("room"), !supplied.isEmpty { return scheduleRoomKey(supplied) == scheduleRoomKey(room) }
         return scheduleTitleMentionsRoom(task.title,room)
     }
     private func display(_ task: TaskDockTask,_ key: String) -> String {
@@ -533,13 +534,14 @@ struct RoomTaskDockIssues: View {
                         VStack(alignment:.leading,spacing:7) {
                             HStack { Text(task.title).font(.headline);Spacer();Button("Open planning details") { store.planningTaskID = task.id;store.section = "Plan" } }
                             Text("Status: " + display(task,"status_name") + " • Priority: " + priority(task,snapshot) + " • Due: " + display(task,"due_date"))
+                            DisclosureGroup("Shared TaskDock request information") { TaskDockRequestFacts(task:task) }
                             DisclosureGroup("Planning context & blockers") {
                             if let f = facts(task) {
                                 Text("Room: " + (f.room.isEmpty ? "Title match — unconfirmed" : f.room) + " • Estimate: " + (f.minutes.map { "\($0) minutes" } ?? "Unknown"))
                                 Text("Person: " + (f.employee.isEmpty ? "Not confirmed" : f.employee) + " • Capability: " + (f.supervision == true ? "Needs supervision" : f.independent ? "Independent" : "Not confirmed"))
                                 if !f.capability.isEmpty { Text(f.capability).font(.caption) }
                                 Text("Planning blocker: " + (f.blocker.isEmpty ? "None recorded" : f.blocker) + " • Waiting on: " + (f.waiting_on.isEmpty ? "Not recorded" : f.waiting_on))
-                            } else { Text("Estimate, responsible person and capability: unknown").foregroundStyle(.secondary);Text(linked(task) ? "Room inferred from title — unconfirmed" : "Room link not confirmed").font(.caption) }
+                            } else { Text("Estimate, responsible person and capability: unknown").foregroundStyle(.secondary);Text(task.planningText("room") != nil ? "Room supplied by TaskDock — confirm access" : linked(task) ? "Room inferred from title — unconfirmed" : "Room link not confirmed").font(.caption) }
                             Text("TaskDock blocker: " + display(task,"blocked_reason"))
                             }
                             DisclosureGroup("TaskDock record details") { TaskDockDetails(task:task,info:snapshot.info) }

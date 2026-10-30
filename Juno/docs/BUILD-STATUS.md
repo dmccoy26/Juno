@@ -2,6 +2,14 @@
 
 Updated: October 30, 2026.
 
+## TaskDock Beta 3.17 — optional request facts
+
+Juno now supports controlled sharing selections and version checks on task/history reads. Shared structured request facts appear in task details and room issue cards, preserving unknown/explicitly-none/provided states, source timestamps and conflicts. Provided room hints and blockers/dependencies inform planning; estimates, capability, supervision and staffing remain reviewable Juno decisions. Dated bounded comment samples remain labeled samples.
+
+No TaskDock grants were changed. Select optional fields in TaskDock Settings → Juno, then refresh Juno. Policy changes or revoked access withdraw cached task/history content and invalidate derived replies; ordinary outages retain the last good copy. Independent user-confirmed records remain. Offline copies and backups have the limits documented in [mission 8](missions/2026-10-30-08-taskdock-planning.md).
+
+Verification: 119 backend/PostgreSQL tests, zero skips; native room matching and Today helper checks; optimized macOS development build. Installed on the work Mac; native inspection confirms the legacy-scope notice. Host owner, saved record counts, certificate/key and existing pairing passed preservation checks. Live refresh verification is blocked: a process sample shows macOS Security waiting in Keychain access on the UI thread; native inspection times out during that wait. New optional-field presentation is build-verified and synthetic-contract tested, not verified with live grants. The laptop installer is unchanged.
+
 ## Saved-memory status — desktop follow-up
 
 Saved chat messages now show **Saved to memory** and **Review memory** instead of Save as memory. Canonical memory provenance persists the originating user-message ID, preserving status when the fact or human-readable source is corrected. Owner validation prevents cross-account origins, one linked memory per message prevents duplicate writes, and deleting a conversation sets the origin null while retaining the independent memory. Deleting a memory clears its message status on reload/sync. Exact existing saved text can be recognized for older clients; schema **0008_memory_origin** backfills only unambiguous, owner-matched exact copies. Model claims alone never establish a saved record.

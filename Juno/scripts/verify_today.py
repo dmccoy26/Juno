@@ -25,6 +25,9 @@ precondition(try taskDueDay(task([:])) == nil)
 precondition(try !taskHasRecordedBlocker(task(["blocked_reason":"  "]),nil))
 precondition(try taskHasRecordedBlocker(task(["blocked_reason":"Waiting for parts"]),nil))
 precondition(try taskHasRecordedBlocker(task([:]),PlanningFacts(task_id:"synthetic",waiting_on:"Approval")))
+precondition(try taskHasRecordedBlocker(task(["planning_details":["blockers":["state":"provided","value":"Parts"]]]),nil))
+precondition(try taskHasRecordedBlocker(task(["planning_details":["blockers":["state":"none","value":NSNull(),"taskdock_flag":"Waiting"]]]),nil))
+precondition(try !taskHasRecordedBlocker(task(["planning_details":["blockers":["state":"none","value":NSNull()]]]),nil))
 print("PASS Today helpers: completion boundaries, valid/missing/invalid deadlines and recorded blockers")
 '''
 # Throwing work must happen outside precondition's non-throwing autoclosure.
