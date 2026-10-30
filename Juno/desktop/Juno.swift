@@ -33,7 +33,7 @@ final class JunoStore: ObservableObject {
     @Published var meeting = UserDefaults.standard.bool(forKey: "meetingMode") {
         didSet { UserDefaults.standard.set(meeting, forKey: "meetingMode") }
     }
-    @Published var section = "Chat"
+    @Published var section = "Today"
     @Published var planningTaskID: String?
     @Published var conversations: [ConversationRecord] = []
     @Published var conversationMore = false
@@ -321,7 +321,7 @@ struct MemoryWorkspace: View {
                         Spacer()
                         Image(systemName: "book.closed").font(.system(size: 42)).foregroundStyle(.purple)
                         Text(!store.query.isEmpty && store.items.isEmpty ? "No matching memories" : store.meeting ? "Your work memory" : "A little less to keep in your head.").font(.title2.bold())
-                        Text(!store.query.isEmpty && store.items.isEmpty ? "Try another search, or clear the search to see all your memories." : store.items.isEmpty ? "Add a fictional memory to try Juno’s first working feature. You can review, correct, or delete it anytime." : "Choose a memory to see what Juno knows and where it came from.").foregroundStyle(.secondary).frame(maxWidth: 440, alignment: .leading)
+                        Text(!store.query.isEmpty && store.items.isEmpty ? "Try another search, or clear the search to see all your memories." : store.items.isEmpty ? "Save something you want Juno to remember. You can review, correct or delete it anytime." : "Choose a memory to see what Juno knows and where it came from.").foregroundStyle(.secondary).frame(maxWidth: 440, alignment: .leading)
                         Spacer()
                     }
                 }.padding(32).frame(minWidth: 400, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

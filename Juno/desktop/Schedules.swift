@@ -64,7 +64,7 @@ struct SchedulesWorkspace: View {
     @State private var busy = false; @State private var dirty = false; @State private var issue: String?
     @State private var rule = RecurringSchedule(); @State private var person = StaffSchedule(); @State private var exception = DailyScheduleException()
     @State private var ruleEditor = false; @State private var personEditor = false; @State private var exceptionEditor = false
-    @State private var scheduleView = "Week by person"
+    @AppStorage("scheduleView") private var scheduleView = "Compare"
     @State private var comparisonDate = Date()
     @State private var comparisonRoom = ""
     @State private var comparisonPerson = "My work"
@@ -359,7 +359,7 @@ struct ScheduleWeekView: View {
             }
             if !byRoom, let p = record.people.first(where: { $0.name == selection }) {
                 Text(p.name + " • " + p.status + " • funded limit " + String(p.weekly_limit_minutes / 60) + "h/week").font(.headline)
-                if !p.notes.isEmpty { Text(p.notes).foregroundStyle(.secondary) }
+                if !p.notes.isEmpty { DisclosureGroup("Schedule notes") { Text(p.notes).font(.caption).foregroundStyle(.secondary) } }
                 if p.status != "active" { Text("Availability is unconfirmed; this person is excluded from confirmed capacity.").foregroundStyle(.orange) }
             }
             Text(byRoom ? "Blue: building access • Orange: classes (unavailable) • Purple: local holds • Red: daily exceptions" : "Blue: work hours • Purple: local holds • Red: daily exceptions").font(.caption)
@@ -385,7 +385,7 @@ struct ScheduleWeekView: View {
                     }
                 }.padding(.bottom,4)
             }
-            Text("This overview shows saved schedules, not confirmed free time. Meetings, closures, capability and task blockers still need review. Use Plan to find a possible repair window.").font(.caption).foregroundStyle(.secondary)
+            if comparisonDate == nil { Text("Saved schedules, not confirmed free time. Use Plan to review task requirements and possible repair windows.").font(.caption).foregroundStyle(.secondary) }
             if let notice = record.reservation_notice, !notice.isEmpty { Text(notice).foregroundStyle(.orange) }
             if choices.isEmpty { Text("Add room schedules in List & edit to start this view.").foregroundStyle(.secondary) }
         }.onAppear { anchor = Date(); if let selectionBinding, selectionBinding.wrappedValue != selection { selectionBinding.wrappedValue = selection } }
@@ -399,6 +399,7 @@ struct RoomPersonWindows: View {
     @State private var result: AvailabilityRecord?
     @State private var issue: String?
     @State private var loading = false
+    @State private var loadedSignature: String?
     private var dayKey: String {
         let f = DateFormatter(); f.timeZone = TimeZone(identifier:"America/Chicago"); f.dateFormat = "yyyy-MM-dd"; return f.string(from:day)
     }
@@ -415,7 +416,7 @@ struct RoomPersonWindows: View {
             url.queryItems = [URLQueryItem(name:"day",value:dayKey),URLQueryItem(name:"room",value:room),URLQueryItem(name:"employee",value:person == "My work" ? "" : person),URLQueryItem(name:"minutes",value:"5")]
             let fresh = try await store.decode(AvailabilityRecord.self,url.string!)
             guard !Task.isCancelled, requested == signature else { return }
-            result = fresh
+            result = fresh; loadedSignature = requested
         } catch {
             if !Task.isCancelled { issue = (error as? APIProblem)?.message ?? "Could not calculate matching times." }
         }
@@ -435,7 +436,7 @@ struct RoomPersonWindows: View {
             Text(dayKey + " • America/Chicago").foregroundStyle(.secondary)
             if loading { ProgressView().controlSize(.small) }
             if let issue { Text(issue).foregroundStyle(.orange) }
-            if let result {
+            if let result, loadedSignature == signature {
                 let windows = result.windows.filter { localDay($0.start) == dayKey }
                 if windows.isEmpty { Text("No confirmed opening on this date.").foregroundStyle(.secondary) }
                 ForEach(windows) { window in
@@ -484,10 +485,7 @@ struct RoomTaskDockIssues: View {
         guard planning?.workspace_id == snapshot?.info.workspace_id else { return nil }
         return planning?.tasks.first { $0.task_id == task.id }
     }
-    private func open(_ task: TaskDockTask) -> Bool {
-        if case .object(let fields) = task.fields, case .bool(true) = fields["source_completed"] { return false }
-        return (task.text("completed_at") ?? "").isEmpty && !["done","completed","archived"].contains((task.text("behavior") ?? "").lowercased())
-    }
+    private func open(_ task: TaskDockTask) -> Bool { taskIsUnfinished(task) }
     private func linked(_ task: TaskDockTask) -> Bool {
         if let saved = facts(task), !saved.room.isEmpty { return scheduleRoomKey(saved.room) == scheduleRoomKey(room) }
         return scheduleTitleMentionsRoom(task.title,room)
@@ -519,7 +517,7 @@ struct RoomTaskDockIssues: View {
             VStack(alignment:.leading,spacing:12) {
                 Text("Room issues are shown for reference alongside " + (person == "My work" ? "your schedule" : person + "’s schedule") + ". They are not assigned or scheduled automatically.").foregroundStyle(.secondary)
                 HStack {
-                    TextField("Search issues",text:$search)
+                    TextField("Search issues",text:$search).textFieldStyle(.roundedBorder)
                     Toggle("Show all rooms / unlinked issues",isOn:$showAll)
                     Button("Reload saved issues") { Task { await load() } }.disabled(busy)
                     if busy { ProgressView().controlSize(.small) }
@@ -535,6 +533,7 @@ struct RoomTaskDockIssues: View {
                         VStack(alignment:.leading,spacing:7) {
                             HStack { Text(task.title).font(.headline);Spacer();Button("Open planning details") { store.planningTaskID = task.id;store.section = "Plan" } }
                             Text("Status: " + display(task,"status_name") + " • Priority: " + priority(task,snapshot) + " • Due: " + display(task,"due_date"))
+                            DisclosureGroup("Planning context & blockers") {
                             if let f = facts(task) {
                                 Text("Room: " + (f.room.isEmpty ? "Title match — unconfirmed" : f.room) + " • Estimate: " + (f.minutes.map { "\($0) minutes" } ?? "Unknown"))
                                 Text("Person: " + (f.employee.isEmpty ? "Not confirmed" : f.employee) + " • Capability: " + (f.supervision == true ? "Needs supervision" : f.independent ? "Independent" : "Not confirmed"))
@@ -542,6 +541,7 @@ struct RoomTaskDockIssues: View {
                                 Text("Planning blocker: " + (f.blocker.isEmpty ? "None recorded" : f.blocker) + " • Waiting on: " + (f.waiting_on.isEmpty ? "Not recorded" : f.waiting_on))
                             } else { Text("Estimate, responsible person and capability: unknown").foregroundStyle(.secondary);Text(linked(task) ? "Room inferred from title — unconfirmed" : "Room link not confirmed").font(.caption) }
                             Text("TaskDock blocker: " + display(task,"blocked_reason"))
+                            }
                             DisclosureGroup("TaskDock record details") { TaskDockDetails(task:task,info:snapshot.info) }
                         }.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color.secondary.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius:8))
                     }

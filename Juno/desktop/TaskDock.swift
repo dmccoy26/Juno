@@ -91,6 +91,7 @@ struct TaskDockWorkspace: View {
     @State private var selected: String?
     @State private var search = ""
     @State private var definitions = false
+    @State private var settingsExpanded = false
     @State private var history: TaskDockHistory?
     @State private var historyTask: String?
     @State private var historyKind = ""
@@ -162,8 +163,11 @@ struct TaskDockWorkspace: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("TaskDock · read-only").font(.title2.bold())
-            Text("Use TaskDock build 13 or newer on this Mac. Enable Juno access in Settings → Connections, then paste the API address and dedicated token. The token is stored in macOS Keychain.").foregroundStyle(.secondary)
+            Text("Review TaskDock’s saved tasks here. Connection settings are below when you need them.").foregroundStyle(.secondary)
             if store.sharedProfile == nil {
+            HStack { Button("Refresh from TaskDock") { reviewing = nil;refresh() }.disabled(busy || !store.connected); if busy { ProgressView().controlSize(.small) } }
+            DisclosureGroup("TaskDock connection settings",isExpanded:$settingsExpanded) {
+            Text("Enable Juno access in TaskDock Settings → Connections. Use the dedicated token; it stays in this Mac’s Keychain.").font(.caption).foregroundStyle(.secondary)
             HStack {
                 TextField("Local TaskDock API address", text: $origin).textFieldStyle(.roundedBorder)
                 SecureField("Dedicated Juno token (leave blank to use Keychain)", text: $token).textFieldStyle(.roundedBorder)
@@ -183,6 +187,7 @@ struct TaskDockWorkspace: View {
                     Button("Use this workspace and installation") { refresh(accept: true) }.disabled(busy || origin.trimmingCharacters(in: CharacterSet(charactersIn: "/")) != reviewOrigin)
                 }.padding(12).background(.orange.opacity(0.1))
             }
+            }
             } else { Text("This laptop reads the work Mac’s dated TaskDock snapshot. Manage pairing and refresh TaskDock on the work Mac.").foregroundStyle(.secondary) }
             if let notice { Text(notice).foregroundStyle(.secondary).textSelection(.enabled) }
             if let snapshot = state?.snapshot {
@@ -191,7 +196,7 @@ struct TaskDockWorkspace: View {
                     let _ = parser.formatOptions.insert(.withFractionalSeconds)
                     let date = parser.date(from: snapshot.fetched_at) ?? ISO8601DateFormatter().date(from: snapshot.fetched_at) ?? .distantPast
                     let stale = snapshot.stale || tick.date.timeIntervalSince(date) > 900
-                    Text("\(snapshot.count) tasks · Juno read completed: \(snapshot.fetched_at)\(stale ? " · STALE — refresh before relying on this" : " · saved snapshot; provider freshness shown separately")").font(.caption).foregroundStyle(stale ? .orange : .secondary)
+                    Text("\(snapshot.count) tasks · Juno saved: \(scheduleDate(snapshot.fetched_at))\(stale ? " · STALE — refresh before relying on this" : " · saved snapshot; provider freshness shown separately")").font(.caption).foregroundStyle(stale ? .orange : .secondary)
                 }
                 if let error = state?.error { Text(error).foregroundStyle(.orange) }
                 DisclosureGroup("TaskDock source freshness (separate from Juno’s read time)") { Text(snapshot.sources.pretty).font(.caption.monospaced()).textSelection(.enabled).frame(maxHeight: 110) }
@@ -232,7 +237,7 @@ struct TaskDockWorkspace: View {
                 Spacer(); Text("No complete TaskDock snapshot saved yet.").foregroundStyle(.secondary); Spacer()
             }
             Text("TaskDock stays read-only. Provider refresh and task changes happen in TaskDock. Chat can use selected dated task excerpts; suggested hours are estimates.").font(.caption).foregroundStyle(.secondary)
-        }.padding(22).task { await load() }.onChange(of: selected) { _ in Task { await loadSavedHistory() } }
+        }.padding(22).task { await load();if state?.snapshot == nil { settingsExpanded = true } }.onChange(of:reviewing?.workspace_id) { id in if id != nil { settingsExpanded = true } }.onChange(of: selected) { _ in Task { await loadSavedHistory() } }
     }
 }
 

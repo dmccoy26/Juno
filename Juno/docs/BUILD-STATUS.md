@@ -2,6 +2,16 @@
 
 Updated: October 30, 2026.
 
+## Staged usability increment — mission 6
+
+The native source now has a grouped collapsible sidebar and Today landing screen with dated unfinished/due/recorded-blocker counts, issue search/filter, today's local holds, and direct chat/check-in/schedule/memory actions. Daily work is separate from source review and setup. No assignments, external messages, new permissions or model/cloud connections are created.
+
+The planning sheet has a pinned Cancel/Apply footer, grouped fields and in-sheet validation. Unknown estimates can remain blank while recording other context. Invalid inputs no longer dismiss an editor just because another planning draft was already dirty. Estimation is cancelable. Plan filters and collapsed missing-detail/source sections reduce list noise. Schedule notes and planning context are expandable; comparison view selection is remembered, stale overlap responses are hidden, TaskDock setup is collapsible with a visible refresh action, and misleading laptop-model/empty-memory copy is corrected.
+
+Validation: optimized native build; 103 real isolated-PostgreSQL backend tests (zero skips); exact native planning/schedule API decoding; native offline cache/queue and actual JunoStore regression; Today deadline/completion/blocker helpers; planning optional-estimate/bounds/date validation; existing room-alias and weekly projection checks. The staged development app is `.local/usability-final/Juno.app`. The running work-Mac app and published preview 10 installer have **not** yet been replaced by this increment. Native inspection repeatedly lost its pipe before a fresh visual sweep; full screen-by-screen and laptop-width visual acceptance remain pending. The user was asked to quit/reopen Juno when convenient after finishing any unsaved edits. No forced app termination was performed.
+
+See [mission 6](missions/2026-10-30-06-usability.md) and [audit findings](reports/usability-audit-2026-10-30.md).
+
 ## Desktop follow-up — weekly person and room views
 
 Schedules provides **By person**, **By room**, **Room + person**, and **List & edit** views. Room + person compares the selected room and person for one shared date with synchronized day navigation. Schedule times and time editors use AM/PM; new schedule dates and view entry default to today. Comparison panels have compact fixed widths rather than expanding across the window. A third Possible work times column uses the authenticated availability engine for the selected room/person/date, with same-day filtering, source warnings, offline/draft gating and explicit independent-work assumptions. Native live checks verified selection/date updates, weekend exclusions and Sammy’s November 2 ARTS 121 opening (10:45 AM–12:00 PM); 12 PostgreSQL scheduling tests and native projection checks pass. Weekly day columns show work/building hours, occupied classes, local planning holds and daily exceptions, with dated navigation and staff status/limits. This is an overview of saved facts; Plan remains responsible for repair feasibility. No assignments or schedule records were changed by adding these views.

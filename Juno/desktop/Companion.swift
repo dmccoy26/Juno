@@ -151,44 +151,72 @@ extension JunoStore {
 
 struct RootView: View {
     @ObservedObject var store: JunoStore
+    @State private var showSidebar = true
+    private let daily = [("Today","sun.max"),("Chat","bubble.left.and.bubble.right"),("Plan","checklist"),("Schedules","calendar"),("Check-in","square.and.pencil"),("Memories","book.closed")]
+    private let sources = [("TaskDock","tray.full"),("Evidence","doc.text.magnifyingglass")]
+    private let setup = [("Connections","link"),("Model","sparkles"),("Computers","desktopcomputer")]
+    private func title(_ key: String) -> String { ["Check-in":"Daily check-in","Model":"Local model" ][key] ?? key }
+    private func links(_ label: String, _ rows: [(String,String)]) -> some View {
+        VStack(alignment:.leading,spacing:4) {
+            Text(label.uppercased()).font(.caption.bold()).foregroundStyle(.secondary).padding(.horizontal,10).padding(.top,14)
+            ForEach(rows,id:\.0) { key,icon in
+                Button { store.section = key } label: {
+                    Label(title(key),systemImage:icon).frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,10).padding(.vertical,8)
+                        .background(store.section == key ? Color.accentColor.opacity(0.16) : Color.clear).clipShape(RoundedRectangle(cornerRadius:7))
+                }.buttonStyle(.plain).accessibilityLabel(title(key) + (store.section == key ? ", selected" : ""))
+            }
+        }
+    }
+    @ViewBuilder private var workspace: some View {
+        switch store.section {
+        case "Today": TodayWorkspace(store:store)
+        case "Schedules": SchedulesWorkspace(store:store)
+        case "Plan": PlanningWorkspace(store:store)
+        case "Memories": MemoryWorkspace(store:store)
+        case "Check-in": CheckInWorkspace(store:store)
+        case "Model":
+            if store.sharedProfile == nil { ModelWorkspace(store:store) }
+            else { VStack(alignment:.leading,spacing:16) { Text("Your work Mac runs Juno’s model").font(.title2.bold());Text("Set up LM Studio on the work Mac. AI replies need that Mac awake and reachable. Memory and diary edits work offline.").foregroundStyle(.secondary) }.padding(32) }
+        case "TaskDock": TaskDockWorkspace(store:store)
+        case "Connections": ConnectionsWorkspace(store:store)
+        case "Evidence": IntegrationsWorkspace(store:store)
+        case "Computers": ComputersWorkspace(store:store)
+        default: ChatWorkspace(store:store)
+        }
+    }
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Image(systemName: "sparkles").font(.title).foregroundStyle(.purple)
-                VStack(alignment: .leading) { Text("Juno").font(.title2.bold()); Text(store.status).font(.caption).foregroundStyle(.secondary) }
+        VStack(spacing:0) {
+            HStack(spacing:12) {
+                Button { showSidebar.toggle() } label: { Image(systemName:"sidebar.left") }.help("Show or hide navigation")
+                Text("Juno").font(.title2.bold()).foregroundStyle(.purple)
+                Divider().frame(height:20)
+                Text(title(store.section)).font(.headline)
                 Spacer()
-                Toggle("Meeting mode", isOn: $store.meeting).toggleStyle(.switch).help("New replies use a professional tone. Private-mode replies are hidden while this is on.")
-            }.padding(18)
-            Picker("Workspace", selection: $store.section) {
-                Text("Chat").tag("Chat"); Text("Plan").tag("Plan"); Text("Schedules").tag("Schedules"); Text("Daily check-in").tag("Check-in"); Text("Memories").tag("Memories"); Text("Model connection").tag("Model"); Text("TaskDock").tag("TaskDock"); Text("Evidence").tag("Evidence"); Text("Connections").tag("Connections"); Text("Computers").tag("Computers")
-            }.pickerStyle(.segmented).padding(.horizontal, 20).padding(.bottom, 14)
+                Text(store.status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Toggle("Meeting mode",isOn:$store.meeting).toggleStyle(.switch).help("Professional tone; private-mode replies stay hidden.")
+            }.padding(.horizontal,18).padding(.vertical,12)
             if store.sharedProfile != nil {
                 HStack {
-                    Text(store.offline ? "Offline laptop copy" : "Connected to your work Mac")
-                    if let date = store.offlineDate { Text("Last full copy: " + date.formatted()).foregroundStyle(.secondary) }
+                    Label(store.offline ? "Offline copy" : "Work Mac connected",systemImage:store.offline ? "wifi.slash" : "checkmark.icloud")
+                    if let date = store.offlineDate { Text("Last copy: " + scheduleDate(ISO8601DateFormatter().string(from:date))).foregroundStyle(.secondary) }
                     Text("\(store.pendingEdits.count) queued edits")
-                    Spacer(); Button("Reconnect / sync") { store.reconnectShared() }.disabled(store.syncing)
-                }.font(.caption).padding(.horizontal,20).padding(.bottom,10)
-                if let issue = store.syncIssue { Text(issue).font(.caption).foregroundStyle(.orange).padding(.horizontal,20) }
+                    Spacer();Button("Sync") { store.reconnectShared() }.disabled(store.syncing)
+                }.font(.caption).padding(.horizontal,18).padding(.bottom,10)
+                if let issue = store.syncIssue { Text(issue).font(.caption).foregroundStyle(.orange).padding(.horizontal,18) }
             }
             Divider()
-            switch store.section {
-            case "Schedules": SchedulesWorkspace(store: store)
-            case "Plan": PlanningWorkspace(store: store)
-            case "Memories": MemoryWorkspace(store: store)
-            case "Check-in": CheckInWorkspace(store: store)
-            case "Model":
-                if store.sharedProfile == nil { ModelWorkspace(store: store) } else { VStack(spacing:16) { Text("The work Mac runs Juno’s model").font(.title2.bold()); Text("Configure LM Studio on the work Mac. AI replies need that Mac to be awake and reachable; memories and diary edits work offline.").foregroundStyle(.secondary) }.padding(32) }
-            case "TaskDock": TaskDockWorkspace(store: store)
-            case "Connections": ConnectionsWorkspace(store: store)
-            case "Evidence": IntegrationsWorkspace(store: store)
-            case "Computers": ComputersWorkspace(store: store)
-            default: ChatWorkspace(store: store)
+            HStack(spacing:0) {
+                if showSidebar {
+                    ScrollView { VStack(alignment:.leading,spacing:4) { links("My workday",daily);links("Saved sources",sources);links("Setup",setup);Spacer(minLength:20) }.padding(10) }
+                        .frame(width:178).background(Color.secondary.opacity(0.035))
+                    Divider()
+                }
+                workspace.frame(maxWidth:.infinity,maxHeight:.infinity)
             }
-            if let issue = store.problem { HStack { Text(issue).foregroundStyle(.orange); Spacer(); Button("Dismiss") { store.problem = nil } }.padding(12) }
+            if let issue = store.problem { HStack { Text(issue).foregroundStyle(.orange);Spacer();Button("Dismiss") { store.problem = nil } }.padding(12) }
             Divider()
-            HStack { Text(store.sharedProfile == nil ? "Stored on this Mac" : "Work Mac + offline laptop copy"); Spacer(); Text("Juno 0.1.0-preview.10") }.font(.caption).foregroundStyle(.secondary).padding(12)
-        }.frame(minWidth: 920, minHeight: 650)
+            HStack { Text(store.sharedProfile == nil ? "Saved on this Mac" : "Work Mac + offline laptop copy");Spacer();Text("Juno 0.1.0-preview.10") }.font(.caption).foregroundStyle(.secondary).padding(.horizontal,14).padding(.vertical,8)
+        }.frame(minWidth:1040,minHeight:650)
     }
 }
 
@@ -243,7 +271,7 @@ struct ModelWorkspace: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Give Juno a local model").font(.title2.bold())
-            Text("Start the local server in LM Studio on this Mac, then find and select a chat model. No cloud fallback is enabled. Your laptop needs its own running model server.").foregroundStyle(.secondary)
+            Text("Start the local server in LM Studio on this Mac, then find and select a chat model. No cloud fallback is enabled. Paired laptops use this work Mac’s model while connected.").foregroundStyle(.secondary)
             TextField("Local server", text: $store.modelBase).textFieldStyle(.roundedBorder).accessibilityLabel("Local model server address")
             Button("Find models") { store.probeModel() }.disabled(!store.connected || store.modelBusy)
             if !store.modelOptions.isEmpty {
@@ -264,7 +292,7 @@ struct CheckInWorkspace: View {
     @ObservedObject var store: JunoStore
     @State private var day = Date()
     @State private var starter: CheckInStarter?
-    var dayKey: String { let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.timeZone = .current; return formatter.string(from: day) }
+    var dayKey: String { let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.timeZone = TimeZone(identifier:"America/Chicago"); return formatter.string(from: day) }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { Text("Your daily check-in").font(.title2.bold()); Spacer(); DatePicker("Day", selection: $day, displayedComponents: .date).fixedSize().disabled(store.checkBusy) }
@@ -296,5 +324,117 @@ struct CheckInWorkspace: View {
         .onAppear { if store.connected { store.loadCheckIn(day: dayKey) } }
         .onChange(of: store.connected) { value in if value { store.loadCheckIn(day: dayKey) } }
         .onChange(of: day) { _ in store.loadCheckIn(day: dayKey) }
+    }
+}
+
+func taskIsUnfinished(_ task: TaskDockTask) -> Bool {
+    if case .object(let fields) = task.fields, case .bool(true) = fields["source_completed"] { return false }
+    return (task.text("completed_at") ?? "").isEmpty && !["done","completed","archived"].contains((task.text("behavior") ?? "").lowercased())
+}
+func taskDueDay(_ task: TaskDockTask) -> String? {
+    guard let raw = task.text("due_date"), raw.count >= 10 else { return nil }
+    let value = String(raw.prefix(10));let f = DateFormatter();f.locale = Locale(identifier:"en_US_POSIX");f.timeZone = TimeZone(identifier:"America/Chicago");f.dateFormat = "yyyy-MM-dd";f.isLenient = false
+    guard let date = f.date(from:value),f.string(from:date) == value else { return nil };return value
+}
+func taskHasRecordedBlocker(_ task: TaskDockTask, _ facts: PlanningFacts?) -> Bool {
+    [task.text("blocked_reason") ?? "",facts?.blocker ?? "",facts?.waiting_on ?? ""].contains { !$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty }
+}
+
+struct TodayWorkspace: View {
+    @ObservedObject var store: JunoStore
+    @State private var snapshot: TaskDockSnapshot?
+    @State private var planning: PlanningRecord?
+    @State private var schedules: ScheduleRecord?
+    @State private var issues: [String] = []
+    @State private var busy = false
+    @State private var filter = "Due / overdue"
+    @State private var search = ""
+    @State private var remember = false
+    private var today: String { integrationDay(0) }
+    private var tasks: [TaskDockTask] { (snapshot?.items ?? []).filter(taskIsUnfinished) }
+    private func facts(_ task: TaskDockTask) -> PlanningFacts? {
+        guard planning?.workspace_id == snapshot?.info.workspace_id else { return nil }
+        return planning?.tasks.first { $0.task_id == task.id }
+    }
+    private var due: [TaskDockTask] { tasks.filter { taskDueDay($0).map { $0 <= today } ?? false } }
+    private var blocked: [TaskDockTask] { tasks.filter { taskHasRecordedBlocker($0,facts($0)) } }
+    private var filtered: [TaskDockTask] {
+        let rows = filter == "All unfinished" ? tasks : filter == "Recorded blockers" ? blocked : due
+        return rows.filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) }.sorted { a,b in
+            let left = taskDueDay(a) ?? "9999-12-31",right = taskDueDay(b) ?? "9999-12-31"
+            return left == right ? a.title.localizedStandardCompare(b.title) == .orderedAscending : left < right
+        }
+    }
+    private func load() async {
+        guard store.connected else { return };busy = true;issues = [];defer { busy = false }
+        do { let value = try await store.decode(TaskDockState.self,"/v1/taskdock");snapshot = value.snapshot;if let error = value.error { issues.append(error) } }
+        catch { issues.append("TaskDock summary could not refresh. Any previous copy stays visible.") }
+        do { planning = try await store.decode(PlanningRecord.self,"/v1/planning") }
+        catch { planning = nil;issues.append("Planning details unavailable; blocker counts may be incomplete.") }
+        do { schedules = try await store.decode(ScheduleRecord.self,"/v1/schedules") }
+        catch { schedules = nil;issues.append("Planning holds unavailable.") }
+    }
+    private func countCard(_ title: String,_ value: Int,_ icon: String,_ selection: String) -> some View {
+        Button { filter = selection } label: {
+            VStack(alignment:.leading,spacing:8) { Label(title,systemImage:icon).font(.subheadline);Text(String(value)).font(.largeTitle.bold()) }
+                .frame(maxWidth:.infinity,alignment:.leading).padding(16).background(Color.accentColor.opacity(filter == selection ? 0.14 : 0.05)).clipShape(RoundedRectangle(cornerRadius:10))
+        }.buttonStyle(.plain)
+    }
+    var body: some View {
+        ScrollView {
+            VStack(alignment:.leading,spacing:18) {
+                HStack {
+                    VStack(alignment:.leading,spacing:5) { Text("Your workday, together").font(.title.bold());Text(today + " • a snapshot of what Juno has saved").foregroundStyle(.secondary) }
+                    Spacer();Button("Refresh overview") { Task { await load() } }.disabled(busy || !store.connected)
+                    if busy { ProgressView().controlSize(.small) }
+                }
+                HStack { Button("Talk it through") { store.section = "Chat" };Button("Rooms & people") { store.section = "Schedules" };Button("Daily check-in") { store.section = "Check-in" };Button("Remember something") { remember = true }.disabled(!store.connected) }
+                if store.offline { Label("Offline overview — dated records; memory and diary edits can queue for sync.",systemImage:"wifi.slash").foregroundStyle(.orange) }
+                ForEach(issues,id:\.self) { Text($0).font(.caption).foregroundStyle(.orange) }
+                if let snapshot {
+                    HStack {
+                        countCard("Unfinished",tasks.count,"tray.full","All unfinished")
+                        countCard("Due / overdue",due.count,"calendar.badge.clock","Due / overdue")
+                        countCard("Recorded blockers",blocked.count,"pause.circle","Recorded blockers")
+                    }
+                    Text("Includes subtasks. TaskDock saved " + scheduleDate(snapshot.fetched_at) + (snapshot.stale ? " • stale copy" : "") + ". Source refresh times can be older.").font(.caption).foregroundStyle(.secondary)
+                    if let error = snapshot.error { Text(error).font(.caption).foregroundStyle(.orange) }
+                    GroupBox("Issues to review") {
+                        VStack(alignment:.leading,spacing:12) {
+                            HStack { Picker("Show",selection:$filter) { Text("Due / overdue").tag("Due / overdue");Text("Recorded blockers").tag("Recorded blockers");Text("All unfinished").tag("All unfinished") };TextField("Find an issue",text:$search).textFieldStyle(.roundedBorder) }
+                            if filtered.isEmpty { Text("No matching issues in the saved copy.").foregroundStyle(.secondary) }
+                            ForEach(filtered.prefix(20)) { task in
+                                VStack(alignment:.leading,spacing:5) {
+                                    HStack { Text(task.title).font(.headline);Spacer();Button("Review") { store.planningTaskID = task.id;store.section = "Plan" } }
+                                    Text((task.text("status_name") ?? "Status unknown") + " • Due: " + (taskDueDay(task) ?? "Not recorded")).font(.caption).foregroundStyle(.secondary)
+                                    if taskHasRecordedBlocker(task,facts(task)) { Text("Blocker: " + ([task.text("blocked_reason"),facts(task)?.blocker,facts(task)?.waiting_on].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator:" • "))).font(.caption).foregroundStyle(.orange) }
+                                }.padding(.vertical,8)
+                                Divider()
+                            }
+                            if filtered.count > 20 { Text("Showing 20 of \(filtered.count). Search to narrow the list.").font(.caption) }
+                            Button("Open all TaskDock records") { store.section = "TaskDock" }
+                        }.padding(8).frame(maxWidth:.infinity,alignment:.leading)
+                    }
+                } else if !busy {
+                    GroupBox("Start with your work context") { VStack(alignment:.leading,spacing:10) { Text("No TaskDock snapshot is available yet. Connect TaskDock to see issues and deadlines here.");Button("Open TaskDock") { store.section = "TaskDock" } }.padding(12).frame(maxWidth:.infinity,alignment:.leading) }
+                }
+                if let schedules {
+                    let holds = schedules.reservations.filter { hold in
+                        guard let start = providerDate(hold.start) else { return false }
+                        let f = DateFormatter();f.timeZone = TimeZone(identifier:"America/Chicago");f.dateFormat = "yyyy-MM-dd";return f.string(from:start) == today
+                    }
+                    GroupBox("Today’s local planning holds") {
+                        VStack(alignment:.leading,spacing:10) {
+                            if holds.isEmpty { Text("No holds recorded for today.").foregroundStyle(.secondary) }
+                            ForEach(holds) { hold in Text(hold.room + " • " + (hold.employee.isEmpty ? "My work" : hold.employee) + " • " + scheduleDate(hold.start) + " → " + scheduleDate(hold.end)) }
+                            if let notice = schedules.reservation_notice,!notice.isEmpty { Text(notice).foregroundStyle(.orange) }
+                            Button("Review schedules") { store.section = "Schedules" }
+                        }.padding(8).frame(maxWidth:.infinity,alignment:.leading)
+                    }
+                }
+                Text("This overview does not choose a priority or assign work. Missing records and unreported blockers stay unknown.").font(.caption).foregroundStyle(.secondary)
+            }.padding(26).frame(maxWidth:1100,alignment:.leading)
+        }.task(id:store.connected) { await load() }
+        .sheet(isPresented:$remember) { Editor(store:store,original:nil) }
     }
 }
