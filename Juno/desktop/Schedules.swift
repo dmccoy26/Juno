@@ -66,6 +66,8 @@ struct SchedulesWorkspace: View {
     @State private var ruleEditor = false; @State private var personEditor = false; @State private var exceptionEditor = false
     @State private var scheduleView = "Week by person"
     @State private var comparisonDate = Date()
+    @State private var comparisonRoom = ""
+    @State private var comparisonPerson = "My work"
     @State private var editingPersonName: String?
     @State private var limitHours = "20"; @State private var desiredHours = ""
     private let weekdays = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
@@ -112,9 +114,11 @@ struct SchedulesWorkspace: View {
                                 Button("Next day") { moveComparisonDay(1) }
                             }
                             ScrollView(.horizontal) { HStack(alignment:.top,spacing:12) {
-                                ScheduleWeekView(record:record,byRoom:true,comparisonDate:comparisonDate).frame(width:400,alignment:.leading)
+                                ScheduleWeekView(record:record,byRoom:true,comparisonDate:comparisonDate,selectionBinding:$comparisonRoom).frame(width:310,alignment:.leading)
                                 Divider()
-                                ScheduleWeekView(record:record,byRoom:false,comparisonDate:comparisonDate).frame(width:400,alignment:.leading)
+                                ScheduleWeekView(record:record,byRoom:false,comparisonDate:comparisonDate,selectionBinding:$comparisonPerson).frame(width:310,alignment:.leading)
+                                Divider()
+                                RoomPersonWindows(store:store,day:comparisonDate,room:comparisonRoom,person:comparisonPerson,revision:record.revision,dirty:dirty).frame(width:320,alignment:.leading)
                             } }
                         } else {
                             ScheduleWeekView(record:record, byRoom:scheduleView == "Week by room").id(scheduleView)
@@ -273,6 +277,7 @@ struct ScheduleWeekView: View {
     let record: ScheduleRecord
     let byRoom: Bool
     var comparisonDate: Date? = nil
+    var selectionBinding: Binding<String>? = nil
     @State private var selected = ""
     @State private var anchor = Date()
     private var calendar: Calendar {
@@ -301,7 +306,7 @@ struct ScheduleWeekView: View {
         }
         return ["My work"] + Array(Set(record.people.map(\.name) + record.rules.filter { $0.kind == "staff_available" }.map(\.name))).filter { !$0.isEmpty && $0 != "My work" }.sorted()
     }
-    private var selection: String { choices.contains(selected) ? selected : choices.first ?? "" }
+    private var selection: String { let value = selectionBinding?.wrappedValue ?? selected; return choices.contains(value) ? value : choices.first ?? "" }
     private func matching(_ kind: String, _ name: String, _ location: String = "") -> Bool {
         if byRoom { return kind == "room" && name == selection || kind == "classroom_busy" && location == selection }
         return selection == "My work" ? kind == "work" : kind == "staff_available" && name == selection
@@ -335,7 +340,7 @@ struct ScheduleWeekView: View {
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
             HStack {
-                Picker(byRoom ? "Room" : "Person",selection:Binding(get:{selection},set:{selected = $0})) {
+                Picker(byRoom ? "Room" : "Person",selection:Binding(get:{selection},set:{selected = $0; selectionBinding?.wrappedValue = $0})) {
                     ForEach(choices,id:\.self) { Text($0).tag($0) }
                 }.frame(maxWidth:320)
                 Spacer()
@@ -382,6 +387,69 @@ struct ScheduleWeekView: View {
             Text("This overview shows saved schedules, not confirmed free time. Meetings, closures, capability and task blockers still need review. Use Plan to find a possible repair window.").font(.caption).foregroundStyle(.secondary)
             if let notice = record.reservation_notice, !notice.isEmpty { Text(notice).foregroundStyle(.orange) }
             if choices.isEmpty { Text("Add room schedules in List & edit to start this view.").foregroundStyle(.secondary) }
-        }.onAppear { anchor = Date() }
+        }.onAppear { anchor = Date(); if let selectionBinding, selectionBinding.wrappedValue != selection { selectionBinding.wrappedValue = selection } }
+    }
+}
+
+
+struct RoomPersonWindows: View {
+    @ObservedObject var store: JunoStore
+    let day: Date; let room: String; let person: String; let revision: Int; let dirty: Bool
+    @State private var result: AvailabilityRecord?
+    @State private var issue: String?
+    @State private var loading = false
+    private var dayKey: String {
+        let f = DateFormatter(); f.timeZone = TimeZone(identifier:"America/Chicago"); f.dateFormat = "yyyy-MM-dd"; return f.string(from:day)
+    }
+    private var signature: String { [dayKey,room,person,String(revision),String(dirty),String(store.offline)].joined(separator:"|") }
+    private func load() async {
+        result = nil; issue = nil
+        guard !dirty else { issue = "Save schedule changes to calculate matching times."; return }
+        guard !store.offline else { issue = "Reconnect to the work Mac to calculate matching times."; return }
+        guard !room.isEmpty else { issue = "Choose a room."; return }
+        loading = true; defer { loading = false }
+        let requested = signature
+        do {
+            var url = URLComponents(); url.path = "/v1/availability"
+            url.queryItems = [URLQueryItem(name:"day",value:dayKey),URLQueryItem(name:"room",value:room),URLQueryItem(name:"employee",value:person == "My work" ? "" : person),URLQueryItem(name:"minutes",value:"5")]
+            let fresh = try await store.decode(AvailabilityRecord.self,url.string!)
+            guard !Task.isCancelled, requested == signature else { return }
+            result = fresh
+        } catch {
+            if !Task.isCancelled { issue = (error as? APIProblem)?.message ?? "Could not calculate matching times." }
+        }
+    }
+    private func localDay(_ text: String) -> String {
+        guard let date = providerDate(text) else { return "" }
+        let f = DateFormatter(); f.timeZone = TimeZone(identifier:"America/Chicago"); f.dateFormat = "yyyy-MM-dd"; return f.string(from:date)
+    }
+    private func time(_ text: String) -> String {
+        guard let date = providerDate(text) else { return text }
+        let f = DateFormatter(); f.locale = Locale(identifier:"en_US"); f.timeZone = TimeZone(identifier:"America/Chicago"); f.dateFormat = "h:mm a"; return f.string(from:date)
+    }
+    var body: some View {
+        VStack(alignment:.leading,spacing:12) {
+            Text("Possible work times").font(.title3.bold())
+            Text((person == "My work" ? "Me" : person) + " in " + room).font(.headline)
+            Text(dayKey + " • America/Chicago").foregroundStyle(.secondary)
+            if loading { ProgressView().controlSize(.small) }
+            if let issue { Text(issue).foregroundStyle(.orange) }
+            if let result {
+                let windows = result.windows.filter { localDay($0.start) == dayKey }
+                if windows.isEmpty { Text("No confirmed opening on this date.").foregroundStyle(.secondary) }
+                ForEach(windows) { window in
+                    VStack(alignment:.leading,spacing:4) {
+                        Text(time(window.start) + "–" + time(window.end)).font(.headline)
+                        Text("\(window.available_minutes) minutes").font(.caption)
+                    }.frame(maxWidth:.infinity,alignment:.leading).padding(10)
+                        .background(Color.green.opacity(0.13)).overlay(alignment:.leading) { Rectangle().fill(.green).frame(width:3) }
+                }
+                ForEach(result.warnings,id:\.self) { Text($0).font(.caption).foregroundStyle(.orange) }
+                DisclosureGroup("Source dates") { ForEach(result.source_notices,id:\.self) { Text($0).font(.caption) } }
+            }
+            Button("Review task in Plan") { store.section = "Plan" }
+            Text("Openings of at least 5 minutes, excluding classes, closures and existing holds. Independent staff work is assumed; task skills, supervision and blockers still need review. Weekly limits can shorten usable time. Past times are excluded.").font(.caption).foregroundStyle(.secondary)
+            Button("Refresh matching times") { Task { await load() } }.disabled(loading || store.offline || dirty)
+        }.task(id:signature) { await load() }
     }
 }
