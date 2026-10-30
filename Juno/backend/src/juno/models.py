@@ -158,7 +158,7 @@ class OfflineOperation(Base):
 
 
 class IntegrationSnapshot(Base):
-    """Latest validated source per owner. Replacement removes superseded source text."""
+    """Latest source per owner, or an empty version fence after connection/content removal."""
     __tablename__ = 'integration_snapshots'
     owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
     kind: Mapped[str] = mapped_column(String(30), primary_key=True)

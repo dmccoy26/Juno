@@ -7,5 +7,16 @@
   "bytes": 120803353,
   "sha256": "52f28320dbc3a3c00abde6f4bf31cd0eac610f2fada41ac8a7af15b6e9c32ee3",
   "github_digest_matches": true,
-  "pull_request": "https://github.com/dmccoy26/TaskDock/pull/1"
+  "pull_request": "https://github.com/dmccoy26/TaskDock/pull/1",
+  "linux_pull_request_gate": {
+    "status": "completed",
+    "conclusion": "success",
+    "source_commit": "3660631ee762cccaab9008d68e363baacdfc85a9",
+    "url": "https://github.com/dmccoy26/TaskDock/actions/runs/41004748686",
+    "api_tests": 613,
+    "javascript_tests": 53,
+    "browser_tests": 118
+  },
+  "packaged_production_source_matches_144_current_files": true,
+  "test_only_followup_commit": "3660631ee762cccaab9008d68e363baacdfc85a9"
 }

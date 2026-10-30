@@ -35,8 +35,17 @@ def snapshot_view(row):
 
 
 def state_view(session,owner):
-    return {'items':[snapshot_view(r) for r in session.scalars(select(IntegrationSnapshot).where(IntegrationSnapshot.owner_id==owner).order_by(IntegrationSnapshot.kind)).all()],
+    return {'items':[snapshot_view(r) for r in session.scalars(select(IntegrationSnapshot).where(IntegrationSnapshot.owner_id==owner).order_by(IntegrationSnapshot.kind)).all() if not r.details.get('tombstone')],
         'notice':'Dated read-only evidence. TaskDock remains the task system of record. Missing evidence is unknown, not proof of availability or health.'}
+
+
+def connection_tombstone(session,owner,kind,row=None,message='No saved source copy.'):
+    """Retain only a content-free version fence; absence must not reset a pending read's CAS token."""
+    if row is None:
+        row=IntegrationSnapshot(owner_id=owner,kind=kind);session.add(row)
+    row.id=str(uuid4());row.origin='No saved copy';row.items=[];row.fetched_at=now();row.error=message[:500]
+    row.details={'active':False,'tombstone':True,'notice':'No imported source content is stored. Discover and review this connection before refreshing.'}
+    return row
 
 
 EVIDENCE_BYTES=40_000_000
@@ -102,5 +111,8 @@ def install(app,db,device,lock_owner,beacon_factory=BeaconReader):
         lock_owner(session,actor.owner_id);row=owned(session,actor.owner_id,kind);check(row,expected_id)
         if row:
             from .companion import invalidate_context
-            invalidate_context(session,actor.owner_id,'integration:'+kind);session.delete(row);session.commit()
+            invalidate_context(session,actor.owner_id,'integration:'+kind)
+            if kind in KINDS:session.delete(row)
+            else:connection_tombstone(session,actor.owner_id,kind,row,'Saved source copy removed. Discover and review before refreshing.')
+            session.commit()
         return {'deleted':True}

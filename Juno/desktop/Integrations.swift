@@ -19,7 +19,7 @@ struct BusyDay: Decodable, Identifiable {
     var id: String { date }
 }
 struct EvidenceDetails: Decodable {
-    let notice: String?; let start: String?; let end: String?; let timezone: String?; let generated_at: String?; let active: Bool?; let route: String?; let busy_days: [BusyDay]?
+    let notice: String?; let start: String?; let end: String?; let timezone: String?; let generated_at: String?; let active: Bool?; let tombstone: Bool?; let route: String?; let busy_days: [BusyDay]?
 }
 struct EvidenceSnapshot: Decodable, Identifiable {
     let id: String; let kind: String; let origin: String; let count: Int; let items: [EvidenceRow]

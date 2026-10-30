@@ -1,6 +1,6 @@
 {
   "package": "Juno-0.1.0-preview.8-macOS-arm64.pkg",
-  "sha256": "c7d7d36251c9b05af58e6dbff71a503a9ef967d5b96e9b6fe2884342f40c8dfb",
+  "sha256": "87c0f1b120d0cc95d05365efc037844a2924a5d92c20431e7438e908096a9302",
   "status": "passed",
   "checks": [
     "installer expands with expected app and non-destructive preinstall guard",

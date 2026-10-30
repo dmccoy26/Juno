@@ -354,7 +354,7 @@ struct DirectProviderWorkspace: View {
                 Divider()
                 selectionFields.disabled(busy || waiting)
                 if let current {
-                    Divider();Text("Last saved copy: \(current.count) records · \(providerDate(current.fetched_at)?.formatted() ?? current.fetched_at)").font(.caption)
+                    Divider();if current.details.tombstone == true { Text("No saved copy. Discover and review this connection before refreshing.").font(.caption) } else { Text("Last saved copy: \(current.count) records · \(providerDate(current.fetched_at)?.formatted() ?? current.fetched_at)").font(.caption) }
                     if let error = current.error { Text(error).foregroundStyle(.orange) }
                     Text("View/remove historical content in Evidence. Disconnecting does not delete provider data or revoke authorization in the provider's account settings.").font(.caption).foregroundStyle(.secondary)
                 }
@@ -470,7 +470,7 @@ struct TaskDockBridgeWorkspace: View {
                     Toggle("I reviewed this TaskDock workspace and selected saved sections.",isOn:$reviewed).toggleStyle(.checkbox)
                     Button("Read shared saved evidence") { readSaved() }.disabled(busy || !reviewed || selected.isEmpty)
                 }
-                if let current { Text("Last saved bridge copy: \(current.count) records · \(providerDate(current.fetched_at)?.formatted() ?? current.fetched_at)").font(.caption);if let error = current.error { Text(error).foregroundStyle(.orange) } }
+                if let current { if current.details.tombstone == true { Text("No saved bridge copy. Discover and review TaskDock before refreshing.").font(.caption) } else { Text("Last saved bridge copy: \(current.count) records · \(providerDate(current.fetched_at)?.formatted() ?? current.fetched_at)").font(.caption) };if let error = current.error { Text(error).foregroundStyle(.orange) } }
                 if let notice { Text(notice).foregroundStyle(.secondary).textSelection(.enabled) }
                 if busy { ProgressView() }
             }.padding(28).frame(maxWidth:.infinity,alignment:.leading)

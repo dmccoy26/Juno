@@ -28,6 +28,10 @@ def main():
             for provider in ('gmail','google_calendar','google_tasks','google_chat','slack','smartsheet','outlook_calendar'):
                 response=local.post('/v1/providers/'+provider+'/refresh',json={'token':TOKEN,'selection':config(provider)})
                 assert response.status_code==200,response.text
+            if '--empty-status' in sys.argv:
+                row=next(r for r in local.get('/v1/providers/state').json()['items'] if r['kind']=='google_tasks')
+                response=local.delete('/v1/integrations/google_tasks',params={'expected_id':row['id']})
+                assert response.status_code==200,response.text
         server=uvicorn.Server(uvicorn.Config(provider_app,log_level='error',access_log=False))
         worker=threading.Thread(target=lambda:server.run(sockets=[listener]),daemon=True);worker.start()
         folder=Path(tempfile.mkdtemp(prefix='juno-evidence-ui-'));folder.chmod(0o700)

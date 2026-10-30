@@ -5,7 +5,7 @@ from sqlalchemy import select
 from uuid import uuid4
 from .models import IntegrationSnapshot,now
 from .taskdock import TaskDockReader,TaskDockError
-from .integrations_api import snapshot_view,check_evidence_size
+from .integrations_api import snapshot_view,check_evidence_size,connection_tombstone
 from .providers.common import text
 from .providers.http import ReadError
 
@@ -55,7 +55,9 @@ def install(app,db,device,lock_owner,reader_factory=TaskDockReader):
             message=str(error) if isinstance(error,(TaskDockError,ReadError)) else 'TaskDock connection settings are invalid.'
             status=(error.status or 502) if isinstance(error,(TaskDockError,ReadError)) else 422
             lock_owner(session,actor.owner_id);row=owned(session,actor.owner_id)
-            if row and row.id==value.expected_id:
+            if row is None and value.expected_id is None and status in (401,403):
+                connection_tombstone(session,actor.owner_id,'taskdock_saved',message=message);session.commit()
+            elif row and row.id==value.expected_id:
                 from .companion import invalidate_context
                 invalidate_context(session,actor.owner_id,'integration:taskdock_saved');row.error=message[:500]
                 if status in (401,403):

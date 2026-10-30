@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse,RedirectResponse
 from pydantic import BaseModel,ConfigDict,Field,SecretStr
 from sqlalchemy import select
 from .models import IntegrationSnapshot,now
-from .integrations_api import snapshot_view,check_evidence_size
+from .integrations_api import snapshot_view,check_evidence_size,connection_tombstone
 from .providers import readers
 from .providers.http import ReadError
 from .providers.oauth import OAuthManager,SCOPES
@@ -52,7 +52,9 @@ def install(app,db,device,lock_owner,transport=None,oauth_manager=None):
         raise HTTPException(error.status,str(error),headers=headers) from None
     def failed(session,actor,kind,expected,error):
         lock_owner(session,actor.owner_id);row=owned(session,actor.owner_id,kind)
-        if row and row.id==expected:
+        if row is None and expected is None and error.status in (401,403,404):
+            connection_tombstone(session,actor.owner_id,kind,message=str(error));session.commit()
+        elif row and row.id==expected:
             from .companion import invalidate_context
             invalidate_context(session,actor.owner_id,'integration:'+kind)
             row.error=str(error)[:500]
@@ -98,7 +100,9 @@ def install(app,db,device,lock_owner,transport=None,oauth_manager=None):
     @router.post('/{provider}/disconnect')
     def disconnect(provider:Provider,value:Disconnect,actor=Depends(device),session=Depends(db)):
         lock_owner(session,actor.owner_id);row=owned(session,actor.owner_id,provider);check(row,value.expected_id)
-        if row:
+        if row is None:
+            connection_tombstone(session,actor.owner_id,provider,message='Disconnected. No saved provider copy.');session.commit()
+        else:
             from .companion import invalidate_context
             invalidate_context(session,actor.owner_id,'integration:'+provider)
             row.id=str(uuid4())  # An older in-flight refresh must not undo an explicit disconnect.

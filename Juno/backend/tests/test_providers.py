@@ -306,38 +306,91 @@ class ProviderAPITests(memory_tests.MemoryTests):
         saved=next(r for r in self.client.get('/v1/integrations').json()['items'] if r['kind']=='gmail')
         self.assertEqual(saved['id'],originals['gmail']['id']);self.assertEqual(saved['items'],originals['gmail']['items'])
 
+
+    def test_first_refresh_cannot_outlive_disconnect_denial_or_marker_removal(self):
+        import threading
+        from juno.auth import provision
+        for action in ('disconnect','revocation'):
+            with self.subTest(action=action):
+                with self.factory() as session:
+                    actor,token=provision(session,'Synthetic first-read owner');session.commit()
+                entered=threading.Event();release=threading.Event();results=[];fixture=ProviderFixture()
+                def blocked(method,url,headers,body):
+                    if urlsplit(url).path.endswith('/messages/synthetic-message'):
+                        entered.set()
+                        if not release.wait(5):raise ReadError('Synthetic first read timed out')
+                    return fixture(method,url,headers,body)
+                body={'token':TOKEN,'selection':config('gmail')}
+                def work():
+                    with TestClient(create_app(self.engine,provider_transport=blocked),base_url='http://127.0.0.1:18123',client=('127.0.0.1',50000)) as delayed:
+                        results.append(delayed.post('/v1/providers/gmail/refresh',headers={'Authorization':'Bearer '+token},json=body))
+                worker=threading.Thread(target=work);worker.start()
+                with TestClient(self.app,base_url='http://127.0.0.1:18123',client=('127.0.0.1',50000)) as client:
+                    client.headers['Authorization']='Bearer '+token
+                    try:
+                        self.assertTrue(entered.wait(3))
+                        if action=='disconnect':self.assertEqual(client.post('/v1/providers/gmail/disconnect',json={}).status_code,200)
+                        else:
+                            def revoked(*args):raise ReadError('Synthetic first authorization denied',401)
+                            with TestClient(create_app(self.engine,provider_transport=revoked),base_url='http://127.0.0.1:18123',client=('127.0.0.1',50000)) as denied:
+                                self.assertEqual(denied.post('/v1/providers/gmail/refresh',headers={'Authorization':'Bearer '+token},json=body).status_code,401)
+                        marker=client.get('/v1/providers/state').json()['items'][0]
+                        self.assertTrue(marker['details']['tombstone']);self.assertEqual(marker['count'],0)
+                        self.assertEqual(client.delete('/v1/integrations/gmail',params={'expected_id':marker['id']}).status_code,200)
+                        next_marker=client.get('/v1/providers/state').json()['items'][0]
+                        self.assertNotEqual(next_marker['id'],marker['id'])
+                    finally:release.set();worker.join(timeout=8)
+                    self.assertFalse(worker.is_alive());self.assertEqual(results[0].status_code,409)
+                    self.assertEqual(client.get('/v1/integrations').json()['items'],[])
+                    self.assertNotIn(next_marker['id'],client.get('/v1/cache').text)
+                    # A subsequent explicitly reviewed read uses current metadata and can establish a new copy.
+                    renewed=client.post('/v1/providers/gmail/refresh',json={**body,'expected_id':next_marker['id']})
+                    self.assertEqual(renewed.status_code,200,renewed.text)
+                    self.assertFalse(renewed.json()['snapshot']['details'].get('tombstone',False))
+
     def test_late_taskdock_bridge_refresh_cannot_undo_grant_denial(self):
         import threading
         from juno.taskdock import TaskDockError
-        entered=threading.Event();release=threading.Event();results=[]
-        catalog={'info':{'workspace_id':'synthetic-workspace','device_id':'synthetic-installation'},'sources':[],'grants':['notes']}
-        class Bridge:
-            def __init__(self,base_url,token):self.base_url=base_url;self.token=token
-            def catalog(self):
-                if self.token=='synthetic-revoked':raise TaskDockError('Synthetic TaskDock sharing revoked',403)
-                return catalog
-            def evidence(self,kinds):
-                if self.token=='synthetic-delayed':
-                    entered.set()
-                    if not release.wait(5):raise TaskDockError('Synthetic bridge wait expired')
-                return {'catalog':catalog,'snapshot':'synthetic-hash','items':[{'id':'note:synthetic','kind':'note','record_id':'synthetic','title':'Synthetic note','body':'Synthetic retained note'}]}
-        app=create_app(self.engine,taskdock_factory=Bridge)
-        with TestClient(app) as client:
-            client.headers['Authorization']='Bearer '+self.token
-            body={'base_url':'http://127.0.0.1:18124','token':'synthetic-initial','kinds':['notes'],'reviewed_workspace_id':'synthetic-workspace','reviewed_device_id':'synthetic-installation'}
-            first=client.post('/v1/taskdock/evidence',json=body).json()['snapshot'];body['expected_id']=first['id']
-            def work():
-                with TestClient(app) as other:
-                    other.headers['Authorization']='Bearer '+self.second_token
-                    results.append(other.post('/v1/taskdock/evidence',json={**body,'token':'synthetic-delayed'}))
-            worker=threading.Thread(target=work);worker.start()
-            try:
-                self.assertTrue(entered.wait(3))
-                self.assertEqual(client.post('/v1/taskdock/evidence',json={**body,'token':'synthetic-revoked'}).status_code,403)
-            finally:release.set();worker.join(timeout=8)
-            self.assertFalse(worker.is_alive());self.assertEqual(results[0].status_code,409)
-            saved=client.get('/v1/integrations').json()['items'][0]
-            self.assertFalse(saved['details']['active']);self.assertEqual(saved['items'],first['items']);self.assertNotEqual(saved['id'],first['id'])
+        from juno.auth import provision
+        for has_copy in (True,False):
+            with self.subTest(has_copy=has_copy):
+                with self.factory() as session:
+                    actor,token=provision(session,'Synthetic bridge concurrency owner');session.commit()
+                entered=threading.Event();release=threading.Event();results=[]
+                catalog={'info':{'workspace_id':'synthetic-workspace','device_id':'synthetic-installation'},'sources':[],'grants':['notes']}
+                class Bridge:
+                    def __init__(self,base_url,token):self.base_url=base_url;self.token=token
+                    def catalog(self):
+                        if self.token=='synthetic-revoked':raise TaskDockError('Synthetic TaskDock sharing revoked',403)
+                        return catalog
+                    def evidence(self,kinds):
+                        if self.token=='synthetic-delayed':
+                            entered.set()
+                            if not release.wait(5):raise TaskDockError('Synthetic bridge wait expired')
+                        return {'catalog':catalog,'snapshot':'synthetic-hash','items':[{'id':'note:synthetic','kind':'note','record_id':'synthetic','title':'Synthetic note','body':'Synthetic retained note'}]}
+                app=create_app(self.engine,taskdock_factory=Bridge)
+                with TestClient(app,base_url='http://127.0.0.1:18123',client=('127.0.0.1',50000)) as client:
+                    client.headers['Authorization']='Bearer '+token
+                    body={'base_url':'http://127.0.0.1:18124','token':'synthetic-initial','kinds':['notes'],'reviewed_workspace_id':'synthetic-workspace','reviewed_device_id':'synthetic-installation'}
+                    if has_copy:
+                        first=client.post('/v1/taskdock/evidence',json=body).json()['snapshot'];body['expected_id']=first['id']
+                    def work():
+                        with TestClient(app,base_url='http://127.0.0.1:18123',client=('127.0.0.1',50000)) as other:
+                            other.headers['Authorization']='Bearer '+token
+                            results.append(other.post('/v1/taskdock/evidence',json={**body,'token':'synthetic-delayed'}))
+                    worker=threading.Thread(target=work);worker.start()
+                    try:
+                        self.assertTrue(entered.wait(3))
+                        self.assertEqual(client.post('/v1/taskdock/evidence',json={**body,'token':'synthetic-revoked'}).status_code,403)
+                        if not has_copy:
+                            marker=client.get('/v1/providers/state').json()['items'][0]
+                            self.assertEqual(client.delete('/v1/integrations/taskdock_saved',params={'expected_id':marker['id']}).status_code,200)
+                    finally:release.set();worker.join(timeout=8)
+                    self.assertFalse(worker.is_alive());self.assertEqual(results[0].status_code,409)
+                    visible=client.get('/v1/integrations').json()['items']
+                    if has_copy:
+                        self.assertFalse(visible[0]['details']['active']);self.assertEqual(visible[0]['items'],first['items']);self.assertNotEqual(visible[0]['id'],first['id'])
+                    else:self.assertEqual(visible,[])
 
 for name in list(vars(memory_tests.MemoryTests)):
     if name.startswith('test_') and name not in ProviderAPITests.__dict__:setattr(ProviderAPITests,name,None)

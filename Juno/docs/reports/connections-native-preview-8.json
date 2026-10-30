@@ -8,5 +8,6 @@
   "email_unread_and_safe_body_visible": true,
   "layout_refresh_regression_fixed": true,
   "live_oauth_consent_not_attempted": true,
-  "humanlab_native_not_run": true
+  "humanlab_native_not_run": true,
+  "removed_copy_status_and_evidence_hiding": true
 }
