@@ -53,3 +53,5 @@ In **Schedules**, choose **By person** for a person's work hours and local holds
 Use **List & edit** to change the underlying records, and **Plan** to check possible repair windows against task requirements and constraints. The overview does not turn funding into agreed shifts or classify blank periods as free time.
 
 Choose **Room + person** to compare a selected room and person side by side for the same date. Room access/classes appear on the left and work hours/holds on the right. Use the shared date picker or Previous day / Today / Next day to move both panels together. This comparison shows saved facts; use Plan for a checked repair window.
+
+Schedule times display and edit in 12-hour AM/PM format. New rule/exception date defaults and date selections on view entry start at today; saved semester dates remain unchanged. The comparison uses compact panels close together, with horizontal scrolling on smaller windows.

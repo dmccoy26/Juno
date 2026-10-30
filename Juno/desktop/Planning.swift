@@ -203,7 +203,8 @@ struct PlanningWorkspace: View {
                     Button("Copy reviewed draft") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(weekly, forType: .string) }
                 }
             }.padding(24).disabled(busy)
-        }.task { await load() }
+        }.environment(\.locale,Locale(identifier:"en_US"))
+        .task { day = Date(); await load() }
         .sheet(isPresented: Binding(get:{ selected != nil },set:{ if !$0 { selected = nil } })) { ScrollView { editor }.padding(20).frame(width:760,height:760) }
         .onChange(of: day) { _ in if !dirty { Task { await load() } } }
     }

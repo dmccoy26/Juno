@@ -2,7 +2,7 @@ import SwiftUI
 
 struct RecurringSchedule: Codable, Identifiable {
     var id = UUID().uuidString; var kind = "work"; var name = ""; var location = ""
-    var start_date = "2026-08-24"; var end_date = "2026-12-10"
+    var start_date = integrationDay(0); var end_date = integrationDay(0)
     var days = [0,1,2,3,4]; var start_time = "09:00"; var end_time = "17:00"; var timezone = "America/Chicago"
 }
 struct StaffSchedule: Codable, Identifiable {
@@ -33,6 +33,25 @@ struct AvailabilityRecord: Decodable {
 struct TaskEstimate: Decodable { var minimum: Int; var maximum: Int; var source: String; var reason: String; var question: String; var notice: String; var model_notice: String? }
 
 func scheduleKind(_ text: String) -> String { ["work":"My work hours","room":"Building access","staff_available":"Staff shift","classroom_busy":"Classroom occupied"][text] ?? text }
+
+func scheduleTime(_ text: String) -> String {
+    let parts = text.split(separator:":")
+    guard parts.count == 2, let hour = Int(parts[0]), let minute = Int(parts[1]), (0...23).contains(hour), (0...59).contains(minute) else { return text }
+    return "\(hour % 12 == 0 ? 12 : hour % 12):" + String(format:"%02d",minute) + (hour < 12 ? " AM" : " PM")
+}
+
+struct ScheduleTimeField: View {
+    let title: String
+    @Binding var value: String
+    private var formatter: DateFormatter {
+        let f = DateFormatter(); f.locale = Locale(identifier:"en_US_POSIX"); f.timeZone = TimeZone(identifier:"America/Chicago"); f.dateFormat = "HH:mm"; return f
+    }
+    var body: some View {
+        DatePicker(title,selection:Binding(get:{formatter.date(from:value) ?? Date()},set:{value = formatter.string(from:$0)}),displayedComponents:.hourAndMinute)
+            .environment(\.locale,Locale(identifier:"en_US"))
+            .environment(\.timeZone,TimeZone(identifier:"America/Chicago")!)
+    }
+}
 
 func scheduleDate(_ text: String) -> String {
     guard let date = providerDate(text) else { return text }
@@ -92,13 +111,13 @@ struct SchedulesWorkspace: View {
                                 Button("Today") { comparisonDate = Date() }
                                 Button("Next day") { moveComparisonDay(1) }
                             }
-                            HStack(alignment:.top,spacing:20) {
-                                ScheduleWeekView(record:record,byRoom:true,comparisonDate:comparisonDate).frame(maxWidth:.infinity)
+                            ScrollView(.horizontal) { HStack(alignment:.top,spacing:12) {
+                                ScheduleWeekView(record:record,byRoom:true,comparisonDate:comparisonDate).frame(width:400,alignment:.leading)
                                 Divider()
-                                ScheduleWeekView(record:record,byRoom:false,comparisonDate:comparisonDate).frame(maxWidth:.infinity)
-                            }
+                                ScheduleWeekView(record:record,byRoom:false,comparisonDate:comparisonDate).frame(width:400,alignment:.leading)
+                            } }
                         } else {
-                            ScheduleWeekView(record:record, byRoom:scheduleView == "Week by room")
+                            ScheduleWeekView(record:record, byRoom:scheduleView == "Week by room").id(scheduleView)
                         }
                         Button("Edit schedules and people") { scheduleView = "List & edit" }
                     } else {
@@ -113,7 +132,7 @@ struct SchedulesWorkspace: View {
                     GroupBox("Recurring rules") {
                         VStack(alignment:.leading,spacing:10) {
                             ForEach(record.rules) { r in
-                                HStack { VStack(alignment:.leading) { Text(scheduleKind(r.kind) + ": " + (r.kind == "classroom_busy" ? r.location + " — " + r.name : r.name.isEmpty ? "My normal work" : r.name)).font(.headline);Text(r.days.sorted().map { weekdays[$0] }.joined(separator:", ") + "  " + r.start_time + "–" + r.end_time);Text(r.start_date + " through " + r.end_date + " • " + r.timezone).font(.caption).foregroundStyle(.secondary) };Spacer();Button("Edit") { rule = r;ruleEditor = true };Button("Remove rule") { self.record?.rules.removeAll { $0.id == r.id };dirty = true } }
+                                HStack { VStack(alignment:.leading) { Text(scheduleKind(r.kind) + ": " + (r.kind == "classroom_busy" ? r.location + " — " + r.name : r.name.isEmpty ? "My normal work" : r.name)).font(.headline);Text(r.days.sorted().map { weekdays[$0] }.joined(separator:", ") + "  " + scheduleTime(r.start_time) + "–" + scheduleTime(r.end_time));Text(r.start_date + " through " + r.end_date + " • " + r.timezone).font(.caption).foregroundStyle(.secondary) };Spacer();Button("Edit") { rule = r;ruleEditor = true };Button("Remove rule") { self.record?.rules.removeAll { $0.id == r.id };dirty = true } }
                             }
                             Button("Add recurring schedule") { rule = RecurringSchedule();ruleEditor = true }
                             Text("A recurring rule replaces older imported availability for the same room/person. Imported classroom occupancy remains effective unless you add a replacement classroom rule or a specific no-classes exception.").font(.caption)
@@ -122,7 +141,7 @@ struct SchedulesWorkspace: View {
                     GroupBox("Daily exceptions") {
                         VStack(alignment:.leading,spacing:10) {
                             ForEach(record.exceptions) { e in
-                                HStack { Text(e.day + " • " + scheduleKind(e.kind) + " • " + e.name + " • " + (e.closed ? "unavailable / no classes" : (e.start_time ?? "") + "–" + (e.end_time ?? "")));Spacer();Button("Edit") { exception = e;exceptionEditor = true };Button("Remove exception") { self.record?.exceptions.removeAll { $0.id == e.id };dirty = true } }
+                                HStack { Text(e.day + " • " + scheduleKind(e.kind) + " • " + e.name + " • " + (e.closed ? "unavailable / no classes" : scheduleTime(e.start_time ?? "") + "–" + scheduleTime(e.end_time ?? "")));Spacer();Button("Edit") { exception = e;exceptionEditor = true };Button("Remove exception") { self.record?.exceptions.removeAll { $0.id == e.id };dirty = true } }
                             }
                             Button("Add closure / shift exception") { exception = DailyScheduleException();exceptionEditor = true }
                         }.frame(maxWidth:.infinity,alignment:.leading).padding(6)
@@ -141,7 +160,8 @@ struct SchedulesWorkspace: View {
                     }
                 }
             }.padding(24).disabled(busy)
-        }.task { await load() }
+        }.task { comparisonDate = Date(); await load() }
+        .onChange(of:scheduleView) { _ in comparisonDate = Date() }
         .sheet(isPresented:$ruleEditor) { ruleForm }
         .sheet(isPresented:$personEditor) { personForm }
         .sheet(isPresented:$exceptionEditor) { exceptionForm }
@@ -159,9 +179,9 @@ struct SchedulesWorkspace: View {
             if rule.kind == "classroom_busy" { TextField("Room location",text:$rule.location) }
             HStack { TextField("First date YYYY-MM-DD",text:$rule.start_date);TextField("Last date YYYY-MM-DD",text:$rule.end_date) }
             HStack { ForEach(0..<7,id:\.self) { d in Toggle(weekdays[d],isOn:Binding(get:{rule.days.contains(d)},set:{ yes in if yes { rule.days.append(d) } else { rule.days.removeAll { $0 == d } } })).toggleStyle(.checkbox) } }
-            HStack { TextField("Start HH:MM",text:$rule.start_time);TextField("End HH:MM",text:$rule.end_time) }
+            HStack { ScheduleTimeField(title:"Start",value:$rule.start_time);ScheduleTimeField(title:"End",value:$rule.end_time) }
             TextField("Timezone",text:$rule.timezone)
-            Text("24-hour local times, including the final semester date. Saving remains subject to validation.").font(.caption)
+            Text("Local times, including the final schedule date. Saving remains subject to validation.").font(.caption)
             HStack { Button("Cancel") { ruleEditor = false };Spacer();Button("Apply to draft") { record?.rules.removeAll { $0.id == rule.id };record?.rules.append(rule);dirty = true;ruleEditor = false }.disabled(store.offline || rule.days.isEmpty) }
         }.padding(24).frame(width:700)
     }
@@ -184,7 +204,7 @@ struct SchedulesWorkspace: View {
             Picker("Kind",selection:$exception.kind) { Text("My hours").tag("work");Text("Building access").tag("room");Text("Staff shift").tag("staff_available");Text("Class occupancy").tag("classroom_busy") }
             TextField("Exact room or employee name",text:$exception.name);TextField("Date YYYY-MM-DD",text:$exception.day)
             Toggle(exception.kind == "classroom_busy" ? "No classes on this date" : "Unavailable / closed on this date",isOn:$exception.closed)
-            if !exception.closed { HStack { TextField("Replacement start HH:MM",text:Binding(get:{exception.start_time ?? ""},set:{exception.start_time = $0}));TextField("Replacement end HH:MM",text:Binding(get:{exception.end_time ?? ""},set:{exception.end_time = $0})) } }
+            if !exception.closed { HStack { ScheduleTimeField(title:"Replacement start",value:Binding(get:{exception.start_time ?? ""},set:{exception.start_time = $0}));ScheduleTimeField(title:"Replacement end",value:Binding(get:{exception.end_time ?? ""},set:{exception.end_time = $0})) } }
             TextField("Reason / note",text:$exception.note)
             Text("Exceptions use America/Chicago. A no-classes exception does not open a closed building.").font(.caption)
             HStack { Button("Cancel") { exceptionEditor = false };Spacer();Button("Apply to draft") { record?.exceptions.removeAll { $0.id == exception.id };record?.exceptions.append(exception);dirty = true;exceptionEditor = false }.disabled(store.offline) }
@@ -239,7 +259,7 @@ struct RepairWindowsView: View {
                     DisclosureGroup("Source dates") { ForEach(data.source_notices,id:\.self) { Text($0).font(.caption) } }
                 } else if searched != nil { Text("Inputs changed; find windows again before using a result.").font(.caption).foregroundStyle(.orange) }
             }.frame(maxWidth:.infinity,alignment:.leading).padding(6).disabled(busy)
-        }.task { if !store.offline { await find() } }
+        }.task { day = integrationDay(0); if !store.offline { await find() } }
     }
 }
 
@@ -296,16 +316,16 @@ struct ScheduleWeekView: View {
             matching(r.kind,r.name,r.location) && r.start_date <= day && day <= r.end_date && r.days.contains(weekday)
                 && !exceptions.contains { $0.kind == r.kind }
         }.map { r in
-            ScheduleWeekItem(id:r.id,time:r.start_time + "–" + r.end_time,title:scheduleKind(r.kind),detail:r.kind == "classroom_busy" ? r.name : r.timezone,kind:r.kind,order:r.start_time)
+            ScheduleWeekItem(id:r.id,time:scheduleTime(r.start_time) + "–" + scheduleTime(r.end_time),title:scheduleKind(r.kind),detail:r.kind == "classroom_busy" ? r.name : r.timezone,kind:r.kind,order:r.start_time)
         }
         result += exceptions.map { e in
-            ScheduleWeekItem(id:e.id,time:e.closed ? "All day" : (e.start_time ?? "") + "–" + (e.end_time ?? ""),title:e.closed ? (e.kind == "classroom_busy" ? "No classes" : "Unavailable / closed") : scheduleKind(e.kind),detail:e.note,kind:"exception",order:e.start_time ?? "00:00")
+            ScheduleWeekItem(id:e.id,time:e.closed ? "All day" : scheduleTime(e.start_time ?? "") + "–" + scheduleTime(e.end_time ?? ""),title:e.closed ? (e.kind == "classroom_busy" ? "No classes" : "Unavailable / closed") : scheduleKind(e.kind),detail:e.note,kind:"exception",order:e.start_time ?? "00:00")
         }
         result += record.reservations.compactMap { r -> ScheduleWeekItem? in
             guard let start = providerDate(r.start), let end = providerDate(r.end),
                   (byRoom ? r.room == selection : selection == "My work" ? r.employee.isEmpty || r.uses_owner : r.employee == selection),
                   start < calendar.date(byAdding:.day,value:1,to:date)!, end > date else { return nil }
-            return ScheduleWeekItem(id:r.id,time:format(start,"HH:mm") + "–" + format(end,"HH:mm"),title:"Planning hold",detail:byRoom ? (r.employee.isEmpty ? "My work" : r.employee) : r.room,kind:"hold",order:format(start,"HH:mm"))
+            return ScheduleWeekItem(id:r.id,time:format(start,"h:mm a") + "–" + format(end,"h:mm a"),title:"Planning hold",detail:byRoom ? (r.employee.isEmpty ? "My work" : r.employee) : r.room,kind:"hold",order:format(start,"HH:mm"))
         }
         return result.sorted { $0.order == $1.order ? $0.id < $1.id : $0.order < $1.order }
     }
@@ -362,6 +382,6 @@ struct ScheduleWeekView: View {
             Text("This overview shows saved schedules, not confirmed free time. Meetings, closures, capability and task blockers still need review. Use Plan to find a possible repair window.").font(.caption).foregroundStyle(.secondary)
             if let notice = record.reservation_notice, !notice.isEmpty { Text(notice).foregroundStyle(.orange) }
             if choices.isEmpty { Text("Add room schedules in List & edit to start this view.").foregroundStyle(.secondary) }
-        }
+        }.onAppear { anchor = Date() }
     }
 }

@@ -17,6 +17,10 @@ checks = r'''
 func rule(_ id:String,_ kind:String,_ name:String,_ location:String="",_ start:String="09:00",_ end:String="12:00") -> RecurringSchedule {
     RecurringSchedule(id:id,kind:kind,name:name,location:location,start_date:"2026-08-24",end_date:"2026-12-10",days:[0,2],start_time:start,end_time:end,timezone:"America/Chicago")
 }
+precondition(scheduleTime("00:00") == "12:00 AM")
+precondition(scheduleTime("12:00") == "12:00 PM")
+precondition(scheduleTime("19:05") == "7:05 PM")
+precondition(RecurringSchedule().start_date == integrationDay(0))
 var record = ScheduleRecord(revision:1,rules:[rule("owner","work",""),rule("staff","staff_available","Alex"),rule("access","room","ROOM 1","","07:00","21:00"),rule("class","classroom_busy","Course","ROOM 1","10:00","11:00"),rule("other","room","ROOM 2")],people:[StaffSchedule(name:"Alex",status:"active"),StaffSchedule(name:"Candidate",status:"candidate")],exceptions:[],reservations:[PlanningReservation(id:"hold",task_id:"task",workspace_id:"work",room:"ROOM 1",employee:"Alex",start:"2026-11-02T11:00:00-06:00",end:"2026-11-02T12:00:00-06:00",uses_owner:true)])
 let anchor = providerDate("2026-11-04T12:00:00-06:00")!
 var room = ScheduleWeekView(record:record,byRoom:true,selected:"ROOM 1",anchor:anchor)
