@@ -1,0 +1,13 @@
+{
+  "google": {
+    "standard_trusted_https": true,
+    "unauthenticated_status": 401,
+    "credentials_sent": false
+  },
+  "microsoft": {
+    "standard_trusted_https": true,
+    "unauthenticated_status": 401,
+    "credentials_sent": false
+  },
+  "account_data_read": false
+}
