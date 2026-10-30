@@ -61,3 +61,15 @@ Actual M5 laptop installation, campus network reachability, AirDrop/import throu
 ## Wired/Wi-Fi connection troubleshooting
 
 On the laptop, `nc -vz <work-Mac-IP> 8443` tests TCP access without sending any credentials. Success means the network path is open; timeout/refusal indicates a network/firewall/listener problem rather than a certificate trust problem. Use a fresh pairing file after this certificate repair. Preview 5 reports DNS, TCP reachability, identity verification and expired-invitation failures separately. Network isolation between wired and wireless VLANs cannot be repaired by changing the certificate; have the network administrator allow the intended local connection if it is blocked. No firewall protection is disabled by Juno.
+
+## Preview 6 recovery update
+
+Dan confirmed successful real wired/Wi-Fi laptop synchronization on October 29. Real laptop offline editing/reconnection still needs acceptance; disposable native process/TLS tests cover that path automatically.
+
+Preview 6 stores acknowledged temporary-to-server IDs in the atomic archive and rewrites cached record IDs before requesting the next complete export. This survives a failed export followed by a client restart. Known revocation removes host cache pages but saves unsynchronized edits on disk. A legacy archive upgrades without clearing its queue; unreadable archives are preserved and activation fails visibly.
+
+The cache identity now follows the verified host certificate and owner rather than its address. A fresh invitation for that same identity can move from hostname to IP, or to a changed private IP, without stranding the queue. Different certificates/owners remain separate. Legacy address-scoped files are moved only after successful decoding; existing canonical files take precedence and other legacy files are left intact for manual recovery.
+
+On a 404/409/422 sync rejection, the queue stores a persistent block and automatic sync stops reposting that operation. In **Computers**, compare queued changes with the current host record. Choose to apply the queued chain to the reviewed revision, or explicitly use the host version for that record. Both retain unrelated queued work. Rebased payloads receive new operation IDs and still use host revision checks, so another host edit requires another review. A deleted memory's edited text can be preserved as a new, clearly sourced recovered memory. Deleted check-ins remain exportable; no automatic recreation is claimed. Full-queue export and explicit full-queue discard remain available.
+
+Verification: 49 PostgreSQL/backend tests; native queue/store regressions including durable mappings, revocation, legacy decoding, scoped conflict decisions and recovery; native TLS outage/restart tests; isolated fictional native recovery screen inspection; extracted preview 6 installer verification. See the machine-readable installer report and mission report for final evidence.

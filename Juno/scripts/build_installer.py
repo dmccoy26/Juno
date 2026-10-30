@@ -13,7 +13,7 @@ import tarfile
 from fetch_runtimes import fetch
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '0.1.0-preview.5'
+VERSION = '0.1.0-preview.6'
 
 
 def run(*args, **kwargs):
@@ -137,7 +137,7 @@ def build(output):
     components.write_bytes(plistlib.dumps(definitions))
     component = work/'component.pkg'
     run('pkgbuild', '--root', work/'payload', '--component-plist', components,
-        '--identifier', 'com.dmccoy.juno.pkg', '--version', '0.1.0.5', '--install-location', '/',
+        '--identifier', 'com.dmccoy.juno.pkg', '--version', '0.1.0.6', '--install-location', '/',
         '--ownership', 'recommended', '--scripts', installer, component)
     (work/'Distribution.xml').write_text('''<?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
@@ -147,7 +147,7 @@ def build(output):
  <welcome file="welcome.html"/>
  <choices-outline><line choice="default"><line choice="juno"/></line></choices-outline>
  <choice id="default"/><choice id="juno" visible="false"><pkg-ref id="com.dmccoy.juno.pkg"/></choice>
- <pkg-ref id="com.dmccoy.juno.pkg" version="0.1.0.5">component.pkg</pkg-ref>
+ <pkg-ref id="com.dmccoy.juno.pkg" version="0.1.0.6">component.pkg</pkg-ref>
 </installer-gui-script>
 ''')
     (work/'welcome.html').write_text('''<html><body><h1>Juno — First Mac Preview</h1>

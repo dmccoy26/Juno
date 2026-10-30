@@ -63,18 +63,41 @@ final class PinnedHostSession: NSObject, URLSessionDelegate, URLSessionTaskDeleg
 struct OfflineEdit: Codable, Identifiable {
     let id: String; let kind: String; var recordID: String?; let localID: String?; let body: Data; let createdAt: Date
 }
-struct OfflineArchive: Codable { var savedAt: Date; var pages: [String: Data]; var pending: [OfflineEdit] = [] }
+struct SyncBlock: Codable { let operationID: String; let status: Int; let message: String }
+struct OfflineArchive: Codable {
+    var savedAt: Date; var pages: [String: Data]; var pending: [OfflineEdit] = []
+    var mappings: [String:String] = [:]; var block: SyncBlock? = nil
+    enum CodingKeys: String, CodingKey { case savedAt, pages, pending, mappings, block }
+    init(savedAt:Date,pages:[String:Data],pending:[OfflineEdit] = [],mappings:[String:String] = [:]) {
+        self.savedAt = savedAt; self.pages = pages; self.pending = pending; self.mappings = mappings
+    }
+    init(from decoder:Decoder) throws {
+        let c = try decoder.container(keyedBy:CodingKeys.self)
+        savedAt = try c.decode(Date.self,forKey:.savedAt); pages = try c.decode([String:Data].self,forKey:.pages)
+        pending = try c.decodeIfPresent([OfflineEdit].self,forKey:.pending) ?? []
+        mappings = try c.decodeIfPresent([String:String].self,forKey:.mappings) ?? [:]
+        block = try c.decodeIfPresent(SyncBlock.self,forKey:.block)
+    }
+}
 final class OfflineCopy {
     let file: URL
     var archive: OfflineArchive
-    var resolved: [String:String] = [:]
+    var resolved: [String:String] { archive.mappings }
     init(profile: SharedProfile) throws {
-        let label = profile.address + "|" + profile.owner_id + "|" + profile.certificate_sha256
+        let label = profile.owner_id + "|" + profile.certificate_sha256
+        let legacyLabel = profile.address + "|" + label
         let key = SHA256.hash(data: Data(label.utf8)).map { String(format: "%02x", $0) }.joined()
         let variant = (Bundle.main.bundleIdentifier ?? "com.dmccoy.juno").hasSuffix("development") ? "Juno Development" : "Juno"
         let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/" + variant + "/offline-copies")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         file = directory.appendingPathComponent(key + ".json")
+        let legacyKey = SHA256.hash(data:Data(legacyLabel.utf8)).map { String(format:"%02x",$0) }.joined()
+        let legacy = directory.appendingPathComponent(legacyKey + ".json")
+        if !FileManager.default.fileExists(atPath:file.path), FileManager.default.fileExists(atPath:legacy.path) {
+            // Rename only after validating the complete legacy archive. Never erase a corrupt file.
+            _ = try JSONDecoder().decode(OfflineArchive.self,from:Data(contentsOf:legacy))
+            try FileManager.default.moveItem(at:legacy,to:file)
+        }
         if FileManager.default.fileExists(atPath: file.path) { archive = try JSONDecoder().decode(OfflineArchive.self, from: Data(contentsOf: file)) }
         else { archive = OfflineArchive(savedAt: .distantPast, pages: [:]) }
     }
@@ -100,7 +123,7 @@ final class OfflineCopy {
             next[Self.key(path)] = try JSONSerialization.data(withJSONObject: body)
         }
         let old = archive
-        archive = OfflineArchive(savedAt: .now, pages: next, pending: old.pending)
+        archive = OfflineArchive(savedAt: .now, pages: next, pending: old.pending, mappings: old.mappings)
         do { try save() } catch { archive = old; throw error }
     }
     func read(_ path: String) throws -> Data {
@@ -115,7 +138,11 @@ final class OfflineCopy {
         }
         throw APIProblem(message: "This item is not in the offline copy. Reconnect to the work Mac to load it.", status: 0)
     }
-    func clear() { archive = OfflineArchive(savedAt: .distantPast, pages: [:], pending: archive.pending); try? FileManager.default.removeItem(at: file) }
+    func clear() {
+        archive.pages = [:]; archive.savedAt = .distantPast
+        // Revoked access hides the host cache, but unsynchronized user work stays durable.
+        try? save()
+    }
 }
 
 enum SharedKeychain {
@@ -230,13 +257,91 @@ extension OfflineCopy {
     }
     func acknowledge(_ edit: OfflineEdit, result: Data) throws {
         let old = archive
-        if let local = edit.localID, let object = try JSONSerialization.jsonObject(with:result) as? [String:Any], let real = object["id"] as? String {
-            resolved[local] = real
-            for index in archive.pending.indices where archive.pending[index].recordID == local { archive.pending[index].recordID = real }
-        }
-        archive.pending.removeAll { $0.id == edit.id }
+        do {
+            if let local = edit.localID, let object = try JSONSerialization.jsonObject(with:result) as? [String:Any], let real = object["id"] as? String {
+                archive.mappings[local] = real
+                for index in archive.pending.indices where archive.pending[index].recordID == local { archive.pending[index].recordID = real }
+                // Preserve newer optimistic fields, while making their identity durable before cache refresh.
+                var rows = objects("/v1/memories")
+                for index in rows.indices where rows[index]["id"] as? String == local { rows[index]["id"] = real }
+                try memories(rows)
+                for (key,data) in archive.pages where key.hasPrefix("/v1/check-ins/by-date/") {
+                    if var row = try JSONSerialization.jsonObject(with:data) as? [String:Any], row["id"] as? String == local {
+                        row["id"] = real; archive.pages[key] = try JSONSerialization.data(withJSONObject:row)
+                    }
+                }
+            }
+            archive.pending.removeAll { $0.id == edit.id }
+            if archive.block?.operationID == edit.id { archive.block = nil }
+            try save()
+        } catch { archive = old; throw error }
+    }
+    func block(_ edit:OfflineEdit,status:Int,message:String) throws {
+        let old = archive
+        archive.block = SyncBlock(operationID:edit.id,status:status,message:message)
         do { try save() } catch { archive = old; throw error }
     }
+    func recoverMemory(_ edit:OfflineEdit) throws {
+        let old = archive
+        do {
+            let identity = edit.recordID ?? edit.localID
+            let related = archive.pending.filter { $0.id == edit.id || (identity != nil && ($0.recordID == identity || $0.localID == identity)) }
+            guard let last = related.last, last.kind != "memory.delete",
+                  let latest = related.last(where: { ["memory.create","memory.edit"].contains($0.kind) }),
+                  var body = try JSONSerialization.jsonObject(with:latest.body) as? [String:Any] else {
+                throw APIProblem(message:"There is no edited memory text to recover. Export the queue to keep a separate copy.",status:409)
+            }
+            let ids = Set(related.map { $0.id }); archive.pending.removeAll { ids.contains($0.id) }; archive.block = nil
+            body.removeValue(forKey:"expected_revision")
+            body["source"] = "Recovered laptop memory · " + String(UUID().uuidString.prefix(8))
+            try memories(objects("/v1/memories").filter { $0["id"] as? String != identity })
+            _ = try perform("/v1/memories",method:"POST",body:body)
+        } catch { archive = old; throw error }
+    }
+    func resolve(_ edit:OfflineEdit,current:[String:Any]?,keepLaptop:Bool) throws {
+        let old = archive
+        do {
+            let identity = edit.recordID ?? edit.localID
+            let related = archive.pending.filter { $0.id == edit.id || (identity != nil && ($0.recordID == identity || $0.localID == identity)) }
+            if keepLaptop {
+                guard let current, let real = current["id"] as? String, var revision = current["revision"] as? Int else {
+                    throw APIProblem(message:"The record no longer exists. Export these edits to preserve their text, or use the work Mac version to remove only this record's queue.",status:409)
+                }
+                if let local = edit.localID { archive.mappings[local] = real }
+                var replacement:[OfflineEdit] = []
+                for item in related where !["memory.create","checkin.start"].contains(item.kind) {
+                    var body = try JSONSerialization.jsonObject(with:item.body) as! [String:Any]
+                    body["expected_revision"] = revision; revision += 1
+                    replacement.append(OfflineEdit(id:UUID().uuidString,kind:item.kind,recordID:real,localID:nil,body:try JSONSerialization.data(withJSONObject:body),createdAt:item.createdAt))
+                }
+                // A duplicate create's text already exists on the host; its dependent edits are rebased.
+                let ids = Set(related.map { $0.id }); let position = archive.pending.firstIndex { ids.contains($0.id) } ?? 0
+                archive.pending.removeAll { ids.contains($0.id) }; archive.pending.insert(contentsOf:replacement,at:position)
+                if let identity {
+                    var rows = objects("/v1/memories")
+                    for i in rows.indices where rows[i]["id"] as? String == identity { rows[i]["id"] = real; rows[i]["revision"] = revision }
+                    try memories(rows)
+                    for (key,data) in archive.pages where key.hasPrefix("/v1/check-ins/by-date/") {
+                        if var row = try JSONSerialization.jsonObject(with:data) as? [String:Any], row["id"] as? String == identity { row["id"] = real; row["revision"] = revision; archive.pages[key] = try JSONSerialization.data(withJSONObject:row) }
+                    }
+                }
+            } else {
+                let ids = Set(related.map { $0.id }); archive.pending.removeAll { ids.contains($0.id) }
+                if edit.kind.hasPrefix("memory.") {
+                    var rows = objects("/v1/memories").filter { $0["id"] as? String != identity }
+                    if let current { rows.removeAll { $0["id"] as? String == current["id"] as? String }; rows.append(current) }
+                    try memories(rows)
+                } else {
+                    for (key,data) in archive.pages where key.hasPrefix("/v1/check-ins/by-date/") {
+                        if let row = try JSONSerialization.jsonObject(with:data) as? [String:Any], row["id"] as? String == identity { archive.pages.removeValue(forKey:key) }
+                    }
+                    if let current, let day = current["local_date"] as? String { archive.pages["/v1/check-ins/by-date/"+day] = try JSONSerialization.data(withJSONObject:current) }
+                }
+            }
+            archive.block = nil; try invalidateReplies(); try save()
+        } catch { archive = old; throw error }
+    }
+
 }
 
 extension JunoStore {
@@ -273,6 +378,7 @@ extension JunoStore {
     }
     func syncOfflineCopy() async throws {
         guard let profile = sharedProfile, let endpoint, let hostSession, let copy = offlineCopy else { return }
+        if let block = copy.archive.block { throw APIProblem(message:"Review the queued conflict in Computers: " + block.message,status:block.status) }
         while let edit = copy.archive.pending.first {
             var body:[String:Any] = ["operation_id":edit.id,"kind":edit.kind,"body":try JSONSerialization.jsonObject(with:edit.body)]
             if let record = edit.recordID { body["record_id"] = record }
@@ -281,6 +387,10 @@ extension JunoStore {
                 try copy.acknowledge(edit,result:result);pendingEdits = copy.archive.pending
             } catch {
                 pendingEdits = copy.archive.pending
+                if let issue = error as? APIProblem, [404,409,422].contains(issue.status) {
+                    try copy.block(edit,status:issue.status,message:issue.message)
+                    offline = false
+                }
                 if (error as? APIProblem)?.status == 401 { sharedRevoked() }
                 throw APIProblem(message:(error as? APIProblem)?.message ?? "The work Mac is unavailable. Your offline edits are still saved on this laptop.",status:(error as? APIProblem)?.status ?? 0)
             }
@@ -313,6 +423,34 @@ struct ComputersWorkspace: View {
     @State private var busy = false
     @State private var notice: String?
     @State private var discard = false
+    @State private var discardRecord = false
+    @State private var reviewed: [String:Any]?
+    @State private var reviewedID: String?
+    @State private var reviewText = ""
+    func review(_ edit:OfflineEdit) {
+        busy = true; reviewedID = nil
+        Task {
+            defer { busy = false }
+            do {
+                guard let endpoint = store.endpoint, let session = store.hostSession else { return }
+                var body:[String:Any] = ["operation_id":edit.id,"kind":edit.kind,"body":try JSONSerialization.jsonObject(with:edit.body)]
+                if let id = edit.recordID { body["record_id"] = id }
+                let data = try await store.wire("/v1/offline-review",endpoint:endpoint,token:store.token,session:session,method:"POST",body:body)
+                let object = try JSONSerialization.jsonObject(with:data) as! [String:Any]
+                reviewed = object["current"] as? [String:Any]; reviewedID = edit.id
+                reviewText = reviewed == nil ? "This record no longer exists on the work Mac." : String(data:try JSONSerialization.data(withJSONObject:reviewed!,options:[.prettyPrinted,.sortedKeys]),encoding:.utf8)!
+                store.offline = false
+            } catch { notice = pairingFailure(error) }
+        }
+    }
+    func resolve(_ edit:OfflineEdit,keepLaptop:Bool) {
+        do {
+            guard reviewedID == edit.id else { return }
+            try store.offlineCopy?.resolve(edit,current:reviewed,keepLaptop:keepLaptop)
+            store.pendingEdits = store.offlineCopy?.archive.pending ?? []; reviewedID = nil
+            store.reconnectShared()
+        } catch { notice = (error as? APIProblem)?.message ?? "The saved queue could not be changed." }
+    }
     func loadHost() async {
         do {
             host = try JSONDecoder().decode(HostStatus.self,from:await store.localRequest("/v1/host"))
@@ -358,7 +496,7 @@ struct ComputersWorkspace: View {
                 guard invitation.version == 1, invitation.certificate_sha256.count == 64,
                       invitation.certificate_sha256.allSatisfy({$0.isHexDigit}), (40...256).contains(invitation.invitation.count) else { throw APIProblem(message:"Invalid pairing file.",status:0) }
                 if let old = store.sharedProfile, !store.pendingEdits.isEmpty,
-                   old.address != invitation.address || old.certificate_sha256 != invitation.certificate_sha256 {
+                   old.certificate_sha256 != invitation.certificate_sha256 {
                     throw APIProblem(message:"Export or synchronize your existing queued edits before switching to a different host identity.",status:409)
                 }
                 let address = try validatedHost(invitation.address)
@@ -388,6 +526,30 @@ struct ComputersWorkspace: View {
                     Button(store.syncing ? "Synchronizing…" : "Reconnect and synchronize") { store.reconnectShared() }.disabled(store.syncing)
                     if let date = store.offlineDate { Text("Last complete offline copy: " + date.formatted()).font(.caption) }
                     if !store.pendingEdits.isEmpty {
+                        if let block = store.offlineCopy?.archive.block, let edit = store.pendingEdits.first(where: { $0.id == block.operationID }) {
+                            Text("A queued edit needs your decision").font(.headline)
+                            Text(block.message).foregroundStyle(.orange)
+                            Button("Compare with current work Mac record") { review(edit) }.disabled(busy || store.syncing)
+                            if reviewedID == edit.id {
+                                Text("Queued laptop changes for this record").font(.headline)
+                                ForEach(store.pendingEdits.filter { $0.id == edit.id || ($0.recordID != nil && $0.recordID == edit.recordID) }) { item in
+                                    Text(String(data:item.body,encoding:.utf8) ?? "Saved edit").font(.caption.monospaced()).textSelection(.enabled)
+                                }
+                                Text("Current work Mac record").font(.headline)
+                                Text(reviewText).font(.caption.monospaced()).textSelection(.enabled)
+                                Button("Apply queued changes to the reviewed revision") { resolve(edit,keepLaptop:true) }.disabled(reviewed == nil)
+                                Button("Use work Mac version for this record…",role:.destructive) { discardRecord = true }
+                                if reviewed == nil && edit.kind.hasPrefix("memory.") {
+                                    Button("Preserve laptop memory as a new record") {
+                                        do {
+                                            try store.offlineCopy?.recoverMemory(edit)
+                                            store.pendingEdits = store.offlineCopy?.archive.pending ?? []; reviewedID = nil; store.reconnectShared()
+                                        } catch { notice = (error as? APIProblem)?.message ?? "Recovery could not be saved." }
+                                    }
+                                }
+                                Text("These choices affect only this record. Other queued work is retained. A later host edit will require another review.").font(.caption)
+                            }
+                        }
                         Text("Queued edits (\(store.pendingEdits.count))").font(.headline)
                         ForEach(store.pendingEdits) { edit in
                             DisclosureGroup(edit.kind + " · " + edit.createdAt.formatted()) {
@@ -435,11 +597,17 @@ struct ComputersWorkspace: View {
                 if busy { ProgressView() }
             }.padding(30).frame(maxWidth:.infinity,alignment:.leading)
         }.task { await loadHost() }
+        .alert("Use the work Mac version for this record?",isPresented:$discardRecord) {
+            Button("Keep laptop edits",role:.cancel) {}
+            Button("Use work Mac version",role:.destructive) {
+                if let edit = store.pendingEdits.first(where: { $0.id == reviewedID }) { resolve(edit,keepLaptop:false) }
+            }
+        } message: { Text("Only this record's queued changes will be removed. Other queued work stays saved. You can export the queue first.") }
         .alert("Discard all queued edits?",isPresented:$discard) {
             Button("Keep edits",role:.cancel) {}
             Button("Discard queued edits",role:.destructive) {
                 guard let copy = store.offlineCopy else { return }
-                copy.archive.pending = []
+                copy.archive.pending = []; copy.archive.block = nil
                 do { try copy.save(); store.pendingEdits = []; store.reconnectShared() }
                 catch { notice = "The queue could not be changed." }
             }
@@ -474,7 +642,7 @@ extension JunoStore {
                     if let check = self.checkIn, let data = try? self.offlineCopy?.read("/v1/check-ins/by-date/"+check.local_date), let fresh = try? JSONDecoder().decode(CheckInRecord.self,from:data) { self.checkIn = fresh }
                 } catch {
                     if let issue = error as? APIProblem, issue.status != 0 { self.syncIssue = issue.message }
-                    self.offline = true; self.status = self.sharedLabel
+                    self.offline = (error as? APIProblem)?.status == nil || (error as? APIProblem)?.status == 0 || (error as? APIProblem)?.status == 401; self.status = self.sharedLabel
                 }
                 self.syncing = false
             }

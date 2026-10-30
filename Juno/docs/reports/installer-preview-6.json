@@ -1,0 +1,25 @@
+{
+  "package": "Juno-0.1.0-preview.6-macOS-arm64.pkg",
+  "sha256": "37dd025c47318bcab56ac7378946dabfff7c12514183aca2193bbdfd1cf6b8b5",
+  "status": "passed",
+  "checks": [
+    "installer expands with expected app and non-destructive preinstall guard",
+    "payload seals, internal symlinks and 239 Mach-O dependency checks",
+    "fresh isolated startup, authentication, create/edit and stale-edit conflict",
+    "packaged TLS pairing, one-use invitations, offline-operation idempotency, administration scope and device revocation",
+    "packaged TaskDock identity review, dated snapshot, provider freshness and outage retention",
+    "offline check-in/diary and explicit unconfigured-model behavior",
+    "TaskDock snapshot persists across packaged service restart",
+    "relaunch persistence, credential rotation, deletion/suppression and clean shutdown",
+    "application parent-loss watchdog stops its owned database",
+    "application resources unchanged after execution",
+    "schema-1 upgrade with readable pre-migration backup and preserved memory"
+  ],
+  "host_architecture": "arm64",
+  "host_macos": "26.6.2",
+  "limits": [
+    "not installed on the actual M5 laptop yet",
+    "no Developer ID signature or notarization",
+    "actual two-Mac/network acceptance pending; host must remain awake with Juno open"
+  ]
+}

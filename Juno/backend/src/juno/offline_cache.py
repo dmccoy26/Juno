@@ -74,6 +74,31 @@ def install(app,db,device,lock_owner):
         if len(json.dumps(encoded).encode())>64_000_000:raise HTTPException(413,'The offline copy exceeds this preview’s size limit.')
         return JSONResponse(encoded)
 
+    @app.post('/v1/offline-review')
+    def review(value: OfflineInput, actor=Depends(device), session=Depends(db)):
+        """Read the canonical record without changing it or exposing another owner's work."""
+        lock_owner(session,actor.owner_id)
+        row=None
+        if value.kind.startswith('memory.'):
+            if value.record_id:
+                row=session.scalar(select(Memory).where(Memory.id==value.record_id,Memory.owner_id==actor.owner_id))
+            elif value.kind=='memory.create':
+                from hashlib import sha256
+                import json
+                fp=sha256(json.dumps([value.body.get('source'),value.body.get('text')],ensure_ascii=False).encode()).hexdigest()
+                row=session.scalar(select(Memory).where(Memory.owner_id==actor.owner_id,Memory.fingerprint==fp))
+            current={k:getattr(row,k) for k in ('id','text','source','confidence','revision','created_at','updated_at')} if row else None
+        else:
+            if value.record_id:
+                row=session.scalar(select(CheckIn).where(CheckIn.id==value.record_id,CheckIn.owner_id==actor.owner_id))
+            elif value.kind=='checkin.start':
+                from datetime import date
+                try: day=date.fromisoformat(value.body.get('local_date',''))
+                except (ValueError,TypeError):raise HTTPException(422,'Invalid check-in date.') from None
+                row=session.scalar(select(CheckIn).where(CheckIn.local_date==day,CheckIn.owner_id==actor.owner_id))
+            current=checkin_view(row) if row else None
+        return {'operation_id':str(value.operation_id),'kind':value.kind,'current':current}
+
     @app.post('/v1/offline-operations')
     def apply(value: OfflineInput, actor=Depends(device), session=Depends(db)):
         from fastapi.encoders import jsonable_encoder

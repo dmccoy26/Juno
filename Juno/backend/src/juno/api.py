@@ -40,7 +40,7 @@ def view(row):
 def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockReader, host_manager=None):
     engine = engine if engine is not None else engine_for()
     factory = sessions(engine)
-    app = FastAPI(title="Juno companion service", version="0.1.0-preview.5")
+    app = FastAPI(title="Juno companion service", version="0.1.0-preview.6")
     bearer = HTTPBearer(auto_error=False)
 
     @app.middleware("http")
@@ -92,7 +92,7 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
 
     @app.get("/health")
     def health():
-        return {"service": "juno", "version": "0.1.0-preview.5"}
+        return {"service": "juno", "version": "0.1.0-preview.6"}
 
     @app.get("/v1/memories")
     def memories(q: str = Query(default="", max_length=200),

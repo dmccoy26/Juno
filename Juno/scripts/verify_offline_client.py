@@ -23,6 +23,18 @@ guard reopened.archive.pending.count == 2 else { fatalError("Queue did not survi
 let first = reopened.archive.pending[0]
 try reopened.acknowledge(first,result:JSONSerialization.data(withJSONObject:["id":"server-memory"]))
 guard reopened.archive.pending.count == 1 && reopened.archive.pending[0].recordID == "server-memory" else { fatalError("Dependent ID mapping failed") }
+let durable = try OfflineCopy(profile:profile)
+guard durable.resolved[identity] == "server-memory", durable.objects("/v1/memories").first?["id"] as? String == "server-memory" else { fatalError("Acknowledged identity lost across restart/export failure") }
+let movedProfile = SharedProfile(address:"https://10.22.33.44:8443",certificate_sha256:profile.certificate_sha256,owner_id:profile.owner_id,device_id:"replacement")
+guard try OfflineCopy(profile:movedProfile).file == durable.file else { fatalError("Changed IP stranded the queue") }
+let conflicting = durable.archive.pending[0]
+try durable.block(conflicting,status:409,message:"Synthetic conflict")
+guard try OfflineCopy(profile:profile).archive.block?.operationID == conflicting.id else { fatalError("Conflict did not survive restart") }
+try durable.resolve(conflicting,current:["id":"server-memory","revision":7,"text":"Host version"],keepLaptop:true)
+guard (try JSONSerialization.jsonObject(with:durable.archive.pending[0].body) as! [String:Any])["expected_revision"] as? Int == 7, durable.archive.pending[0].id != conflicting.id else { fatalError("Conflict was not safely rebased with a fresh operation identity") }
+durable.clear()
+let revoked = try OfflineCopy(profile:profile)
+guard revoked.archive.pages.isEmpty, revoked.archive.pending.count == 1 else { fatalError("Revocation deleted durable unsynchronized work") }
 let before = copy.archive.pending.count
 do { _ = try copy.perform("/v1/memories/"+identity,method:"PUT",body:["text":"Wrong version","expected_revision":99]); fatalError("Conflict was overwritten") } catch is APIProblem {}
 guard copy.archive.pending.count == before else { fatalError("Failed edit changed queue") }
@@ -43,6 +55,18 @@ let replies = String(data:try final.read("/v1/conversations/test/messages"),enco
 guard !replies.contains("Old synthetic reply") else { fatalError("Stale reply leaked after offline edit") }
 let permissions = try FileManager.default.attributesOfItem(atPath:final.file.path)[.posixPermissions] as! NSNumber
 guard permissions.intValue == 0o600 else { fatalError("Offline file permissions invalid") }
+let queued = final.archive.pending[0]
+let unrelatedCount = final.archive.pending.filter { $0.kind.hasPrefix("checkin.") }.count
+try final.block(queued,status:404,message:"Deleted on host")
+try final.recoverMemory(queued)
+guard final.archive.pending.filter({$0.kind.hasPrefix("checkin.")}).count == unrelatedCount,
+      final.archive.pending.last?.kind == "memory.create" else { fatalError("Recovery lost unrelated diary edits") }
+let recovered = final.archive.pending.last!
+try final.block(recovered,status:409,message:"Synthetic duplicate")
+try final.resolve(recovered,current:nil,keepLaptop:false)
+guard final.archive.pending.count == unrelatedCount, final.archive.block == nil else { fatalError("Scoped discard lost unrelated work") }
+let legacy = try JSONSerialization.data(withJSONObject:["savedAt":0,"pages":[String:String]()])
+guard try JSONDecoder().decode(OfflineArchive.self,from:legacy).pending.isEmpty else { fatalError("Old cache format cannot upgrade") }
 print("PASS native offline memory edits, diary chain, restart, dependency mapping, conflict retention, local search, stale-reply removal and private file permissions")
 '''
 

@@ -88,6 +88,23 @@ class SharedHostTests(memory_tests.MemoryTests):
             self.assertNotIn('Offline updated memory.',json.dumps([r.result for r in receipts]))
             self.assertNotIn(self.value['text'],json.dumps([r.result for r in receipts]))
 
+    def test_conflict_review_is_read_only_owner_scoped_and_revision_checked(self):
+        self.paired();row=self.create()
+        op={'operation_id':str(uuid.uuid4()),'kind':'memory.edit','record_id':row['id'],'body':{**self.value,'text':'Laptop version','expected_revision':1}}
+        host=self.client.put('/v1/memories/'+row['id'],json={**self.value,'text':'Host version','expected_revision':1}).json()
+        self.assertEqual(self.lan.post('/v1/offline-operations',json=op).status_code,409)
+        review=self.lan.post('/v1/offline-review',json=op)
+        self.assertEqual(review.status_code,200,review.text)
+        self.assertEqual(review.json()['current']['text'],'Host version')
+        other=self.client.post('/v1/offline-review',json=op,headers={'Authorization':'Bearer '+self.other_token})
+        self.assertIsNone(other.json()['current'])
+        self.assertEqual(self.client.get('/v1/memories/'+row['id']).json()['revision'],host['revision'])
+        with self.factory() as session:self.assertEqual(session.scalars(select(OfflineOperation)).all(),[])
+        op['operation_id']=str(uuid.uuid4());op['body']['expected_revision']=host['revision']
+        self.assertEqual(self.lan.post('/v1/offline-operations',json=op).json()['text'],'Laptop version')
+        self.client.delete('/v1/memories/'+row['id'],params={'expected_revision':3})
+        self.assertIsNone(self.lan.post('/v1/offline-review',json=op).json()['current'])
+
     def test_offline_diary_chain_and_retries_do_not_duplicate_day(self):
         self.paired();start_id=str(uuid.uuid4())
         row=self.operation('checkin.start',{'local_date':'2026-10-30'},operation_id=start_id).json()
