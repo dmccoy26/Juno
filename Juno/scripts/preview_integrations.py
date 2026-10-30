@@ -20,6 +20,26 @@ def main():
         for kind,content in [('calendar',ICS),('schedules',CSV),('beacon',json.dumps(FEED))]:
             response=case.client.post('/v1/integrations/import',json={'kind':kind,'content':content,'label':'fictional-'+kind,'start':'2026-10-26','end':'2026-11-17','timezone':'America/Chicago'})
             assert response.status_code==200,response.text
+        if '--planning' in sys.argv:
+            from juno.models import TaskDockSnapshot, TaskDockState, now
+            from datetime import datetime,timedelta,time as daytime
+            from zoneinfo import ZoneInfo
+            with case.factory() as session:
+                snap=TaskDockSnapshot(owner_id=case.actor.owner_id,origin='http://localhost:8100',
+                    info={'workspace_id':'fictional','definitions':{}},items=[
+                        {'id':'fictional-dean','title':'Fictional Dean briefing','behavior':'open'},
+                        {'id':'fictional-room','title':'Fictional classroom repair','behavior':'open'}],
+                    sources=[],snapshot='fictional',fetched_at=now())
+                session.add(snap);session.flush();session.add(TaskDockState(owner_id=case.actor.owner_id,active_id=snap.id));session.commit()
+            today=now().astimezone(ZoneInfo('America/Chicago')).date()
+            windows=[]
+            for i in range(1,6):
+                a=datetime.combine(today+timedelta(days=i),daytime(9),ZoneInfo('America/Chicago'))
+                windows.append({'kind':'work','start':a.isoformat(),'end':(a+timedelta(hours=8)).isoformat()})
+            response=case.client.put('/v1/planning',json={'expected_revision':0,'workspace_id':'fictional','reserve_minutes':240,'windows':windows,'tasks':[
+                {'task_id':'fictional-dean','minutes':45,'dean':True},
+                {'task_id':'fictional-room','minutes':90,'operational':True,'blocker':'Awaiting fictional parts','next_action':'Check delivery','next_check':str(today+timedelta(days=2))}]})
+            assert response.status_code==200,response.text
         listener=socket.socket();listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
         fixture=ProviderFixture()
         provider_app=create_app(case.engine,provider_transport=fixture)
@@ -54,9 +74,9 @@ def main():
         }
     }
 }
-'''.replace('PORT',str(port)).replace('TOKEN',json.dumps(case.token)).replace('value.section = "Evidence"','value.section = "Connections"' if '--connections' in sys.argv else 'value.section = "Evidence"'))
+'''.replace('PORT',str(port)).replace('TOKEN',json.dumps(case.token)).replace('value.section = "Evidence"','value.section = "Plan"' if '--planning' in sys.argv else 'value.section = "Connections"' if '--connections' in sys.argv else 'value.section = "Evidence"'))
         (folder/'QA.swift').chmod(0o600)
-        subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-O','-target','arm64-apple-macosx13.5',str(folder/'Juno.swift'),*[str(ROOT/'desktop'/n) for n in ['Companion.swift','TaskDock.swift','Shared.swift','Integrations.swift','Connections.swift']],str(folder/'QA.swift'),'-o',str(app/'Contents/MacOS/Juno')],check=True)
+        subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-O','-target','arm64-apple-macosx13.5',str(folder/'Juno.swift'),*[str(ROOT/'desktop'/n) for n in ['Companion.swift','TaskDock.swift','Shared.swift','Integrations.swift','Connections.swift','Planning.swift']],str(folder/'QA.swift'),'-o',str(app/'Contents/MacOS/Juno')],check=True)
         print(app,flush=True)
         while True:time.sleep(1)
     except KeyboardInterrupt:pass

@@ -160,7 +160,7 @@ struct RootView: View {
                 Toggle("Meeting mode", isOn: $store.meeting).toggleStyle(.switch).help("New replies use a professional tone. Private-mode replies are hidden while this is on.")
             }.padding(18)
             Picker("Workspace", selection: $store.section) {
-                Text("Chat").tag("Chat"); Text("Daily check-in").tag("Check-in"); Text("Memories").tag("Memories"); Text("Model connection").tag("Model"); Text("TaskDock").tag("TaskDock"); Text("Evidence").tag("Evidence"); Text("Connections").tag("Connections"); Text("Computers").tag("Computers")
+                Text("Chat").tag("Chat"); Text("Plan").tag("Plan"); Text("Daily check-in").tag("Check-in"); Text("Memories").tag("Memories"); Text("Model connection").tag("Model"); Text("TaskDock").tag("TaskDock"); Text("Evidence").tag("Evidence"); Text("Connections").tag("Connections"); Text("Computers").tag("Computers")
             }.pickerStyle(.segmented).padding(.horizontal, 20).padding(.bottom, 14)
             if store.sharedProfile != nil {
                 HStack {
@@ -173,6 +173,7 @@ struct RootView: View {
             }
             Divider()
             switch store.section {
+            case "Plan": PlanningWorkspace(store: store)
             case "Memories": MemoryWorkspace(store: store)
             case "Check-in": CheckInWorkspace(store: store)
             case "Model":
@@ -185,7 +186,7 @@ struct RootView: View {
             }
             if let issue = store.problem { HStack { Text(issue).foregroundStyle(.orange); Spacer(); Button("Dismiss") { store.problem = nil } }.padding(12) }
             Divider()
-            HStack { Text(store.sharedProfile == nil ? "Stored on this Mac" : "Work Mac + offline laptop copy"); Spacer(); Text("Juno 0.1.0-preview.8") }.font(.caption).foregroundStyle(.secondary).padding(12)
+            HStack { Text(store.sharedProfile == nil ? "Stored on this Mac" : "Work Mac + offline laptop copy"); Spacer(); Text("Juno 0.1.0-preview.9") }.font(.caption).foregroundStyle(.secondary).padding(12)
         }.frame(minWidth: 920, minHeight: 650)
     }
 }
@@ -256,14 +257,18 @@ struct ModelWorkspace: View {
     }
 }
 
+struct CheckInStarter: Decodable { let text: String; let notices: [String] }
+
 struct CheckInWorkspace: View {
     @ObservedObject var store: JunoStore
     @State private var day = Date()
+    @State private var starter: CheckInStarter?
     var dayKey: String { let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.timeZone = .current; return formatter.string(from: day) }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { Text("Your daily check-in").font(.title2.bold()); Spacer(); DatePicker("Day", selection: $day, displayedComponents: .date).fixedSize().disabled(store.checkBusy) }
             Text("About 15 minutes · answers save as you continue · no model required").font(.subheadline).foregroundStyle(.secondary)
+            if let starter { DisclosureGroup("From your saved work context — review before answering") { ScrollView { Text(starter.text).textSelection(.enabled); ForEach(starter.notices, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) } }.frame(maxHeight: 140) } }
             if let row = store.checkIn, row.local_date == dayKey {
                 Text(row.source_notice).font(.callout).foregroundStyle(.secondary)
                 if let key = row.next_key, let question = row.questions.first(where: { $0.key == key }) {
@@ -283,6 +288,10 @@ struct CheckInWorkspace: View {
             Button("Reload saved check-in") { store.loadCheckIn(day: dayKey) }.disabled(!store.connected || store.checkBusy)
             Spacer(minLength: 0)
         }.padding(28).disabled(!store.connected)
+        .task(id: dayKey) {
+            starter = nil
+            if store.connected && !store.offline { starter = try? await store.decode(CheckInStarter.self, "/v1/planning/check-in?day=" + dayKey) }
+        }
         .onAppear { if store.connected { store.loadCheckIn(day: dayKey) } }
         .onChange(of: store.connected) { value in if value { store.loadCheckIn(day: dayKey) } }
         .onChange(of: day) { _ in store.loadCheckIn(day: dayKey) }

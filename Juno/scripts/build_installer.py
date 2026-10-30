@@ -13,7 +13,7 @@ import tarfile
 from fetch_runtimes import fetch
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '0.1.0-preview.8'
+VERSION = '0.1.0-preview.9'
 
 
 def run(*args, **kwargs):
@@ -82,7 +82,7 @@ def build(output):
         if path.is_file() or path.is_symlink():
             path.unlink()
     run('xcrun', 'swiftc', '-parse-as-library', '-swift-version', '5', '-O', '-target',
-        'arm64-apple-macosx13.5', ROOT/'desktop/Juno.swift', ROOT/'desktop/Companion.swift', ROOT/'desktop/TaskDock.swift', ROOT/'desktop/Shared.swift', ROOT/'desktop/Integrations.swift', ROOT/'desktop/Connections.swift', '-o', contents/'MacOS/Juno')
+        'arm64-apple-macosx13.5', ROOT/'desktop/Juno.swift', ROOT/'desktop/Companion.swift', ROOT/'desktop/TaskDock.swift', ROOT/'desktop/Shared.swift', ROOT/'desktop/Integrations.swift', ROOT/'desktop/Connections.swift', ROOT/'desktop/Planning.swift', '-o', contents/'MacOS/Juno')
     icons = work/'Juno.iconset'; icons.mkdir()
     master = work/'icon.png'
     run('xcrun', 'swift', ROOT/'desktop/icon.swift', master)
@@ -94,7 +94,7 @@ def build(output):
     run('iconutil', '-c', 'icns', icons, '-o', resources/'Juno.icns')
     info = dict(CFBundleName='Juno', CFBundleDisplayName='Juno', CFBundleIconFile='Juno',
                 CFBundleIdentifier='com.dmccoy.juno', CFBundleExecutable='Juno',
-                CFBundlePackageType='APPL', CFBundleVersion='8', CFBundleShortVersionString='0.1.0',
+                CFBundlePackageType='APPL', CFBundleVersion='9', CFBundleShortVersionString='0.1.0',
                 JunoReleaseVersion=VERSION, JunoPackaged=True, LSMinimumSystemVersion='13.5',
                 NSHighResolutionCapable=True, NSAppTransportSecurity={'NSAllowsLocalNetworking': True})
     (contents/'Info.plist').write_bytes(plistlib.dumps(info))

@@ -1,0 +1,44 @@
+{
+  "preview": "0.1.0-preview.9",
+  "date": "2026-10-30",
+  "status": "implementation verified; user acceptance pending",
+  "backend": {
+    "tests": 91,
+    "skipped": 0,
+    "planning_tests": 13,
+    "database": "isolated PostgreSQL"
+  },
+  "native": {
+    "compiled": true,
+    "api_contract": "passed exact Swift Codable models against isolated real API responses",
+    "offline_regression": "passed exact native memory/diary store and JunoStore checks",
+    "interaction_acceptance": "pending; native computer-use tool returned a closed-pipe error"
+  },
+  "work_host": {
+    "schema": "0006_planning",
+    "bundle_version": "9",
+    "records_owner_certificate_and_pairing_preserved": true,
+    "https": "existing IP and trusted local certificate; unauthenticated planning correctly returns 401",
+    "provider_credentials_or_grants_changed": false
+  },
+  "boundaries": [
+    "TaskDock remains authoritative; no upstream writes or employee messages",
+    "Local approved host/model only; no cloud fallback",
+    "Planning edits require connection; offline memory/diary edits retained",
+    "Durations require review; no statistical calibration claimed",
+    "One next task, not a complete allocated week",
+    "Weekly draft is editable for the current screen session and is not sent"
+  ],
+  "pending": [
+    "Actual provider consent/resource setup and authorized TaskDock/calendar reads",
+    "Physical laptop offline edit/restart/reconnect acceptance",
+    "Hands-on Plan usability and 15-minute check-in trial",
+    "Native HumanLab instrumentation"
+  ],
+  "installer": {
+    "status": "passed",
+    "packaged_contract_tests": 32,
+    "sha256": "294606d6d0841d7b3f9b7be51f56b26e87fe56fdbf4d20a0099011cf97fd0ec3",
+    "report": "installer-preview-9.json"
+  }
+}

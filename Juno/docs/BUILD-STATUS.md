@@ -1,8 +1,18 @@
 # Build status
 
-Updated: October 29, 2026.
+Updated: October 30, 2026.
 
-## Current release — preview 8
+## Current increment — preview 9 planning
+
+Native **Plan** adds revision-checked planning facts, editable durations/actual reported minutes, Dean/operations choices, room/staff windows, confirmed capability, blockers/next checks and resumption notes. Deterministic next-task suggestions respect confirmed availability, merged meetings, a 40-hour cap and interruption reserve. Missing scope/availability, stale sources and conflicting important priorities are visible and prevent unsupported choices. Confirmed priority choices expire by planning date.
+
+Daily check-in gains a saved-context starter and avoids repeating unchanged blockers with a future check date. The weekly Dean draft uses confirmed diary text plus dated task/blocker evidence; it is editable for the current screen session and is never sent. Employee workload totals explicitly cover only supplied assignments. Planning corrections invalidate dependent assistant replies. Dated planning facts join the laptop cache; planning edits still need a connection.
+
+See [planning guide](PLANNING.md) and [mission 4](missions/2026-10-30-04-planning.md). 91 backend tests pass with isolated PostgreSQL, including 13 planning acceptance tests. The exact native Swift planning models decode real isolated API responses, and existing native offline memory/diary checks pass. The extracted/relocated standalone installer passed 32 bundled planning/provider contract tests with external networking disabled, 239 Mach-O dependency checks, restart/upgrade/backup checks, TaskDock/evidence fixtures and pinned-TLS pairing boundaries. See [planning verification](reports/planning-preview-9.json) and [installer verification](reports/installer-preview-9.json). Installer: `dist/Juno-0.1.0-preview.9-macOS-arm64.pkg`; [preview 9 setup](PREVIEW-9-SETUP.md). A copy is in `~/Downloads/Juno-0.1.0-preview.9`. The work Mac is running preview 9 on schema 0006; its work-record counts, owner, certificate/key and paired-device states are preserved. Only its temporary local app credential rotated normally. Verified HTTPS at the existing IP reaches the authenticated planning route. Native UI automation is unavailable in this session; the new screen's hands-on interaction check remains pending. Actual live-provider setup and laptop offline-edit/reconnect acceptance also remain pending.
+
+Next product work after acceptance: improve estimate calibration and reduce manual planning setup, then test the 15-minute workflow with Dan. Full weekly allocation, missed-day provisional drafts, reminders and native HumanLab instrumentation are not delivered by this increment.
+
+## Previous release — preview 8 connections
 
 Both connection paths are implemented. Start with [morning setup](PREVIEW-8-SETUP.md), [connection details](CONNECTIONS.md), [connection verification](reports/connections-native-preview-8.json) and [installer verification](reports/installer-preview-8.json).
 
@@ -67,7 +77,7 @@ The entries below describe earlier increments; statements that an integration or
 - All 47 backend tests pass. Native-code fixtures verify cache/queue restart behavior and real TLS pairing, stopped-host offline edits, restarted-client replay-safe synchronization and wrong-certificate rejection.
 - Actual two-Mac/campus-network acceptance remains pending. See `SHARED-HOST.md` and the preview 4 reports for exact evidence and limits.
 
-## In progress / incomplete
+## Historical incomplete items (preview 4)
 
 - Discovery architecture recommendation written. The local shared host now exists; installed TaskDock, actual two-Mac network acceptance and real calendar access remain pending.
 - Local PostgreSQL memory service exists; the local work Mac host now exists, while actual two-Mac acceptance remains pending.
@@ -87,7 +97,7 @@ JUNO_TEST_ADMIN_URL="$(python3 scripts/dev_database.py url)" .venv/bin/python -m
 
 Evidence covers the memory/database behaviors above and synthetic connector responses. It does not establish a live TaskDock connection, semantic recall, or actual two-Mac operation. Integration tests are skipped when the test database URL is absent; do not report that as a full pass.
 
-## Next implementation step
+## Historical next step (preview 4)
 
 Install preview 4 on the M5 laptop, transfer a fresh invitation from this Mac and verify native pairing, offline editing and reconnection on the actual network. Complete installed TaskDock acceptance separately. Calendar planning, remote-model approvals, semantic retrieval, a background host daemon and native HumanLab instrumentation remain later requirements.
 

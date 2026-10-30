@@ -1,6 +1,8 @@
 # Juno 0.1.0 beta build mission
 
-Status: Ready for discovery; architecture decisions remain open.
+Status: Implementation through preview 9; full beta acceptance remains pending. See docs/BUILD-STATUS.md for current evidence.
+
+Subsequent user decisions supersede the original hosting/offline boundaries below: the work Mac is the approved host, stays awake with Juno open for online access, and the laptop supports offline memory/diary edits.
 Created: October 29, 2026.
 Owner and initial user: Dan McCoy.
 

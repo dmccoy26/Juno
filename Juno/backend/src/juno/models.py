@@ -168,3 +168,11 @@ class IntegrationSnapshot(Base):
     details: Mapped[dict] = mapped_column(JSONB)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class PlanningState(Base):
+    __tablename__ = 'planning_state'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    data: Mapped[dict] = mapped_column(JSONB)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

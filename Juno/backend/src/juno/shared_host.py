@@ -54,6 +54,8 @@ class LANBoundary:
             path == '/v1/taskdock' and method == 'GET' or
             path.startswith('/v1/taskdock/snapshots') and method == 'GET' or
             path == '/v1/taskdock/history' and method == 'GET' or
+            path == '/v1/planning' and method in {'GET','PUT'} or
+            path in {'/v1/planning/next','/v1/planning/weekly','/v1/planning/check-in'} and method == 'GET' or
             path == '/v1/model' and method == 'GET')
         if not allowed or not permitted:
             from starlette.responses import JSONResponse
