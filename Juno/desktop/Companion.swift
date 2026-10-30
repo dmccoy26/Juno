@@ -160,7 +160,7 @@ struct RootView: View {
                 Toggle("Meeting mode", isOn: $store.meeting).toggleStyle(.switch).help("New replies use a professional tone. Private-mode replies are hidden while this is on.")
             }.padding(18)
             Picker("Workspace", selection: $store.section) {
-                Text("Chat").tag("Chat"); Text("Plan").tag("Plan"); Text("Daily check-in").tag("Check-in"); Text("Memories").tag("Memories"); Text("Model connection").tag("Model"); Text("TaskDock").tag("TaskDock"); Text("Evidence").tag("Evidence"); Text("Connections").tag("Connections"); Text("Computers").tag("Computers")
+                Text("Chat").tag("Chat"); Text("Plan").tag("Plan"); Text("Schedules").tag("Schedules"); Text("Daily check-in").tag("Check-in"); Text("Memories").tag("Memories"); Text("Model connection").tag("Model"); Text("TaskDock").tag("TaskDock"); Text("Evidence").tag("Evidence"); Text("Connections").tag("Connections"); Text("Computers").tag("Computers")
             }.pickerStyle(.segmented).padding(.horizontal, 20).padding(.bottom, 14)
             if store.sharedProfile != nil {
                 HStack {
@@ -173,6 +173,7 @@ struct RootView: View {
             }
             Divider()
             switch store.section {
+            case "Schedules": SchedulesWorkspace(store: store)
             case "Plan": PlanningWorkspace(store: store)
             case "Memories": MemoryWorkspace(store: store)
             case "Check-in": CheckInWorkspace(store: store)
@@ -186,7 +187,7 @@ struct RootView: View {
             }
             if let issue = store.problem { HStack { Text(issue).foregroundStyle(.orange); Spacer(); Button("Dismiss") { store.problem = nil } }.padding(12) }
             Divider()
-            HStack { Text(store.sharedProfile == nil ? "Stored on this Mac" : "Work Mac + offline laptop copy"); Spacer(); Text("Juno 0.1.0-preview.9") }.font(.caption).foregroundStyle(.secondary).padding(12)
+            HStack { Text(store.sharedProfile == nil ? "Stored on this Mac" : "Work Mac + offline laptop copy"); Spacer(); Text("Juno 0.1.0-preview.10") }.font(.caption).foregroundStyle(.secondary).padding(12)
         }.frame(minWidth: 920, minHeight: 650)
     }
 }

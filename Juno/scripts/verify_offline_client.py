@@ -116,7 +116,7 @@ def main():
         subprocess.run([str(path/'check')],check=True)
         (path/'Juno.swift').write_text((ROOT/'desktop/Juno.swift').read_text().split('@main\nstruct JunoApplication',1)[0])
         (path/'StoreCheck.swift').write_text(STORE_TEST)
-        subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-target','arm64-apple-macosx13.5',str(path/'Juno.swift'),str(ROOT/'desktop/Companion.swift'),str(ROOT/'desktop/TaskDock.swift'),str(ROOT/'desktop/Shared.swift'),str(ROOT/'desktop/Integrations.swift'),str(ROOT/'desktop/Connections.swift'),str(ROOT/'desktop/Planning.swift'),str(path/'StoreCheck.swift'),'-o',str(path/'store-check')],check=True)
+        subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-target','arm64-apple-macosx13.5',str(path/'Juno.swift'),str(ROOT/'desktop/Companion.swift'),str(ROOT/'desktop/TaskDock.swift'),str(ROOT/'desktop/Shared.swift'),str(ROOT/'desktop/Integrations.swift'),str(ROOT/'desktop/Connections.swift'),str(ROOT/'desktop/Planning.swift'),str(ROOT/'desktop/Schedules.swift'),str(path/'StoreCheck.swift'),'-o',str(path/'store-check')],check=True)
         subprocess.run([str(path/'store-check')],check=True,timeout=20)
 
 if __name__=='__main__':main()

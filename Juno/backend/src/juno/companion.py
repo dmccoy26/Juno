@@ -146,6 +146,13 @@ def context_for(session, owner_id, question, history):
         plan["tasks"] = plan["tasks"][:10]
         from fastapi.encoders import jsonable_encoder
         context.append({"source":"planning:"+owner_id, "plan":jsonable_encoder(plan)})
+    from .schedules import state_view as schedules_view
+    schedules = schedules_view(session, owner_id)
+    refs['schedules:'+owner_id] = schedules['revision']
+    if schedules['revision']:
+        context.append({'source':'schedules:'+owner_id,'revision':schedules['revision'],
+            'people':schedules['people'],'rules':schedules['rules'][:30],'exceptions':schedules['exceptions'][:20],
+            'notice':'User-reviewed structured schedules govern current work availability and status; they supersede older informal schedule memories when dates match. If facts conflict or dates are unclear, ask before choosing. Staff status and weekly limits are constraints; candidates and tentative schedules are not confirmed capacity. Use the availability endpoint/results for exact intersections; never invent a reservation.'})
     for message in history:
         refs.update(message.context_refs)
     return context, refs
@@ -154,6 +161,11 @@ def context_for(session, owner_id, question, history):
 def refs_current(session, owner_id, refs):
     for key, revision in refs.items():
         kind, identity = key.split(':', 1)
+        if kind == 'schedules':
+            from .models import ScheduleState
+            current=session.get(ScheduleState,owner_id)
+            if (current.revision if current else 0)!=revision:return False
+            continue
         if kind == 'planning':
             from .models import PlanningState
             current = session.get(PlanningState, owner_id)

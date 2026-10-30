@@ -176,3 +176,11 @@ class PlanningState(Base):
     data: Mapped[dict] = mapped_column(JSONB)
     revision: Mapped[int] = mapped_column(Integer, default=1)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ScheduleState(Base):
+    __tablename__ = 'schedule_state'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    data: Mapped[dict] = mapped_column(JSONB)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

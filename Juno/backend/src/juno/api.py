@@ -40,7 +40,7 @@ def view(row):
 def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockReader, host_manager=None, provider_transport=None, oauth_manager=None):
     engine = engine if engine is not None else engine_for()
     factory = sessions(engine)
-    app = FastAPI(title="Juno companion service", version="0.1.0-preview.9")
+    app = FastAPI(title="Juno companion service", version="0.1.0-preview.10")
     from fastapi.exceptions import RequestValidationError
     from fastapi.responses import JSONResponse
     @app.exception_handler(RequestValidationError)
@@ -100,7 +100,7 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
 
     @app.get("/health")
     def health():
-        return {"service": "juno", "version": "0.1.0-preview.9"}
+        return {"service": "juno", "version": "0.1.0-preview.10"}
 
     @app.get("/v1/memories")
     def memories(q: str = Query(default="", max_length=200),
@@ -176,6 +176,8 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
     integrations_api.install(app, db, device, lock_owner)
     provider_api.install(app, db, device, lock_owner, provider_transport, oauth_manager)
     taskdock_evidence_api.install(app, db, device, lock_owner, taskdock_factory)
-    from . import planning
+    from . import planning, schedules, estimates
     planning.install(app, db, device, lock_owner)
+    schedules.install(app, db, device, lock_owner)
+    estimates.install(app, db, device, model_factory)
     return app

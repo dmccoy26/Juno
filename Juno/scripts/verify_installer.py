@@ -115,9 +115,10 @@ def denied(*args,**kwargs):raise AssertionError('No network is allowed in packag
 socket.socket.connect=denied
 from test_providers import ProviderReaderTests,OAuthTests,ProviderAPITests
 from test_planning import PlanningTests
+from test_schedules import ScheduleTests
 import juno.planning
 assert Path(juno.planning.__file__).resolve().is_relative_to(Path(sys.argv[2]).resolve())
-suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (ProviderReaderTests,OAuthTests,ProviderAPITests,PlanningTests)])
+suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (ProviderReaderTests,OAuthTests,ProviderAPITests,PlanningTests,ScheduleTests)])
 result=unittest.TextTestRunner(verbosity=0).run(suite)
 sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
 """
@@ -263,7 +264,7 @@ def verify(package, report):
             try:
                 process,hello=launch(relocated,state,log)
                 verify_provider_runtime(relocated,state)
-                checks.append('relocated bundled planning constraints/priority choices/diary drafts plus seven-provider readers, owner-scoped API/concurrency protection, fixed read destinations and PKCE OAuth fixtures against isolated PostgreSQL with external networking disabled')
+                checks.append('relocated bundled recurring schedules, staff status/caps, holds, planning constraints/priority choices/diary drafts plus seven-provider readers, owner-scoped API/concurrency protection, fixed read destinations and PKCE OAuth fixtures against isolated PostgreSQL with external networking disabled')
                 url,token=hello['url'],hello['token']
                 assert api(url,token,'/v1/memories')['items']==[], 'Payload was not clean'
                 api(url,'','/v1/memories',expected=401)

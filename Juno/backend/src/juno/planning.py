@@ -39,6 +39,7 @@ class TaskFacts(Strict):
     employee: str = Field(default='', max_length=300)
     capability: str = Field(default='', max_length=1000)
     independent: bool = False
+    supervision: bool = False
     blocker: str = Field(default='', max_length=2000)
     waiting_on: str = Field(default='', max_length=300)
     next_action: str = Field(default='', max_length=2000)
@@ -121,6 +122,8 @@ def build_plan(session, owner, day):
     from .taskdock_api import active_snapshot
     from .models import TaskDockState
     state = state_view(session, owner)
+    from .schedules import schedule_intervals
+    schedule_state, effective, schedule_notices = schedule_intervals(session, owner, day)
     zone = ZoneInfo('America/Chicago')
     left = datetime.combine(day, datetime.min.time(), zone).astimezone(timezone.utc)
     right = datetime.combine(day + timedelta(days=7), datetime.min.time(), zone).astimezone(timezone.utc)
@@ -129,7 +132,7 @@ def build_plan(session, owner, day):
     def spans(kind, name=''):
         return merge((max(left, stamp(w['start'])), min(right, stamp(w['end'])))
                      for w in windows if w['kind'] == kind and (kind == 'work' or w['name'].casefold() == name.casefold()))
-    work = spans('work')
+    work = merge((a,b) for kind,name,a,b in effective if kind=='work')
     busy = []; rooms = {}; staff = {}; notices = []
     if state.get('source_notice'): notices.append(state['source_notice'])
     calendar_uncertain = False
@@ -149,7 +152,7 @@ def build_plan(session, owner, day):
             elif item.get('kind') == 'staff_available':
                 staff.setdefault(str(item.get('title', '')).casefold(), []).append((a,b))
             elif item.get('busy') and item.get('status') != 'cancelled': busy.append((a,b))
-    free = subtract(work, busy)
+    free = subtract(work, busy + [(a,b) for kind,name,a,b in effective if kind=='busy'])
     total = min(2400, int(sum((b-a).total_seconds()/60 for a,b in free)))
     capacity = max(0, total - state['reserve_minutes'])
     snapshot = active_snapshot(session, owner)
@@ -162,6 +165,7 @@ def build_plan(session, owner, day):
     facts = {t['task_id']: t for t in state['tasks']}
     rows = []
     stale_tasks = bool(snapshot and ((now()-snapshot.fetched_at).total_seconds()>86400 or (tdstate and tdstate.error)))
+    availability_budget = {}
     candidates = list(snapshot.items) if snapshot else []
     candidates.sort(key=lambda t:(0 if facts.get(str(t.get('id')),{}).get('dean') else 1 if facts.get(str(t.get('id')),{}).get('operational') else 2, str(t.get('due_date') or '9999'), str(t.get('id'))))
     if len(candidates)>500: notices.append('Only the first 500 priority candidates are evaluated; this is not a complete task plan.')
@@ -177,13 +181,13 @@ def build_plan(session, owner, day):
         room = f.get('room', '')
         employee = f.get('employee', '')
         if room:
-            access = spans('room', room)
-            if not access: missing.append('Confirm access to '+room)
-            available = subtract(intersect(available, access), rooms.get(room.casefold(), []))
-        if employee:
-            staff_spans = merge(spans('staff', employee) + staff.get(employee.casefold(), []))
-            if not staff_spans: missing.append('Confirm availability for '+employee)
-            available = intersect(available, staff_spans)
+            from .schedules import availability
+            slots = availability(session, owner, day, room, employee, suggested, f.get('supervision',False), (schedule_state,effective,schedule_notices), availability_budget)
+            available = [(stamp(w['start']),stamp(w['end'])) for w in slots['windows']]
+            missing.extend(slots['warnings'])
+        elif employee:
+            missing.append('Confirm the task room before planning employee work.')
+        if employee and not f.get('supervision'):
             if not f.get('independent') or not f.get('capability'): missing.append('Confirm '+employee+' can do this independently, with supporting experience.')
         blocker = f.get('blocker') or task.get('blocked_reason') or ''
         if str(task.get('behavior', '')).lower() == 'waiting' and not blocker:
@@ -195,7 +199,7 @@ def build_plan(session, owner, day):
         if start_date and start_date > str(day): missing.append('TaskDock start date is '+start_date+'; confirm before starting early.')
         slot = next(((a,b) for a,b in available if (b-a).total_seconds() >= suggested*60), None)
         if slot is None: missing.append('No confirmed uninterrupted window fits this estimate.')
-        if suggested > capacity: missing.append('Estimate exceeds remaining planning capacity.')
+        if (not employee or f.get('supervision')) and suggested > capacity: missing.append('Estimate exceeds remaining planning capacity.')
         due = str(task.get('due_date') or '')[:10]
         overdue = bool(due and due <= str(day))
         priority = task.get('priority')
@@ -206,7 +210,8 @@ def build_plan(session, owner, day):
                      'estimate_reason':'Your saved estimate.' if estimate else 'Broad starter estimate, not calibrated; confirm scope before scheduling.',
                      'actual_minutes':f.get('actual_minutes'),'dean':f.get('dean',False),'operational':f.get('operational',False),
                      'blocker':str(blocker),'waiting_on':f.get('waiting_on',''),'next_action':f.get('next_action',''),
-                     'next_check':f.get('next_check'),'resume':f.get('resume',''),'employee':employee,
+                     'next_check':f.get('next_check'),'resume':f.get('resume',''),'employee':employee,'room':room,
+                     'room_hint':__import__('juno.schedules',fromlist=['room_hint']).room_hint(str(task.get('title',''))),
                      'missing':missing,'actionable':not missing,'slot_start':slot[0].isoformat() if slot and not missing else None,
                      'reason':'Dean request' if f.get('dean') else 'Teaching/operations need' if f.get('operational') else 'Due date and recorded TaskDock priority; impact needs your review.', '_rank':rank})
     rows.sort(key=lambda r:r['_rank'])
@@ -232,7 +237,9 @@ def build_plan(session, owner, day):
     loads = []
     for employee in sorted({r['employee'] for r in rows if r['employee']}):
         assigned = [r for r in rows if r['employee'] == employee]
-        availability = intersect(merge(spans('staff', employee) + staff.get(employee.casefold(), [])), [(left,right)])
+        availability = intersect(merge((a,b) for kind,name,a,b in effective if kind=='staff_available' and name.casefold()==employee.casefold()), [(left,right)])
+        profile = next((p for p in schedule_state['people'] if p['name'].casefold()==employee.casefold()),None)
+        if profile and profile['status']!='active':availability=[]
         minutes = int(sum((b-a).total_seconds()/60 for a,b in availability))
         loads.append({'employee':employee, 'reported_assignment_minutes':sum(r['estimate_minutes'] for r in assigned if r['estimate_confirmed']),
             'unknown_estimates':sum(not r['estimate_confirmed'] for r in assigned), 'blocked_tasks':sum(bool(r['blocker']) for r in assigned),
@@ -274,6 +281,21 @@ def install(app, db, device, lock_owner):
             raise HTTPException(409, 'TaskDock workspace changed. Reload and review before saving planning facts.')
         if value.expected_revision != revision:
             raise HTTPException(409, 'Planning facts changed on another device. Reload before saving; your draft remains here.')
+        from .models import ScheduleState
+        from .schedules import room_key
+        recurring=session.get(ScheduleState,actor.owner_id)
+        if recurring:
+            def groups(windows):
+                result={}
+                for w in windows:
+                    kind='staff_available' if w['kind']=='staff' else w['kind']
+                    name=room_key(w['name']) if kind=='room' else '' if kind=='work' else w['name'].casefold()
+                    result.setdefault(kind+'|'+name,[]).append((stamp(w['start']),stamp(w['end'])))
+                return {k:merge(v) for k,v in result.items()}
+            before=groups(row.data['windows'] if row else [])
+            after=groups([w.model_dump(mode='json') for w in value.windows])
+            if any(before.get(k,[])!=after.get(k,[]) for k in recurring.data.get('managed',[])):
+                raise HTTPException(409,'These hours are managed by recurring schedules. Use Schedules to change them; task-detail edits can still be saved separately.')
         from .companion import invalidate_context
         invalidate_context(session, actor.owner_id, 'planning:'+actor.owner_id)
         data = value.model_dump(mode='json', exclude={'expected_revision'})

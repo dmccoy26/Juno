@@ -1,0 +1,28 @@
+{
+  "package": "Juno-0.1.0-preview.10-macOS-arm64.pkg",
+  "sha256": "3a5ee85fb906ddc0bb47bd135df4ac63cc053ad53c9f2b24c241c0926d72f31f",
+  "status": "passed",
+  "checks": [
+    "installer expands with expected app and non-destructive preinstall guard",
+    "payload seals, internal symlinks and 239 Mach-O dependency checks",
+    "relocated bundled recurring schedules, staff status/caps, holds, planning constraints/priority choices/diary drafts plus seven-provider readers, owner-scoped API/concurrency protection, fixed read destinations and PKCE OAuth fixtures against isolated PostgreSQL with external networking disabled",
+    "fresh isolated startup, authentication, create/edit and stale-edit conflict",
+    "packaged Beacon HTTP reader, calendar recurrence/DST/overlap, semester CSV, error retention and offline export",
+    "packaged TLS pairing, one-use invitations, offline-operation idempotency, administration scope and device revocation",
+    "packaged TaskDock identity review, dated snapshot, provider freshness and outage retention",
+    "offline check-in/diary and explicit unconfigured-model behavior",
+    "TaskDock snapshot persists across packaged service restart",
+    "integration snapshots persist across restart and can be removed without provider writes",
+    "relaunch persistence, credential rotation, deletion/suppression and clean shutdown",
+    "application parent-loss watchdog stops its owned database",
+    "application resources unchanged after execution",
+    "schema-1 upgrade with readable pre-migration backup and preserved memory"
+  ],
+  "host_architecture": "arm64",
+  "host_macos": "26.6.2",
+  "limits": [
+    "not installed on the actual M5 laptop yet",
+    "no Developer ID signature or notarization",
+    "actual two-Mac/network acceptance pending; host must remain awake with Juno open"
+  ]
+}

@@ -76,7 +76,7 @@ class TaskDockReader:
     def __init__(self, base_url: str, token: str,
                  transport: Callable[[str, dict[str, str]], dict] = _get):
         self.base_url = validate_origin(base_url)
-        if not token or len(token) > 4096 or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in token):
+        if not token or len(token) > 4096 or any(c.isspace() or ord(c) < 32 or ord(c) >= 127 for c in token):
             raise ValueError('Enter the dedicated Juno token from TaskDock Connections.')
         self._headers = {'Accept': 'application/json', 'Authorization': f'Bearer {token}'}
         self._transport = transport

@@ -34,6 +34,7 @@ final class JunoStore: ObservableObject {
         didSet { UserDefaults.standard.set(meeting, forKey: "meetingMode") }
     }
     @Published var section = "Chat"
+    @Published var planningTaskID: String?
     @Published var conversations: [ConversationRecord] = []
     @Published var conversationMore = false
     @Published var currentConversation: String?
@@ -362,7 +363,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
         store.start()
     }
-    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Juno", .applicationVersion: "0.1.0-preview.9", .credits: NSAttributedString(string: "Native Mac work companion\nChat, check-ins and memory · local shared host\nEncrypted work-Mac connection with offline memory and diary edits")]) }
+    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Juno", .applicationVersion: "0.1.0-preview.10", .credits: NSAttributedString(string: "Native Mac work companion\nChat, check-ins and memory · local shared host\nEncrypted work-Mac connection with offline memory and diary edits")]) }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { window?.makeKeyAndOrderFront(nil); return true }
     func applicationWillTerminate(_ notification: Notification) { store.stop() }
 }

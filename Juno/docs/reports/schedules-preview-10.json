@@ -1,0 +1,36 @@
+{
+  "preview": "0.1.0-preview.10",
+  "date": "2026-10-30",
+  "status": "implementation and package checks passed; acceptance gaps listed",
+  "backend_tests": 103,
+  "skipped": 0,
+  "packaged_contract_tests": 44,
+  "native_contract": "Exact Swift planning/schedule/availability models decoded real isolated API responses.",
+  "native_regression": "Offline memory/diary persistence and actual JunoStore operations passed; pinned TLS outage/restart/reconnect and certificate rejection passed.",
+  "native_ui": "Approved TaskDock enable/pair/import and new root navigation observed. New schedule/window interaction checks incomplete: native control service repeatedly closed its pipe or timed out.",
+  "live_taskdock": "Approved read-only pairing/import passed. Credential saved in Juno Keychain. Actual payload retained only on approved host. Upstream providers were not refreshed.",
+  "live_local_model": "Approved local model produced a valid reviewable range for a saved TaskDock issue; no duration or hold was changed.",
+  "work_host": {
+    "schema": "0007_schedules",
+    "bundle_version": "10",
+    "existing_records_owner_certificate_and_pairing_preserved": true,
+    "approved_recurring_rules": 43,
+    "staff_status_profiles": 3,
+    "room_intersections_matched_previous_private_checks": 5,
+    "actual_assignments_or_holds_created": 0,
+    "runtime_note": "Quit/reopen the development app once to load the last helper compatibility guard; source and installer contain the final verified guard."
+  },
+  "package_sha256": "3a5ee85fb906ddc0bb47bd135df4ac63cc053ad53c9f2b24c241c0926d72f31f",
+  "pending": [
+    "Actual calendar client consent, selected resources and meeting coverage",
+    "Physical laptop install/offline edit/restart/reconnect trial",
+    "Hands-on acceptance of all new schedule/repair controls",
+    "HumanLab native adapter and full beta signoff"
+  ],
+  "boundaries": [
+    "Read-only TaskDock; no employee messages or calendar/task writes",
+    "Candidates/unsettled schedules excluded; funded/agreed limits enforced for holds",
+    "Local planning holds require reviewed task facts; no automatic real assignments",
+    "No cloud model fallback; real operational records and credentials excluded from GitHub/installer"
+  ]
+}

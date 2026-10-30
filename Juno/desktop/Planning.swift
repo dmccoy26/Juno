@@ -8,7 +8,7 @@ struct PlanningFacts: Codable {
     var task_id: String
     var minutes: Int? = nil; var actual_minutes: Int? = nil
     var dean = false; var operational = false
-    var room = ""; var employee = ""; var capability = ""; var independent = false
+    var room = ""; var employee = ""; var capability = ""; var independent = false; var supervision: Bool? = false
     var blocker = ""; var waiting_on = ""; var next_action = ""; var next_check: String? = nil; var resume = ""
 }
 struct PlanningRecord: Codable {
@@ -18,6 +18,7 @@ struct PlanningTask: Decodable, Identifiable {
     var task_id: String; var title: String; var estimate_minutes: Int; var estimate_confirmed: Bool
     var estimate_reason: String; var missing: [String]; var actionable: Bool; var reason: String
     var blocker: String; var next_action: String; var next_check: String?; var resume: String; var employee: String
+    var room: String; var room_hint: String?
     var id: String { task_id }
 }
 struct StaffPlanningLoad: Decodable, Identifiable {
@@ -49,6 +50,8 @@ struct PlanningWorkspace: View {
     @State private var actual = ""
     @State private var checkDate = ""
     @State private var weekly = ""
+    @State private var estimateSuggestion: TaskEstimate?
+    @State private var taskSearch = ""
     private func dateString(_ date: Date) -> String {
         let f = DateFormatter(); f.timeZone = TimeZone(identifier: "America/Chicago"); f.dateFormat = "yyyy-MM-dd"; return f.string(from: date)
     }
@@ -63,6 +66,7 @@ struct PlanningWorkspace: View {
             record = fresh; dirty = false; selected = nil
             if store.offline { plan = nil; issue = "Saved planning facts are available offline. Reconnect to calculate recommendations or save planning changes. Diary and memory edits still work offline."; return }
             plan = try await store.decode(PlanningResult.self, "/v1/planning/next?day=" + dateString(day)); issue = nil
+            if let wanted = store.planningTaskID, let task = plan?.tasks.first(where: { $0.id == wanted }) { choose(task); store.planningTaskID = nil }
         } catch { issue = (error as? APIProblem)?.message ?? "Could not load planning. Your changes remain here." }
     }
     private func save() async {
@@ -79,6 +83,7 @@ struct PlanningWorkspace: View {
     }
     private func choose(_ task: PlanningTask) {
         selected = task.id
+        estimateSuggestion = nil
         facts = record?.tasks.first { $0.task_id == task.id } ?? PlanningFacts(task_id: task.id)
         estimate = facts.minutes.map(String.init) ?? ""
         actual = facts.actual_minutes.map(String.init) ?? ""
@@ -110,8 +115,9 @@ struct PlanningWorkspace: View {
                 }
                 if dirty { HStack { Text("Unsaved planning changes").foregroundStyle(.orange); Button("Discard draft and reload") { Task { await load() } } } }
                 if let issue { Text(issue).foregroundStyle(.orange).textSelection(.enabled) }
+                RepairWindowsView(store: store, tasks: plan?.tasks ?? [], workspace: record?.workspace_id)
                 if let record {
-                    GroupBox("Confirmed availability") {
+                    DisclosureGroup("Legacy dated availability (\(record.windows.count) windows)") {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Times use this Mac’s timezone. Enter individual days, room access and staff availability. Missing hours mean unknown availability.").font(.caption)
                             HStack {
@@ -147,7 +153,9 @@ struct PlanningWorkspace: View {
                                 Button("Prioritize: " + task.title) { record?.priority_choice = task.id; record?.priority_choice_date = dateString(day); dirty = true }
                             }
                         } }
-                    ForEach(plan.tasks) { task in
+                    TextField("Find an issue from TaskDock", text: $taskSearch)
+                    Button("Refresh tasks in TaskDock connection") { store.section = "TaskDock" }
+                    ForEach(plan.tasks.filter { taskSearch.isEmpty || $0.title.localizedCaseInsensitiveContains(taskSearch) }) { task in
                         GroupBox {
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack { Text(task.title).font(.headline); if plan.recommended_task_id == task.id { Text("Suggested next").foregroundStyle(.green) }; Spacer(); Button("Discuss estimate") {
@@ -174,7 +182,7 @@ struct PlanningWorkspace: View {
                     }
                     GroupBox("Source limits") { VStack(alignment: .leading) { ForEach(plan.notices, id: \.self) { Text($0).font(.caption) }; Text(plan.notice).font(.caption) }.frame(maxWidth: .infinity, alignment: .leading) }
                 }
-                if selected != nil { editor }
+
                 Divider()
                 Text("End-of-day continuity").font(.headline)
                 Text("Use Daily check-in for the five-question interview: accomplishments, interruptions, blockers, employee contributions and tomorrow. Aim for about 15 minutes; drafts survive interruptions.")
@@ -196,24 +204,38 @@ struct PlanningWorkspace: View {
                 }
             }.padding(24).disabled(busy)
         }.task { await load() }
+        .sheet(isPresented: Binding(get:{ selected != nil },set:{ if !$0 { selected = nil } })) { ScrollView { editor }.padding(20).frame(width:760,height:760) }
         .onChange(of: day) { _ in if !dirty { Task { await load() } } }
     }
     private var editor: some View {
         GroupBox("Task planning details — your confirmed context") {
             VStack(alignment: .leading, spacing: 10) {
                 HStack { TextField("Estimate (minutes)", text: $estimate); TextField("Actual work (minutes, optional)", text: $actual) }
+                Button("Suggest a duration range") {
+                    busy = true
+                    Task { defer { busy = false };do { estimateSuggestion = try await store.decode(TaskEstimate.self,"/v1/planning/estimate",method:"POST",body:["task_id":facts.task_id,"model_assist":true]) } catch { issue = (error as? APIProblem)?.message ?? "Could not estimate. Your saved duration is unchanged." } }
+                }.disabled(busy || store.offline)
+                if let suggestion = estimateSuggestion {
+                    Text("\(suggestion.minimum)–\(suggestion.maximum) minutes • " + suggestion.source).font(.headline)
+                    Text(suggestion.reason);if !suggestion.question.isEmpty { Text(suggestion.question).foregroundStyle(.purple) }
+                    if let notice = suggestion.model_notice { Text(notice).font(.caption).foregroundStyle(.orange) }
+                    Button("Use midpoint in this draft") { estimate = String((suggestion.minimum + suggestion.maximum)/2) }
+                    Text(suggestion.notice).font(.caption)
+                }
                 Toggle("Dean request", isOn: $facts.dean)
                 Toggle("Teaching or operations need", isOn: $facts.operational)
                 TextField("Room needing confirmed access", text: $facts.room)
+                if let hint = plan?.tasks.first(where: { $0.id == selected })?.room_hint { Button("Use room suggested by task title: " + hint) { facts.room = hint } }
                 TextField("Possible employee", text: $facts.employee)
                 TextField("Confirmed relevant experience / capability", text: $facts.capability)
                 Toggle("I confirm this employee can do this independently", isOn: $facts.independent)
+                Toggle("Needs my supervision / collaboration", isOn: Binding(get:{facts.supervision ?? false},set:{facts.supervision = $0}))
                 TextField("Blocker / dependency (parts, approval, bill, research…)", text: $facts.blocker)
                 TextField("Waiting on whom or what?", text: $facts.waiting_on)
                 TextField("Next unblocking action", text: $facts.next_action)
                 TextField("Next check date, YYYY-MM-DD (optional)", text: $checkDate)
                 TextField("Where we stopped and how to resume", text: $facts.resume)
-                Button("Apply details to planning draft") { applyFacts() }.disabled(store.offline)
+                Button("Apply details to planning draft") { applyFacts(); if dirty { selected = nil } }.disabled(store.offline)
                 Button("Remove these planning details") { record?.tasks.removeAll { $0.task_id == facts.task_id }; selected = nil; dirty = true }.disabled(store.offline)
                 Text("Missing employee updates are not evidence of poor performance. Reported minutes do not measure intelligence or skill.").font(.caption).foregroundStyle(.secondary)
             }.padding(6)

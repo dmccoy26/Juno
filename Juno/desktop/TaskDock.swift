@@ -209,6 +209,7 @@ struct TaskDockWorkspace: View {
                             if let task = snapshot.items.first(where: { $0.id == selected }) {
                                 Text(task.title).font(.headline)
                                 Text("Recorded TaskDock fields · unknown values stay unknown · source content is displayed as plain text").font(.caption).foregroundStyle(.secondary)
+                                Button("Plan this task in Juno") { store.planningTaskID = task.id; store.section = "Plan" }.disabled(["completed","archived","done"].contains(task.text("behavior") ?? ""))
                                 TaskDockDetails(task: task, info: snapshot.info)
                                 HStack {
                                     if snapshot.info.capabilities["read_updates"] == true { Button("Read updates") { readHistory(task: task, kind: "updates") }.disabled(busy) }

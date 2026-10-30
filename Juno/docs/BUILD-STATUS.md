@@ -2,7 +2,17 @@
 
 Updated: October 30, 2026.
 
-## Current increment — preview 9 planning
+## Current increment — preview 10 schedules and repair windows
+
+Native **Schedules** adds recurring semester rules, classroom occupancy, building access, personal/staff hours, dated exceptions and explicit active/tentative/candidate status with funded/agreed weekly limits. **Plan → When could we work on this?** intersects those inputs, distinguishes independent from supervised work and shows possible windows. Reviewed local planning holds reject room/person conflicts and excess weekly hours. TaskDock remains read-only and authoritative.
+
+The user approved enabling TaskDock Juno access and saving its dedicated credential in Juno Keychain. Actual native pairing/import succeeded; real payloads remain on the work Mac. TaskDock tasks can open their planning details, suggest a room from the title for review, and request a duration range from the local model. A local-model call against an authorized saved task returned a valid suggestion without changing a task or hold. No upstream providers were refreshed or granted broader access.
+
+The work Mac is updated, and its existing approved schedule inputs were migrated privately to recurring rules and staff-status records. The five room/employee intersections match the previously verified possible work windows. The host owner, existing record counts, certificate/key and paired-device states are preserved. New schedule data joins the laptop cache. No real planning holds were created automatically.
+
+See [schedules and repair planning](SCHEDULES-AND-REPAIR-PLANNING.md), [preview 10 setup](PREVIEW-10-SETUP.md) and [mission 5](missions/2026-10-30-05-schedules.md). 103 backend tests pass without skips. The extracted/relocated installer passed 44 bundled planning/schedule/provider contract tests with external networking disabled, 239 Mach-O dependency checks, migrations/backups, restart and TLS checks. Native Swift decoding, offline regression and pinned-TLS outage/reconnect checks passed. See [schedule verification](reports/schedules-preview-10.json) and [installer verification](reports/installer-preview-10.json). Installer: `dist/Juno-0.1.0-preview.10-macOS-arm64.pkg`; a verified copy and setup guide are in `~/Downloads/Juno-0.1.0-preview.10`. Reopen the development app once for the final helper compatibility guard. Native pairing/import and the new root navigation were observed; interaction tests for the new schedule/window controls remain pending because the native tool repeatedly returned closed-pipe errors/timeouts. Real calendar consent/coverage and physical laptop offline-edit/reconnect acceptance also remain pending. This is not a whole-week optimizer or full beta signoff.
+
+## Previous increment — preview 9 planning
 
 Native **Plan** adds revision-checked planning facts, editable durations/actual reported minutes, Dean/operations choices, room/staff windows, confirmed capability, blockers/next checks and resumption notes. Deterministic next-task suggestions respect confirmed availability, merged meetings, a 40-hour cap and interruption reserve. Missing scope/availability, stale sources and conflicting important priorities are visible and prevent unsupported choices. Confirmed priority choices expire by planning date.
 

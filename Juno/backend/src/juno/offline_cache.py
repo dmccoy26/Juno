@@ -62,6 +62,8 @@ def install(app,db,device,lock_owner):
         add('/v1/model',{'base_url':'http://127.0.0.1:1234/v1','model':config.model if config else '', 'configured':config is not None})
         from .integrations_api import state_view
         add('/v1/integrations',state_view(session,actor.owner_id))
+        from .schedules import state_view as schedules_view
+        add('/v1/schedules',schedules_view(session,actor.owner_id))
         from .planning import state_view
         add('/v1/planning',state_view(session,actor.owner_id))
         state=session.get(TaskDockState,actor.owner_id);snapshot=active_snapshot(session,actor.owner_id)

@@ -20,7 +20,7 @@ def main():
         for kind,content in [('calendar',ICS),('schedules',CSV),('beacon',json.dumps(FEED))]:
             response=case.client.post('/v1/integrations/import',json={'kind':kind,'content':content,'label':'fictional-'+kind,'start':'2026-10-26','end':'2026-11-17','timezone':'America/Chicago'})
             assert response.status_code==200,response.text
-        if '--planning' in sys.argv:
+        if '--planning' in sys.argv or '--schedules' in sys.argv:
             from juno.models import TaskDockSnapshot, TaskDockState, now
             from datetime import datetime,timedelta,time as daytime
             from zoneinfo import ZoneInfo
@@ -39,6 +39,18 @@ def main():
             response=case.client.put('/v1/planning',json={'expected_revision':0,'workspace_id':'fictional','reserve_minutes':240,'windows':windows,'tasks':[
                 {'task_id':'fictional-dean','minutes':45,'dean':True},
                 {'task_id':'fictional-room','minutes':90,'operational':True,'blocker':'Awaiting fictional parts','next_action':'Check delivery','next_check':str(today+timedelta(days=2))}]})
+            assert response.status_code==200,response.text
+        if '--schedules' in sys.argv:
+            rules=[]
+            for kind,name,location,a,b,days in [
+                ('work','','','09:00','17:00',[0,1,2,3,4]),
+                ('room','Example Room','','08:00','18:00',[0,1,2,3,4]),
+                ('staff_available','Fictional Tech','','09:00','12:00',[0,2,4]),
+                ('staff_available','Fictional Candidate','','09:00','12:00',[0,2,4])]:
+                rules.append({'kind':kind,'name':name,'location':location,'start_date':'2026-10-26','end_date':'2026-12-10','days':days,'start_time':a,'end_time':b})
+            response=case.client.put('/v1/schedules',json={'expected_revision':0,'rules':rules,'people':[
+                {'name':'Fictional Tech','status':'active','weekly_limit_minutes':1200},
+                {'name':'Fictional Candidate','status':'candidate','weekly_limit_minutes':1200}], 'exceptions':[]})
             assert response.status_code==200,response.text
         listener=socket.socket();listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
         fixture=ProviderFixture()
@@ -74,9 +86,9 @@ def main():
         }
     }
 }
-'''.replace('PORT',str(port)).replace('TOKEN',json.dumps(case.token)).replace('value.section = "Evidence"','value.section = "Plan"' if '--planning' in sys.argv else 'value.section = "Connections"' if '--connections' in sys.argv else 'value.section = "Evidence"'))
+'''.replace('PORT',str(port)).replace('TOKEN',json.dumps(case.token)).replace('value.section = "Evidence"','value.section = "Schedules"' if '--schedules' in sys.argv else 'value.section = "Plan"' if '--planning' in sys.argv else 'value.section = "Connections"' if '--connections' in sys.argv else 'value.section = "Evidence"'))
         (folder/'QA.swift').chmod(0o600)
-        subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-O','-target','arm64-apple-macosx13.5',str(folder/'Juno.swift'),*[str(ROOT/'desktop'/n) for n in ['Companion.swift','TaskDock.swift','Shared.swift','Integrations.swift','Connections.swift','Planning.swift']],str(folder/'QA.swift'),'-o',str(app/'Contents/MacOS/Juno')],check=True)
+        subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-O','-target','arm64-apple-macosx13.5',str(folder/'Juno.swift'),*[str(ROOT/'desktop'/n) for n in ['Companion.swift','TaskDock.swift','Shared.swift','Integrations.swift','Connections.swift','Planning.swift','Schedules.swift']],str(folder/'QA.swift'),'-o',str(app/'Contents/MacOS/Juno')],check=True)
         print(app,flush=True)
         while True:time.sleep(1)
     except KeyboardInterrupt:pass
