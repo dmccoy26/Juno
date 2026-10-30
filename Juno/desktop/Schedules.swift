@@ -114,11 +114,11 @@ struct SchedulesWorkspace: View {
                                 Button("Next day") { moveComparisonDay(1) }
                             }
                             ScrollView(.horizontal) { HStack(alignment:.top,spacing:12) {
-                                ScheduleWeekView(record:record,byRoom:true,comparisonDate:comparisonDate,selectionBinding:$comparisonRoom).frame(width:310,alignment:.leading)
+                                ScheduleWeekView(record:record,byRoom:true,comparisonDate:comparisonDate,selectionBinding:$comparisonRoom).frame(width:245,alignment:.leading)
                                 Divider()
-                                ScheduleWeekView(record:record,byRoom:false,comparisonDate:comparisonDate,selectionBinding:$comparisonPerson).frame(width:310,alignment:.leading)
+                                ScheduleWeekView(record:record,byRoom:false,comparisonDate:comparisonDate,selectionBinding:$comparisonPerson).frame(width:245,alignment:.leading)
                                 Divider()
-                                RoomPersonWindows(store:store,day:comparisonDate,room:comparisonRoom,person:comparisonPerson,revision:record.revision,dirty:dirty).frame(width:320,alignment:.leading)
+                                RoomPersonWindows(store:store,day:comparisonDate,room:comparisonRoom,person:comparisonPerson,revision:record.revision,dirty:dirty).frame(width:260,alignment:.leading)
                             } }
                             RoomTaskDockIssues(store:store,room:comparisonRoom,person:comparisonPerson)
                         } else {

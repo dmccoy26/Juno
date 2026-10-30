@@ -1,5 +1,7 @@
 # Juno usability audit — October 30, 2026
 
+Final status: updated native app installed and visual sweep completed after the inspection connection recovered. All eleven main workspaces were viewed in the actual app.
+
 ## Evidence
 
 Reviewed source for every current workspace and prior native screenshots of Chat, Schedules, room/person comparison, work openings and the planning sheet. Those images demonstrate the crowding and sheet-exit problems directly. A fresh native sweep was attempted through the supported computer-use tool: path/bundle-ID app bindings repeatedly returned “Sky Computer Use native pipe closed before response,” including after reset; app inventory still worked. Screens not successfully captured this mission must not be described as visually verified. No external screenshot comparison was needed to identify these concrete issues.
@@ -28,3 +30,15 @@ Today uses existing authenticated read endpoints; it needs no model and creates 
 ## Verification
 
 Optimized native development build passes. All 103 backend tests pass against isolated PostgreSQL with zero skips. Native API-model decoding, offline cache/queue and actual JunoStore regressions pass. New helper checks cover deadline/completion/blocker classification and unknown-estimate/numeric/date validation; existing room-matching and weekly-projection checks pass. The staged app is `.local/usability-final/Juno.app`; the running app is unchanged pending a convenient quit/reopen. The user asked whether ordinary computer use or macOS security could be responsible; the precise pipe failure does not establish a permissions denial. No security setting was changed. Physical laptop acceptance, full native screen sweep and a fresh installer are separate from source compilation and synthetic regressions.
+
+## Completed native visual sweep
+
+After the user adjusted/rechecked their computer-use setup, native inspection recovered. The actual app was updated and screenshots were inspected for Today, Chat, Plan, Schedules, Daily check-in, Memories, TaskDock, Evidence, Connections, Local model and Computers. Connections included the TaskDock bridge and direct Gmail setup route; this was not a separate consent/setup test for every provider. Schedules included person week, room week, comparison and List & edit.
+
+A task editor was opened, an invalid four-minute estimate was entered, and Apply kept the sheet open with an in-sheet validation message. Cancel closed the sheet and Save planning remained disabled. No facts were applied or saved. The fixed footer remained visible.
+
+The sweep found comparison overflow after adding the sidebar and imports dominating Evidence. Follow-up changes reduce comparison columns to fit the existing desktop window, collapse import/Beacon controls, and scroll reopened Chat to the latest message. Actual screenshots confirmed all three columns fit and saved Evidence is immediately visible; the Chat scroll position was near the bottom on reopening.
+
+The host preservation checker passed after both app updates: owner, work-record counts, pinned certificate/key and existing paired-device states match the private pre-update baseline. Prior app bundles are retained privately. Existing permissions, credentials and data were not changed by the sweep. Provider authorization/refresh and task/hold creation were not exercised on real work records.
+
+The final optimized native build and weekly/time/date/Today helper checks pass. Earlier 103 PostgreSQL and native offline regressions remain applicable; the follow-up changes only alter view layout and initial scroll position. A physical M5 laptop run and fresh portable installer are still pending.

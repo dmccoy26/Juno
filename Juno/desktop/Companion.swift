@@ -252,7 +252,7 @@ struct ChatWorkspace: View {
                             }
                             if store.chatSending { ProgressView("Juno is thinking…") }
                         }.padding(.vertical, 4)
-                    }.onChange(of: store.messages.count) { _ in if let last = store.messages.last { reader.scrollTo(last.id, anchor: .bottom) } }
+                    }.onAppear { if let last = store.messages.last { reader.scrollTo(last.id,anchor:.bottom) } }.onChange(of: store.messages.count) { _ in if let last = store.messages.last { reader.scrollTo(last.id, anchor: .bottom) } }
                 }
                 if let issue = store.chatIssue { Text(issue).foregroundStyle(.orange).textSelection(.enabled) }
                 HStack {

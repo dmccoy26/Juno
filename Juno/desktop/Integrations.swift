@@ -128,8 +128,7 @@ struct IntegrationsWorkspace: View {
                 Text("Work evidence").font(.title2.bold())
                 Text("Connected programs, Beacon observations and manually imported schedules help Juno understand your day. Configure direct readers and TaskDock sharing in Connections. TaskDock remains your task hub.").foregroundStyle(.secondary)
                 if store.sharedProfile == nil {
-                    VStack(alignment:.leading,spacing:8) {
-                        Text("Import a dated copy").font(.headline)
+                    DisclosureGroup("Import a dated copy") {
                         VStack(alignment:.leading,spacing:12) {
                             Picker("Source",selection:$kind) { Text("Calendar (.ics)").tag("calendar");Text("Semester schedule (.csv)").tag("schedules");Text("Beacon alerts (.json)").tag("beacon") }.pickerStyle(.segmented)
                             if kind != "beacon" {
@@ -144,8 +143,7 @@ struct IntegrationsWorkspace: View {
                             Text("Import replaces the previous copy of that source. A rejected file leaves the last good copy visible with an error. No links in imported content are fetched.").font(.caption).foregroundStyle(.secondary)
                         }.padding(8)
                     }
-                    VStack(alignment:.leading,spacing:8) {
-                        Text("Beacon on this work Mac").font(.headline)
+                    DisclosureGroup("Beacon connection & refresh") {
                         VStack(alignment:.leading,spacing:10) {
                             TextField("Loopback API address",text:$origin)
                             SecureField("Dedicated read-only integration key (blank uses Keychain)",text:$token)
