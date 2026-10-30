@@ -57,6 +57,15 @@ extension JunoStore {
         if older { messages.insert(contentsOf: page.items, at: 0) } else { messages = page.items }
         olderMessages = page.has_more
     }
+    func deleteConversation(_ identity: String) async throws {
+        guard !offline else { throw APIProblem(message:"Reconnect to your work Mac before deleting a conversation.",status:0) }
+        _ = try await request("/v1/conversations/" + identity,method:"DELETE")
+        conversations.removeAll { $0.id == identity }
+        for prefix in ["chatDraft.","pendingTurn.","pendingText."] { UserDefaults.standard.removeObject(forKey:prefix + identity) }
+        if UserDefaults.standard.string(forKey:"conversationID") == identity { UserDefaults.standard.removeObject(forKey:"conversationID") }
+        if currentConversation == identity { chooseConversation(nil) }
+        do { try await loadConversations() } catch { chatIssue = "Conversation deleted; the list could not refresh. Try again when connected." }
+    }
     func sendChat(retry: ChatMessage? = nil) {
         guard !chatSending else { return }
         let text = retry.flatMap { failed in messages.first { $0.request_id == failed.request_id && $0.role == "user" }?.text } ?? chatDraft
@@ -229,13 +238,25 @@ struct RootView: View {
 
 struct ChatWorkspace: View {
     @ObservedObject var store: JunoStore
+    @State private var deleteTarget: ConversationRecord?
+    @State private var deletingConversation = false
+    @State private var deleteIssue: String?
     var body: some View {
         HSplitView {
             VStack(alignment: .leading) {
                 Button { store.chooseConversation(nil) } label: { Label("New conversation", systemImage: "plus") }.disabled(store.chatSending)
                 List(selection: Binding(get: { store.currentConversation }, set: { store.chooseConversation($0) })) {
-                    ForEach(store.conversations) { row in Text(row.title).lineLimit(2).tag(row.id) }
-                }.disabled(store.chatSending)
+                    ForEach(store.conversations) { row in
+                        Text(row.title).lineLimit(2).tag(row.id).contextMenu {
+                            Button("Delete conversation…",role:.destructive) { deleteTarget = row;deleteIssue = nil }.disabled(store.offline || store.chatSending || deletingConversation)
+                        }
+                    }
+                }.disabled(store.chatSending || deletingConversation)
+                if let id = store.currentConversation,let row = store.conversations.first(where: { $0.id == id }) {
+                    Button("Delete conversation…",role:.destructive) { deleteTarget = row;deleteIssue = nil }.disabled(store.offline || store.chatSending || deletingConversation)
+                }
+                if store.offline { Text("Reconnect to delete chats.").font(.caption).foregroundStyle(.secondary) }
+                if let deleteIssue { Text(deleteIssue).font(.caption).foregroundStyle(.orange) }
                 if store.conversationMore { Button("Older conversations") { Task { do { try await store.loadConversations(more: true) } catch { store.report(error) } } } }
             }.padding(14).frame(minWidth: 210, idealWidth: 250, maxWidth: 300)
             VStack(alignment: .leading, spacing: 14) {
@@ -272,6 +293,13 @@ struct ChatWorkspace: View {
                 HStack { Text("⌘ Return to send · \(store.chatDraft.count)/6000").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Refresh chat") { if let id = store.currentConversation { Task { try? await store.loadMessages(id) } } }.disabled(store.chatSending) }
             }.padding(20).frame(minWidth: 480)
         }
+        .alert("Delete this conversation?",isPresented:Binding(get:{deleteTarget != nil},set:{if !$0 {deleteTarget = nil}})) {
+            Button("Cancel",role:.cancel) { deleteTarget = nil }
+            Button("Delete conversation",role:.destructive) {
+                guard let target = deleteTarget else { return };deleteTarget = nil;deletingConversation = true
+                Task { defer { deletingConversation = false };do { try await store.deleteConversation(target.id) } catch { deleteIssue = (error as? APIProblem)?.message ?? "Could not delete the conversation. It is still saved." } }
+            }
+        } message: { Text("“" + (deleteTarget?.title ?? "") + "” and all its messages will be permanently removed from Juno’s active records. Saved memories and diary entries stay intact. Other devices may retain an older copy until they sync; old backups are unchanged.") }
         .sheet(isPresented:Binding(get:{store.memoryReviewText != nil},set:{if !$0 {store.memoryReviewText = nil;store.memoryReviewOriginal = nil}})) {
             Editor(store:store,original:nil,initialText:store.memoryReviewText ?? "") { saved in
                 store.memoryNotice = store.offline ? "Memory saved on this laptop and queued for sync." : "Memory saved. You can review, correct or delete it in Memories."

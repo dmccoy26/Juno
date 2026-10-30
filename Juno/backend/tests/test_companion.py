@@ -81,6 +81,29 @@ class CompanionTests(memory_tests.MemoryTests):
         self.assertEqual(self.turn('Remember this: Fictional note').status_code, 200)
         self.assertEqual(self.turn('Do you remember that fictional cutter?').status_code, 503)
 
+    def test_delete_conversation_removes_messages_but_preserves_memory_and_owner_isolation(self):
+        self.turn('Fictional conversation to delete')
+        saved = self.client.post('/v1/memories',json={'text':'Independent fictional memory','source':'manual:test','confidence':'confirmed'}).json()
+        diary = self.client.post('/v1/check-ins',json={'local_date':'2026-10-30'}).json()
+        self.client.headers['Authorization'] = 'Bearer '+self.other_token
+        self.assertEqual(self.client.delete('/v1/conversations/'+self.conv).status_code,404)
+        self.client.headers['Authorization'] = 'Bearer '+self.token
+        self.assertEqual(self.client.delete('/v1/conversations/'+self.conv).status_code,200)
+        self.assertEqual(self.client.get(self.path).status_code,404)
+        self.assertNotIn(self.conv,[r['id'] for r in self.client.get('/v1/conversations').json()['items']])
+        self.assertEqual(self.client.get('/v1/memories/'+saved['id']).status_code,200)
+        self.assertEqual(self.client.get('/v1/check-ins/by-date/2026-10-30').json()['id'],diary['id'])
+        with self.factory() as session:
+            self.assertIsNone(session.scalar(select(Message).where(Message.conversation_id==self.conv)))
+        self.assertEqual(self.client.delete('/v1/conversations/'+self.conv).status_code,404)
+
+    def test_delete_pending_conversation_is_rejected(self):
+        with self.factory() as session:
+            session.add(Message(conversation_id=self.conv,role='assistant',text='',request_id=str(uuid.uuid4()),status='pending',meeting_mode=True))
+            session.commit()
+        self.assertEqual(self.client.delete('/v1/conversations/'+self.conv).status_code,409)
+        self.assertEqual(self.client.get(self.path).status_code,200)
+
     def test_failed_turn_can_retry_without_duplicate_user_message(self):
         request=str(uuid.uuid4());FakeModel.failure=True
         self.assertEqual(self.turn(request_id=request).json()['status'],'failed')

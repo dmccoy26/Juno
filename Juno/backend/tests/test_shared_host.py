@@ -68,6 +68,14 @@ class SharedHostTests(memory_tests.MemoryTests):
             self.assertEqual(external.get('/v1/cache',headers={'Authorization':'Bearer '+result['token']}).status_code,403)
         self.assertEqual(self.client.post('/v1/pair',json={'invitation':second,'label':'Wrong surface'}).status_code,403)
 
+    def test_paired_laptop_can_delete_a_conversation_and_next_cache_omits_it(self):
+        self.paired()
+        conversation=self.lan.post('/v1/conversations',json={'title':'Synthetic removable chat'}).json()['id']
+        self.assertEqual(self.lan.delete('/v1/conversations/'+conversation).status_code,200)
+        self.assertEqual(self.lan.get('/v1/conversations/'+conversation+'/messages').status_code,404)
+        self.assertNotIn(conversation,self.lan.get('/v1/cache').text)
+        self.assertEqual(self.lan.delete('/v1/conversations/'+conversation+'/messages').status_code,403)
+
     def test_offline_memory_retry_is_atomic_idempotent_and_conflicts_preserve_server_record(self):
         self.paired();operation_id=str(uuid.uuid4())
         first=self.operation('memory.create',self.value,operation_id=operation_id)

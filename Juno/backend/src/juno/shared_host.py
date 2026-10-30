@@ -50,6 +50,7 @@ class LANBoundary:
             path in {'/','/v1/cache','/v1/ping','/v1/integrations'} and method == 'GET' or path in {'/v1/offline-operations','/v1/offline-review'} and method == 'POST' or
             path.startswith('/v1/memories') and method in {'GET','POST','PUT','DELETE'} or
             path.startswith('/v1/conversations') and method in {'GET','POST'} or
+            path.startswith('/v1/conversations/') and path.count('/') == 3 and method == 'DELETE' or
             path.startswith('/v1/check-ins') and method in {'GET','POST','PUT'} or
             path == '/v1/taskdock' and method == 'GET' or
             path.startswith('/v1/taskdock/snapshots') and method == 'GET' or

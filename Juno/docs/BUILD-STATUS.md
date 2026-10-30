@@ -2,6 +2,12 @@
 
 Updated: October 30, 2026.
 
+## Chat deletion — desktop follow-up
+
+Chat now has **Delete conversation…** in each row’s context menu and below the selected conversation list. A confirmation names the chat and explains permanent removal of its active messages, preservation of separately saved memories/diaries, and retained offline copies/backups. Cancel makes no change. Deletion requires a connection and is rejected during a pending reply. The owner-scoped API cascades message deletion; a paired laptop may use it while connected, and the next cache export omits the deleted chat. No offline deletion is queued.
+
+Validation: optimized native build; 108 PostgreSQL backend tests with zero skips; native offline/JunoStore checks including rejection of offline chat deletion without queuing. Tests prove cross-owner denial, pending-reply rejection, message removal, independent memory/diary preservation, and paired-LAN/cache behavior. Actual native context menu, confirmation and Cancel were inspected; no real conversation was deleted. Work-host identity, work-record counts, certificate/key and pairing are preserved after the update. The work Mac is running the update; the laptop installer remains unchanged.
+
 ## Memory review and guided clarification — mission 7
 
 Supported explicit “remember this/that” requests open a prefilled memory review form in Chat; user messages also have Save as memory. No model reply is used as proof of saving. The app confirms only after the canonical save succeeds, labels offline saves queued for sync, retains the composer draft on Cancel, and leaves save errors in the editor. These requests work without a configured model. The API also intercepts supported memory-write phrases without a model call or implicit memory creation; normal recall questions remain chat. Model instructions prohibit claiming memory writes. Historical model statements are not canonical memory records.

@@ -94,6 +94,8 @@ import Foundation
         precondition(store.memoryReviewText == "the fictional cutter is TEST-42" && !store.chatSending)
         precondition(store.pendingEdits.isEmpty, "Review intent must not save before confirmation")
         store.memoryReviewText = nil;store.memoryReviewOriginal = nil;store.chatDraft = ""
+        do { try await store.deleteConversation("synthetic-conversation");fatalError("Offline deletion must require connection") } catch is APIProblem {}
+        precondition(store.pendingEdits.isEmpty, "Offline chat deletion must not queue")
         let began = Date()
         _ = try await store.request("/v1/memories?q=&offset=0")
         let created = try await store.request("/v1/memories",method:"POST",body:["text":"Synthetic immediate offline save","source":"manual:test","confidence":"confirmed"])

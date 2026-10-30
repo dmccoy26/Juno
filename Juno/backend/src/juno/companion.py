@@ -258,6 +258,16 @@ def install(app, db, device, lock_owner, model_factory=LocalModel):
         session.add(row);commit(session)
         return conversation_view(row)
 
+    @app.delete('/v1/conversations/{identity}')
+    def delete_conversation(identity: str, actor=Depends(device), session=Depends(db)):
+        lock_owner(session, actor.owner_id)
+        row = owned(session, Conversation, actor, identity)
+        pending = session.scalar(select(Message.id).where(Message.conversation_id == identity, Message.status == 'pending'))
+        if pending: raise HTTPException(409, 'Wait for the current reply to finish before deleting this conversation.')
+        session.delete(row)
+        commit(session)
+        return {'deleted': True}
+
     @app.get('/v1/conversations/{identity}/messages')
     def messages(identity: str, before: int | None = None, actor=Depends(device), session=Depends(db)):
         owned(session, Conversation, actor, identity)
