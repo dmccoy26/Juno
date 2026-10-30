@@ -13,7 +13,7 @@ import tarfile
 from fetch_runtimes import fetch
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '0.1.0-preview.10'
+VERSION = '0.1.0-preview.11'
 
 
 def run(*args, **kwargs):
@@ -94,7 +94,7 @@ def build(output):
     run('iconutil', '-c', 'icns', icons, '-o', resources/'Juno.icns')
     info = dict(CFBundleName='Juno', CFBundleDisplayName='Juno', CFBundleIconFile='Juno',
                 CFBundleIdentifier='com.dmccoy.juno', CFBundleExecutable='Juno',
-                CFBundlePackageType='APPL', CFBundleVersion='10', CFBundleShortVersionString='0.1.0',
+                CFBundlePackageType='APPL', CFBundleVersion='11', CFBundleShortVersionString='0.1.0',
                 JunoReleaseVersion=VERSION, JunoPackaged=True, LSMinimumSystemVersion='13.5',
                 NSHighResolutionCapable=True, NSAppTransportSecurity={'NSAllowsLocalNetworking': True})
     (contents/'Info.plist').write_bytes(plistlib.dumps(info))
@@ -137,7 +137,7 @@ def build(output):
     components.write_bytes(plistlib.dumps(definitions))
     component = work/'component.pkg'
     run('pkgbuild', '--root', work/'payload', '--component-plist', components,
-        '--identifier', 'com.dmccoy.juno.pkg', '--version', '0.1.0.8', '--install-location', '/',
+        '--identifier', 'com.dmccoy.juno.pkg', '--version', '0.1.0.11', '--install-location', '/',
         '--ownership', 'recommended', '--scripts', installer, component)
     (work/'Distribution.xml').write_text('''<?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
@@ -147,10 +147,10 @@ def build(output):
  <welcome file="welcome.html"/>
  <choices-outline><line choice="default"><line choice="juno"/></line></choices-outline>
  <choice id="default"/><choice id="juno" visible="false"><pkg-ref id="com.dmccoy.juno.pkg"/></choice>
- <pkg-ref id="com.dmccoy.juno.pkg" version="0.1.0.8">component.pkg</pkg-ref>
+ <pkg-ref id="com.dmccoy.juno.pkg" version="0.1.0.11">component.pkg</pkg-ref>
 </installer-gui-script>
 ''')
-    (work/'welcome.html').write_text('''<html><body><h1>Juno — First Mac Preview</h1>
+    (work/'welcome.html').write_text('''<html><body><h1>Juno — Internal Preview</h1>
 <p>Installs a standalone application at <b>/Applications/Juno.app</b>, including Python and PostgreSQL. No Homebrew, developer tools, source checkout, or internet downloads are needed at first launch.</p>
 <p><b>Quit Juno before installing.</b> Open the installed app as your normal user. Your memories are kept separately in your own Library/Application Support/Juno folder.</p>
 <p>This preview supports persistent chat through a local LM Studio server, guided daily check-ins and memory review/editing/deletion. Model weights are not bundled; chat needs a local model server. The check-in works without one. This Mac can host Juno over encrypted local-network access. A paired laptop keeps an offline copy and queues memory/diary edits for synchronization. The host must remain awake with Juno open. Standalone data is not automatically merged when pairing.</p>

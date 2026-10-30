@@ -2,6 +2,12 @@
 
 Updated: October 30, 2026.
 
+## Portable installer — preview.11
+
+The Apple Silicon installer now includes the latest Plan request overview, focused clarification drafts, TaskDock controlled planning fields/version checks, chat deletion and saved-memory status through schema 0008. Bundle build is 11; installer receipt version is 0.1.0.11. The About panel reads the packaged release version. The installer retains its quit-before-update guard and keeps user data outside the application bundle.
+
+The actual package passed relocation with bundled runtimes, 239 Mach-O dependency/signature checks, 83 isolated provider/planning/TaskDock/memory fixture tests, restart persistence, TLS pairing, offline operations and schema-1-to-current upgrade with readable backup and preserved memory. [Verification report](reports/installer-preview-11.json). Native offline cache/restart, memory badges, queued edits/diaries, conflicts and actual JunoStore offline operations also pass. Package, checksum and installation notes are in `~/Downloads/Juno-0.1.0-preview.11/`. The actual M5 laptop upgrade remains a user acceptance step. This package remains an internal ad hoc signed preview. The running work-Mac development app is not replaced by packaging.
+
 ## Plan request overview — mission 9
 
 Plan issue cards now collect room, impact, TaskDock priority, due date and blockers. Expand Request details & source to review shared facts, their information-quality states and timestamps. Needs details includes missing shared request fields. Discuss this detail opens one focused question in Chat for review and Send; it does not automatically change task/planning records. The existing estimate and staffing guide remains available.

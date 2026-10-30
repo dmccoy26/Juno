@@ -111,14 +111,22 @@ from pathlib import Path
 sys.path.append(sys.argv[1])
 import juno.providers.readers
 assert Path(juno.providers.readers.__file__).resolve().is_relative_to(Path(sys.argv[2]).resolve())
-def denied(*args,**kwargs):raise AssertionError('No network is allowed in packaged provider fixtures')
-socket.socket.connect=denied
+original_connect=socket.socket.connect
+def isolated_connect(sock,address):
+    if isinstance(address,tuple) and address[0] in ('127.0.0.1','::1'):
+        return original_connect(sock,address)
+    raise AssertionError('External network is forbidden in packaged fixtures')
+socket.socket.connect=isolated_connect
 from test_providers import ProviderReaderTests,OAuthTests,ProviderAPITests
 from test_planning import PlanningTests
 from test_schedules import ScheduleTests
+from test_memory_api import MemoryTests
+from test_taskdock import TaskDockTests
+from test_taskdock_api import TaskDockAPITests
+from test_taskdock_sharing import SharingTests
 import juno.planning
 assert Path(juno.planning.__file__).resolve().is_relative_to(Path(sys.argv[2]).resolve())
-suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (ProviderReaderTests,OAuthTests,ProviderAPITests,PlanningTests,ScheduleTests)])
+suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (ProviderReaderTests,OAuthTests,ProviderAPITests,PlanningTests,ScheduleTests,MemoryTests,TaskDockTests,TaskDockAPITests,SharingTests)])
 result=unittest.TextTestRunner(verbosity=0).run(suite)
 sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
 """
@@ -342,11 +350,15 @@ from alembic import command
 from alembic.config import Config
 from juno.database import engine_for,sessions
 from juno.auth import provision
-from juno.models import Memory
+from sqlalchemy import MetaData,Table,insert
+import uuid
+from datetime import datetime,timezone
 command.upgrade(Config(sys.argv[1]+'/backend/alembic.ini'),'0001_memory')
 with sessions(engine_for())() as session:
  actor,token=provision(session,'Synthetic legacy owner')
- session.add(Memory(owner_id=actor.owner_id,text='Legacy synthetic memory survives upgrade.',source='verification:legacy',confidence='confirmed',fingerprint='a'*64))
+ legacy_memories=Table('memories',MetaData(),autoload_with=session.get_bind())
+ stamp=datetime.now(timezone.utc)
+ session.execute(insert(legacy_memories).values(id=str(uuid.uuid4()),owner_id=actor.owner_id,text='Legacy synthetic memory survives upgrade.',source='verification:legacy',confidence='confirmed',fingerprint='a'*64,revision=1,created_at=stamp,updated_at=stamp))
  session.commit()
  Path(sys.argv[2]+'/desktop-owner.json').write_text(json.dumps({'owner_id':actor.owner_id,'device_id':actor.id}))
 """
