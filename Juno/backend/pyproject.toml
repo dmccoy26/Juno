@@ -21,3 +21,6 @@ juno-admin = "juno.admin:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+juno = ["worker_web/*"]

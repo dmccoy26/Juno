@@ -23,6 +23,8 @@ def check_payload(app):
     assert info.get('JunoPackaged') is True
     assert 'JunoProjectRoot' not in info
     resources = app/'Contents/Resources'
+    for asset in ('index.html','app.js','style.css'):
+        assert (resources/'app/backend/src/juno/worker_web'/asset).is_file(), 'Missing bundled worker portal asset'
     reference = resources/'runtime/postgres/share/proj/proj.db'
     forbidden = []
     binaries = []
@@ -124,9 +126,12 @@ from test_memory_api import MemoryTests
 from test_taskdock import TaskDockTests
 from test_taskdock_api import TaskDockAPITests
 from test_taskdock_sharing import SharingTests
+from test_workers import WorkerTests
+from test_worker_host import WorkerHostTests
+from test_local_model_output import LocalModelOutputTests
 import juno.planning
 assert Path(juno.planning.__file__).resolve().is_relative_to(Path(sys.argv[2]).resolve())
-suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (ProviderReaderTests,OAuthTests,ProviderAPITests,PlanningTests,ScheduleTests,MemoryTests,TaskDockTests,TaskDockAPITests,SharingTests)])
+suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (ProviderReaderTests,OAuthTests,ProviderAPITests,PlanningTests,ScheduleTests,MemoryTests,TaskDockTests,TaskDockAPITests,SharingTests,WorkerTests,WorkerHostTests,LocalModelOutputTests)])
 result=unittest.TextTestRunner(verbosity=0).run(suite)
 sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
 """
@@ -272,7 +277,7 @@ def verify(package, report):
             try:
                 process,hello=launch(relocated,state,log)
                 verify_provider_runtime(relocated,state)
-                checks.append('relocated bundled recurring schedules, staff status/caps, holds, planning constraints/priority choices/diary drafts plus seven-provider readers, owner-scoped API/concurrency protection, fixed read destinations and PKCE OAuth fixtures against isolated PostgreSQL with external networking disabled')
+                checks.append('relocated bundled recurring schedules, staff status/caps, holds, planning constraints/priority choices/diary drafts plus worker role/grant/review/HTTPS isolation and seven-provider readers, owner-scoped API/concurrency protection, fixed read destinations and PKCE OAuth fixtures against isolated PostgreSQL with external networking disabled')
                 url,token=hello['url'],hello['token']
                 assert api(url,token,'/v1/memories')['items']==[], 'Payload was not clean'
                 api(url,'','/v1/memories',expected=401)

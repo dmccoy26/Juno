@@ -41,6 +41,7 @@ final class JunoStore: ObservableObject {
         didSet { UserDefaults.standard.set(meeting, forKey: "meetingMode") }
     }
     @Published var section = "Today"
+    @Published var workerTaskID:String?
     @Published var settingsSection = "Connections"
     @Published var unsavedSections:Set<String> = []
     func openSettings(_ section:String) {
@@ -411,8 +412,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let find = edit.addItem(withTitle:"Find…",action:#selector(findInWorkspace),keyEquivalent:"f");find.target = self
         let redo = edit.addItem(withTitle:"Redo",action:Selector(("redo:")),keyEquivalent:"z");redo.keyEquivalentModifierMask = [.command,.shift]
         let viewItem = NSMenuItem();menu.addItem(viewItem);let view = NSMenu(title:"View");viewItem.submenu = view
-        for (index,title) in ["Today","Chat","Plan","Schedules","Check-in","Memories","TaskDock","Evidence"].enumerated() {
-            let item = view.addItem(withTitle:title == "Check-in" ? "Daily check-in" : title,action:#selector(navigate(_:)),keyEquivalent:String(index+1));item.representedObject = title;item.target = self
+        for (index,title) in ["Today","Chat","Plan","Schedules","Check-in","Memories","TaskDock","Evidence","Workers"].enumerated() {
+            let item = view.addItem(withTitle:title == "Check-in" ? "Daily check-in" : title == "Workers" ? "Worker updates" : title,action:#selector(navigate(_:)),keyEquivalent:String(index+1));item.representedObject = title;item.target = self
         }
         let windowItem = NSMenuItem(); menu.addItem(windowItem); let windows = NSMenu(title: "Window"); windowItem.submenu = windows; NSApp.windowsMenu = windows
         windows.addItem(withTitle: "Minimize", action: #selector(minimizeCurrent(_:)), keyEquivalent: "m").target = self

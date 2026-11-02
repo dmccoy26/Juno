@@ -171,9 +171,9 @@ struct RootView: View {
     @AppStorage("sidebarVisible") private var showSidebar = true
     @State private var visited = ["Today"]
     @AppStorage("appearance") private var appearance = "system"
-    private let daily = [("Today","sun.max"),("Chat","bubble.left.and.bubble.right"),("Plan","checklist"),("Schedules","calendar"),("Check-in","square.and.pencil"),("Memories","book.closed")]
+    private let daily = [("Today","sun.max"),("Chat","bubble.left.and.bubble.right"),("Plan","checklist"),("Schedules","calendar"),("Check-in","square.and.pencil"),("Memories","book.closed"),("Workers","person.2")]
     private let sources = [("TaskDock","tray.full"),("Evidence","doc.text.magnifyingglass")]
-    private func title(_ key: String) -> String { ["Check-in":"Daily check-in","Model":"Local model" ][key] ?? key }
+    private func title(_ key: String) -> String { ["Check-in":"Daily check-in","Model":"Local model","Workers":"Worker updates" ][key] ?? key }
     @ViewBuilder private func workspace(_ key:String) -> some View {
         switch key {
         case "Today": TodayWorkspace(store:store)
@@ -187,6 +187,7 @@ struct RootView: View {
         case "TaskDock": TaskDockWorkspace(store:store)
         case "Connections": ConnectionsWorkspace(store:store)
         case "Evidence": IntegrationsWorkspace(store:store)
+        case "Workers": WorkerWorkspace(store:store)
         case "Computers": ComputersWorkspace(store:store)
         default: ChatWorkspace(store:store)
         }

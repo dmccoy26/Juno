@@ -50,6 +50,7 @@ def main():
     engine = None
     actor_id = None
     host_manager = None
+    worker_manager = None
     try:
         subprocess.run([sys.executable, str(ROOT / 'scripts/dev_database.py'), 'start'],
                        check=True, stdout=sys.stderr)
@@ -104,7 +105,17 @@ def main():
         host, port = listener.getsockname()
         from juno.shared_host import HostManager
         host_manager = HostManager(state)
-        app = create_app(engine, host_manager=host_manager)
+        from sqlalchemy import select
+        from juno.worker_host import WorkerHostManager
+        from juno.models import WorkerPortal
+        worker_manager = WorkerHostManager(state)
+        app = create_app(engine, host_manager=host_manager, worker_manager=worker_manager)
+        worker_manager.app = app
+        with factory() as session:
+            restart_workers = session.scalar(select(WorkerPortal.owner_id).where(WorkerPortal.enabled.is_(True))) is not None
+        if restart_workers:
+            try: worker_manager.start()
+            except Exception: worker_manager.error = "Worker HTTPS could not restart. Check its approved certificate and network configuration."
         host_manager.app = app
         if host_manager.config.get('enabled'):
             try: host_manager.set_enabled(True)
@@ -113,6 +124,7 @@ def main():
         print(json.dumps({'url': f'http://{host}:{port}', 'token': token}), flush=True)
         server.run(sockets=[listener])
     finally:
+        if worker_manager is not None: worker_manager.close()
         if host_manager is not None: host_manager.close()
         if engine is not None and actor_id is not None:
             from juno.database import sessions

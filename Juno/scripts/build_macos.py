@@ -31,7 +31,7 @@ def main():
         contents = bundle/'Contents'
         (contents/'MacOS').mkdir(parents=True)
         subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-O','-target','arm64-apple-macosx13.5',
-                        str(ROOT/'desktop/Juno.swift'),str(ROOT/'desktop/Companion.swift'),str(ROOT/'desktop/TaskDock.swift'),str(ROOT/'desktop/Shared.swift'),str(ROOT/'desktop/Integrations.swift'),str(ROOT/'desktop/Connections.swift'),str(ROOT/'desktop/Planning.swift'),str(ROOT/'desktop/Schedules.swift'),'-o',str(contents/'MacOS/Juno')], check=True)
+                        str(ROOT/'desktop/Juno.swift'),str(ROOT/'desktop/Companion.swift'),str(ROOT/'desktop/TaskDock.swift'),str(ROOT/'desktop/Shared.swift'),str(ROOT/'desktop/Integrations.swift'),str(ROOT/'desktop/Connections.swift'),str(ROOT/'desktop/Planning.swift'),str(ROOT/'desktop/Schedules.swift'),str(ROOT/'desktop/Workers.swift'),'-o',str(contents/'MacOS/Juno')], check=True)
         resources = contents/'Resources'
         resources.mkdir()
         iconset = Path(temp)/'Juno.iconset'

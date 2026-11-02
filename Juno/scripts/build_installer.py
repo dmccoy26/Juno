@@ -83,7 +83,7 @@ def build(output):
         if path.is_file() or path.is_symlink():
             path.unlink()
     run('xcrun', 'swiftc', '-parse-as-library', '-swift-version', '5', '-O', '-target',
-        'arm64-apple-macosx13.5', ROOT/'desktop/Juno.swift', ROOT/'desktop/Companion.swift', ROOT/'desktop/TaskDock.swift', ROOT/'desktop/Shared.swift', ROOT/'desktop/Integrations.swift', ROOT/'desktop/Connections.swift', ROOT/'desktop/Planning.swift', ROOT/'desktop/Schedules.swift', '-o', contents/'MacOS/Juno')
+        'arm64-apple-macosx13.5', ROOT/'desktop/Juno.swift', ROOT/'desktop/Companion.swift', ROOT/'desktop/TaskDock.swift', ROOT/'desktop/Shared.swift', ROOT/'desktop/Integrations.swift', ROOT/'desktop/Connections.swift', ROOT/'desktop/Planning.swift', ROOT/'desktop/Schedules.swift', ROOT/'desktop/Workers.swift', '-o', contents/'MacOS/Juno')
     icons = work/'Juno.iconset'; icons.mkdir()
     master = work/'icon.png'
     run('xcrun', 'swift', ROOT/'desktop/icon.swift', master)

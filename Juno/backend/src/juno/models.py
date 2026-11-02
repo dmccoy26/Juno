@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import uuid
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -185,3 +185,68 @@ class ScheduleState(Base):
     data: Mapped[dict] = mapped_column(JSONB)
     revision: Mapped[int] = mapped_column(Integer, default=1)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class WorkerPortal(Base):
+    __tablename__ = 'worker_portals'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(default=False)
+    retention_days: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Worker(Base):
+    __tablename__ = 'workers'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), index=True)
+    name: Mapped[str] = mapped_column(String(300))
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class WorkerInvitation(Base):
+    __tablename__ = 'worker_invitations'
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    worker_id: Mapped[str] = mapped_column(ForeignKey('workers.id'), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used: Mapped[bool] = mapped_column(default=False)
+
+
+class WorkerSession(Base):
+    __tablename__ = 'worker_sessions'
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    worker_id: Mapped[str] = mapped_column(ForeignKey('workers.id'), index=True)
+    csrf_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class WorkerGrant(Base):
+    __tablename__ = 'worker_grants'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), index=True)
+    worker_id: Mapped[str] = mapped_column(ForeignKey('workers.id'), index=True)
+    workspace_id: Mapped[str] = mapped_column(String(500))
+    task_id: Mapped[str] = mapped_column(String(500))
+    policy_hash: Mapped[str] = mapped_column(String(64))
+    excerpt: Mapped[dict] = mapped_column(JSONB)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class WorkerReport(Base):
+    __tablename__ = 'worker_reports'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), index=True)
+    worker_id: Mapped[str] = mapped_column(ForeignKey('workers.id'), index=True)
+    grant_id: Mapped[str | None] = mapped_column(ForeignKey('worker_grants.id'), nullable=True)
+    correction_of: Mapped[str | None] = mapped_column(ForeignKey('worker_reports.id', ondelete='SET NULL'), nullable=True, index=True)
+    request_key: Mapped[str] = mapped_column(String(100))
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    data: Mapped[dict] = mapped_column(JSONB)
+    review: Mapped[str] = mapped_column(String(30), default='unread')
+    review_note: Mapped[str] = mapped_column(Text, default='')
+    repair_context: Mapped[dict] = mapped_column(JSONB, default=dict)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    applied: Mapped[dict] = mapped_column(JSONB, default=dict)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    __table_args__ = (UniqueConstraint('worker_id', 'request_key', name='uq_worker_report_request'),Index('ix_worker_reports_owner_submitted','owner_id','submitted_at'))

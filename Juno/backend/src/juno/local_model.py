@@ -51,8 +51,10 @@ class LocalModel:
 
     def complete(self, messages, model):
         value = self.request('/chat/completions', {'model': model, 'messages': messages,
-                                                  'temperature': .3, 'max_tokens': 1536, 'stream': False})
+                                                  'temperature': .3, 'max_tokens': 4096, 'stream': False})
         try:
+            if value['choices'][0].get('finish_reason') == 'length':
+                raise ValueError('Incomplete final answer')
             answer = value['choices'][0]['message']['content']
             if not isinstance(answer, str): raise ValueError()
             # Some local servers combine scratch text with the final answer.

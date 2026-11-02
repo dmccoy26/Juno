@@ -2,7 +2,17 @@
 
 Updated: November 1, 2026.
 
-## Current installer — preview.12 native Mac usability
+## Current installer — preview.13 worker updates
+
+Mission 11 adds a native Worker updates inbox (Command-9), explicit task-sharing previews, separate worker identities, expiring invitations/grants, browser task/shift/unexpected-work forms, attributed receipts/corrections and selective planning review. TaskDock stays read-only. Workers never receive owner-device credentials or access private chats, memory, diary or employee assessments. A dedicated HTTPS listener is gated on approved certificate/hostname/key verification; production worker access remains disabled.
+
+138 backend tests pass without skips, including 15 worker/HTTPS/history tests. Reports are retained indefinitely, with no age-based pruning. Reviewed repair history supports evidence-linked recurring-issue patterns, calibrated complete-effort estimates and bounded local-model chat context. Partial/duplicate/superseded work is excluded from calibration. Actual synthetic browser-to-native submission, selective time application, completion review, phone-width layout and interrupted-host/idempotent retry were observed. Existing offline, scheduling/planning, Keychain and paired-TLS outage/reconnect checks pass. The extracted installer passed 100 bundled-runtime fixtures, asset/dependency checks and migration/persistence tests. See [Mission 11 evidence](reports/worker-updates-2026-11-02.md), [setup guide](WORKER-UPDATES.md), [mission](missions/2026-11-02-11-worker-updates.md) and [installer report](reports/installer-preview-13.json).
+
+The work development app is updated and connected. A readable pre-0010 backup and before/after guards preserve owner, work records, planning/schedule content, existing paired-device states and certificate/key. No real worker access, reports or invitations were created by the implementation; the owner-added worker identity is preserved. The laptop's existing pairing/cache protocol and separate data roots remain unchanged; worker administration/review is host-only.
+
+Installer: `dist/Juno-0.1.0-preview.13-macOS-arm64.pkg`; verified copy, checksum and guides in `~/Downloads/Juno-0.1.0-preview.13`. Real worker use still requires IT-approved browser HTTPS, campus reachability and an observed pilot. Physical laptop upgrade and Developer ID notarization remain open. No real worker messages, public exposure or trust/security changes were performed.
+
+## Previous installer — preview.12 native Mac usability
 
 Mission 10 delivers a usability increment: native sidebar and grouped Settings, local Help and workspace shortcuts, a compact Plan list with one expanded inspector, draft-preserving navigation/prompt handoff, memory correction and stale-save comparison, native schedule controls and shared day/week selection, appearance choices and background credential operations. Native testing caught and fixed a memory editor identity defect that could create a new record instead of correcting the selected one.
 

@@ -38,7 +38,7 @@ def view(row):
             ("id", "text", "source", "confidence", "revision", "created_at", "updated_at", "source_message_id")}
 
 
-def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockReader, host_manager=None, provider_transport=None, oauth_manager=None):
+def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockReader, host_manager=None, provider_transport=None, oauth_manager=None, worker_manager=None):
     engine = engine if engine is not None else engine_for()
     factory = sessions(engine)
     app = FastAPI(title="Juno companion service", version="0.1.0-preview.10")
@@ -46,8 +46,8 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
     from fastapi.responses import JSONResponse
     @app.exception_handler(RequestValidationError)
     async def safe_connection_validation(request,error):
-        if request.url.path.startswith(('/v1/providers','/v1/taskdock','/v1/integrations/beacon')):
-            return JSONResponse({'detail':'Connection settings are invalid. Check the required fields; private input is not echoed.'},status_code=422,headers={'Cache-Control':'no-store'})
+        if request.url.path.startswith(('/worker','/v1/workers','/v1/providers','/v1/taskdock','/v1/integrations/beacon')):
+            return JSONResponse({'detail':'Check the required fields and allowed values. Private input is not echoed.'},status_code=422,headers={'Cache-Control':'no-store'})
         from fastapi.exception_handlers import request_validation_exception_handler
         return await request_validation_exception_handler(request,error)
     bearer = HTTPBearer(auto_error=False)
@@ -184,6 +184,8 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
     taskdock_evidence_api.install(app, db, device, lock_owner, taskdock_factory)
     from . import planning, schedules, estimates
     planning.install(app, db, device, lock_owner)
+    from . import workers
+    workers.install(app, db, device, lock_owner, worker_manager)
     schedules.install(app, db, device, lock_owner)
     estimates.install(app, db, device, model_factory)
     return app

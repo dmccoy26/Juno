@@ -25,6 +25,8 @@ def active_snapshot(session, owner_id):
 def restrict_copies(session, owner, origin, reason):
     """Policy changes withdraw Juno's copies; independent user facts stay intact."""
     from .companion import invalidate_context
+    from .workers import revoke_grants
+    revoke_grants(session,owner)
     rows=session.scalars(select(TaskDockSnapshot).where(TaskDockSnapshot.owner_id==owner,TaskDockSnapshot.origin==origin)).all()
     for row in rows:
         invalidate_context(session,owner,'taskdock:'+row.id)

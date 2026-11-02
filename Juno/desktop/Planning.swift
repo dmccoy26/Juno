@@ -213,7 +213,7 @@ struct PlanningWorkspace: View {
                                 if inspected == task.id {
                                 HStack { Text(task.title).font(.headline); if plan.recommended_task_id == task.id { Text("Suggested next").foregroundStyle(.green) }; Spacer(); Button("Discuss estimate") {
                                     store.prepareChat("Help me estimate this task from the saved evidence: “" + task.title + "”. Give a range and explain the uncertainty. Ask one scope question if needed. Do not change my confirmed estimate; I will review and enter it in Plan.")
-                                }; Button("Clarify with Juno") { choose(task,guidedMode:true) }; Button("Planning details") { choose(task) } }
+                                }; Button("Clarify with Juno") { choose(task,guidedMode:true) }; Button("Planning details") { choose(task) };Button("Request worker update…") {store.workerTaskID=task.id;store.section="Workers"}.disabled(store.sharedProfile != nil) }
                                 PlanningRequestOverview(task:task) { question in
                                     store.prepareChat("Help me clarify “" + task.title + "”. Start with this question: “" + question.question + "” Ask me one question at a time.")
                                 }

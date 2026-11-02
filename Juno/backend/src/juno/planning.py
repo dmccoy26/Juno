@@ -307,6 +307,8 @@ def install(app, db, device, lock_owner):
         session.commit()
         return state_view(session, actor.owner_id)
 
+    app.state.save_planning = save
+
     @app.get('/v1/planning/next')
     def plan(day:date=Query(), actor=Depends(device), session=Depends(db)):
         return build_plan(session, actor.owner_id, day)
