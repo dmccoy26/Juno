@@ -1,8 +1,16 @@
 # Build status
 
-Updated: November 1, 2026.
+Updated: November 2, 2026.
 
-## Current installer — preview.14 worker HTTPS on 10/8
+## Current installer — preview.15 TaskDock assignments and worker task search
+
+TaskDock is the assignment authority. Active portal workers receive matching assigned tasks after refresh, with one-time workspace-bound identity matching for different names/email/IDs and no ambiguous-name guessing. Assigned access follows assignment; manual collaboration retains its own expiry. New shares include supported authorized TaskDock details automatically; existing limited shares stay limited. Native search distinguishes 60 similar task titles using room, equipment, parent and reference, with pinned Preview/Cancel and stable selection. Already assigned tasks offer their existing worker links.
+
+144 backend tests (zero skips), 20 final focused worker tests and 106 extracted packaged-runtime fixtures pass. Work development app is installed and connected; owner/work records, existing grants and pairing were preserved. Installer: `dist/Juno-0.1.0-preview.15-macOS-arm64.pkg`, verified copy/checksum in `~/Downloads/Juno-0.1.0-preview.15`. One-time TaskDock identity selection is still needed for the existing worker.
+
+Verification and deployment evidence: [worker assignment report](reports/worker-assignments-2026-11-02.md). Worker Wi-Fi/browser trust acceptance is still pending the reported device error/IP. HTTPS and laptop pairing configurations are unchanged.
+
+## Previous installer — preview.14 worker HTTPS on 10/8
 
 At the owner's request, worker hosting is configured and enabled at `https://10.3.66.50:8444/worker`. The listener binds the exact work-Mac IP; remote worker requests are restricted to actual `10.0.0.0/8` peers. Pairing at port 8443 is unchanged. A separate private CA constrained to 10/8 issues the exact-IP leaf; no global/browser trust or firewall/router settings were changed. Public-only trust files and instructions are in `~/Downloads/Juno-Worker-HTTPS`. Each worker device still needs approved CA trust installation before opening its invitation without a warning.
 

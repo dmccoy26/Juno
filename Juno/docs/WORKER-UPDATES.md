@@ -1,4 +1,4 @@
-# Worker updates — preview.14
+# Worker updates — preview.15
 
 Juno remains a native Mac application. Workers use a small browser portal hosted by the approved work Mac; they do not install Juno. The portal is disabled by default, and it is separate from laptop pairing.
 
@@ -6,7 +6,15 @@ Juno remains a native Mac application. Workers use a small browser portal hosted
 
 Open **Worker updates** in the sidebar (Command-9). Expand **Worker access** to see certificate readiness, indefinite report retention and worker identities. Select an existing saved schedule person and add their portal identity. This does not change shifts, active/candidate status or weekly limits.
 
-From a task in **Plan** or **TaskDock**, choose **Request worker update…**. Select the worker and the fields to share, add optional instructions and preview the exact excerpt. The minimal defaults are title and room (preferring the room you confirmed in Juno for that workspace); contact details, raw TaskDock records, chats, memories and private employee notes are excluded. Creating the link requires approved HTTPS to be running. Re-sharing a task with the same worker replaces the old grant; it never silently broadens an earlier grant.
+TaskDock controls task assignment. With worker access enabled, an active portal worker whose name uniquely matches the TaskDock assignee gets that task automatically after Juno refreshes TaskDock. No second task assignment is needed. Names must match exactly apart from case/spacing. In **Worker access**, use **TaskDock identity** once when the source uses a different name, email or stable identifier. Stable identifiers require this explicit match; duplicate names are never guessed. Matches are workspace-bound. Register and invite each intended worker first; no identity or message is created automatically.
+
+Assigned tasks stay available while assigned, rather than expiring after seven days. Reassignment, task removal, worker revocation or source-permission withdrawal removes derived access when Juno receives that change. Workers reconnect/reload their portal to see the new list; this is Juno’s dated TaskDock copy, not a live upstream subscription. Browser sessions still expire after seven days. Change assignment in TaskDock, or revoke the worker’s entire portal access in Juno.
+
+From a task in **Plan** or **TaskDock**, **Request worker update…** offers the existing assigned-worker link when available. **Request help on a task…** remains for temporary collaboration. Search by title, room/room alias, equipment, parent, description or task reference; rows distinguish similar names with room, status, due date, parent and reference. Preview and Cancel stay at the bottom of the sheet.
+
+New manual shares and automatically assigned tasks include all supported TaskDock business details available under its current sharing policy: description/outcome, location/equipment, requester/contact, impact/priority/status/dates, troubleshooting/blockers/dependencies, assignment, tags/custom values, source references, included updates and already-saved permitted history. Juno never triggers upstream history reads for a worker. Additional information that TaskDock has not shared or Juno has not fetched remains unavailable. Optional worker instructions are separate. Private Juno chat, memory, diary, reviews and employee assessments are excluded. A confirmed same-workspace Juno room can supplement the source room.
+
+The preview shows what the worker will receive. Full-context shares render against the latest permitted saved snapshot; earlier limited-field grants remain limited until replaced. Manual collaboration links retain their selected 1–30-day expiry. Re-sharing manually replaces the earlier manual grant for that worker/task; it does not change TaskDock assignment.
 
 After approved hosting is enabled, create a worker invitation and copy it to the intended recipient yourself. Invitations last 24 hours, are one-use and enroll a worker-only browser session lasting at most seven days. Verify the recipient before sharing: possession of an invitation establishes the session; it is not institutional single sign-on or independent identity verification. No email/Slack message is sent by Juno. A copied task link alone cannot enroll a browser or grant another worker access.
 
@@ -30,7 +38,7 @@ The native inbox filters unread, follow-up and all updates, with search and olde
 
 Unexpected/shift reports are unlinked evidence; record follow-up in the review note or copy a summary to TaskDock manually. This release does not create a TaskDock task automatically or offer a new write-back API. TaskDock's original status stays separate, including after local verified completion. **Copy TaskDock summary** explicitly labels the summary as not synchronized.
 
-Revoke a worker to invalidate all their sessions, invitations and task shares. Revoke one task to withdraw that excerpt. Reports remain reviewable indefinitely; already-viewed information cannot be erased from screenshots or another person's memory. TaskDock sharing withdrawal permanently revokes affected worker grants and clears their cached excerpts. Reports independently written by workers remain under the report-retention policy.
+Revoke a worker to invalidate all their sessions, invitations and task shares. Revoke one manual share to withdraw that excerpt. For an automatically assigned task, change assignment in TaskDock. Reports remain reviewable indefinitely; already-viewed information cannot be erased from screenshots or another person's memory. TaskDock sharing withdrawal permanently revokes affected worker grants and clears their cached excerpts. Reports independently written by workers remain under the report-retention policy.
 
 ## Before real worker access: IT setup
 
@@ -57,7 +65,7 @@ On reopening Juno, Worker updates checks certificate chain, validity, hostname a
 
 ## Retention and limitations
 
-Reports are kept indefinitely. There is no age-based report pruning or expiry setting; even older saved settings are migrated to indefinite retention. Worker invitations/sessions and task access still expire independently. Deleting a report is an explicit, permanent live-storage action. Previously applied planning facts, minimal audit events and old backups remain under their existing policies. Revoking worker access does not delete reports.
+Reports are kept indefinitely. There is no age-based report pruning or expiry setting; even older saved settings are migrated to indefinite retention. Worker invitations/sessions and manual collaboration shares expire independently. Assigned-task access follows TaskDock assignment. Deleting a report is an explicit, permanent live-storage action. Previously applied planning facts, minimal audit events and old backups remain under their existing policies. Revoking worker access does not delete reports.
 
 ### Repair history and predictions
 
@@ -71,7 +79,7 @@ Analysis currently scans at most the latest 2,000 included repair reports; chat 
 
 Portal administration/review is host-only in this release. Worker reports are not added to the laptop cache; accepted planning facts use the existing owner-only synchronization behavior. Existing laptop memory/diary offline edits and pairing remain unchanged.
 
-Not included: photos/attachments, Slack/email ingestion, institutional SSO, payroll, automatic assignments/scheduling, automatic TaskDock updates or persistent offline worker forms. The portal is functional without an LLM. Juno does not assess intelligence or turn missing reports into evidence of poor performance.
+Not included: photos/attachments, Slack/email ingestion, institutional SSO, payroll, Juno-originated task assignments or automatic scheduling, automatic TaskDock updates or persistent offline worker forms. The portal is functional without an LLM. Juno does not assess intelligence or turn missing reports into evidence of poor performance.
 
 ## Verification boundaries
 

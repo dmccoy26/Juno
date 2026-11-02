@@ -1,14 +1,68 @@
 import SwiftUI
 
-struct WorkerIdentity:Decodable,Identifiable { var id:String;var name:String;var active:Bool }
+func workerShareSearchText(_ task:TaskDockTask,confirmedRoom:String="")->String {
+    let values=[task.title,confirmedRoom,task.planningText("room") ?? "",task.planningText("equipment") ?? "",task.text("parent_title") ?? "",task.text("description") ?? "",task.text("status_name") ?? task.text("behavior") ?? "",task.text("owner") ?? "",task.id]
+    let text=values.joined(separator:" ")
+    let aliases=[("ARTS 121","A121 ARTS121 ARTS 121"),("ARTS 140","A140 ARTS140 ARTS 140"),("LIBR 115","LIB115 LIBR115 LIBRARY115 LIBR 115"),("MOOD 301","MH301 MOOD301 MOODY301 MOOD 301"),("TRUS 108","TH108 TRUS108 TRUSTEE108 TRUS 108")]
+    let rooms=aliases.filter{scheduleTitleMentionsRoom(text,$0.0)}.map{$0.1}.joined(separator:" ")
+    return (text+" "+rooms).folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"en_US_POSIX"))
+}
+func workerShareMatches(_ task:TaskDockTask,query:String,confirmedRoom:String="")->Bool {
+    let words=query.folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"en_US_POSIX")).split(whereSeparator:{$0.isWhitespace})
+    let text=workerShareSearchText(task,confirmedRoom:confirmedRoom)
+    return words.allSatisfy{text.contains($0)}
+}
+
+func workerDetailKeys(_ excerpt:[String:String])->[String]{
+    let first=["title","room","equipment","issue_description","requested_outcome","description","owner","priority","due_date","status_name","behavior","blockers","dependencies","troubleshooting","instructions"]
+    return first.filter{excerpt[$0] != nil}+excerpt.keys.filter{!first.contains($0)}.sorted()
+}
+func workerDetailLabel(_ key:String)->String{
+    if key=="owner"{return "Assigned to"};if key=="behavior"{return "Status"};if key=="impact"{return "Operational impact"}
+    return key.replacingOccurrences(of:"_",with:" ").capitalized
+}
+
+struct WorkerTaskChooser:View {
+    let tasks:[TaskDockTask]
+    let rooms:[String:String]
+    @Binding var selected:String
+    @State private var search=""
+    @FocusState private var searching:Bool
+    private var matches:[TaskDockTask]{tasks.filter{workerShareMatches($0,query:search,confirmedRoom:rooms[$0.id] ?? "")}}
+    private func detail(_ task:TaskDockTask)->String {
+        var parts:[String]=[]
+        let room=rooms[task.id] ?? task.planningText("room") ?? ""
+        if !room.isEmpty{parts.append(room)}
+        if let status=task.text("status_name") ?? task.text("behavior"),!status.isEmpty{parts.append(status.replacingOccurrences(of:"_",with:" "))}
+        if let date=task.text("due_date"),!date.isEmpty{parts.append("Due "+date)}
+        if let parent=task.text("parent_title"),!parent.isEmpty{parts.append("Under "+parent)}
+        parts.append("Ref "+String(task.id.suffix(8)))
+        return parts.joined(separator:" · ")
+    }
+    var body:some View {
+        VStack(alignment:.leading,spacing:8){
+            HStack{TextField("Search tasks by title, room, equipment or parent",text:$search).textFieldStyle(.roundedBorder).focused($searching).accessibilityLabel("Search tasks to share");if !search.isEmpty{Button("Clear search"){search="";searching=true}}}
+            Text("\(matches.count) of \(tasks.count) tasks").font(.caption).foregroundStyle(.secondary)
+            List(selection:Binding<String?>(get:{selected.isEmpty ? nil:selected},set:{selected=$0 ?? ""})){
+                ForEach(matches){task in VStack(alignment:.leading,spacing:4){Text(task.title).lineLimit(2);Text(detail(task)).font(.caption).foregroundStyle(.secondary).lineLimit(2)}.padding(.vertical,4).tag(task.id)
+                }
+            }.frame(height:180).accessibilityLabel("Matching tasks to share")
+            if matches.isEmpty{Text("No tasks match. Try fewer words or clear the search.").font(.callout).foregroundStyle(.secondary)}
+            if let task=tasks.first(where:{$0.id==selected}){VStack(alignment:.leading,spacing:4){Text("Selected: "+task.title).font(.headline);Text(detail(task)).font(.caption).foregroundStyle(.secondary);if !matches.contains(where:{$0.id==selected}){Text("Your selected task is outside this search. It stays selected until you choose another task.").font(.caption)}}.textSelection(.enabled)}else{Text("Choose a task from the results.").font(.callout).foregroundStyle(.secondary)}
+        }.onAppear{searching=true}
+    }
+}
+
+struct WorkerIdentity:Decodable,Identifiable { var id:String;var name:String;var active:Bool;var assignment_keys:[String]? }
 struct WorkerHostStatus:Decodable { var ready:Bool;var running:Bool;var address:String;var reason:String;var error:String? }
-struct WorkerGrantRecord:Decodable,Identifiable { var id:String;var worker_id:String;var task_id:String;var excerpt:[String:String];var active:Bool;var expires_at:String }
+struct WorkerGrantRecord:Decodable,Identifiable { var id:String;var worker_id:String;var task_id:String;var excerpt:[String:String];var active:Bool;var expires_at:String?;var mode:String? }
 struct WorkerReportData:Decodable { var kind:String;var work_date:String;var text:String;var status:String;var actual_minutes:Int?;var remaining_minutes:Int?;var blocker_state:String;var blocker:String;var next_action:String;var handoff:String;var location:String }
 struct WorkerReportRecord:Decodable,Identifiable {
     var id:String;var worker_id:String;var worker_name:String;var grant_id:String?;var task_id:String?;var workspace_id:String?;var shared_excerpt:[String:String];var grant_active:Bool;var correction_of:String?;var data:WorkerReportData;var review:String;var review_note:String;var revision:Int;var applied:[String:TaskJSON];var repair_context:[String:TaskJSON];var submitted_at:String
     var title:String { shared_excerpt["title"] ?? (data.kind == "shift" ? "End-of-shift check-in" : data.kind == "unexpected" ? "Unexpected work" : "Task update") }
 }
-struct WorkerOverview:Decodable { var enabled:Bool;var retention_days:Int;var host:WorkerHostStatus;var people:[String];var workers:[WorkerIdentity];var reports:[WorkerReportRecord];var has_more:Bool;var grants:[WorkerGrantRecord];var more_grants:Bool }
+struct WorkerAssignee:Decodable,Identifiable {var key:String;var label:String;var id:String{key}}
+struct WorkerOverview:Decodable {var assignment_options:[WorkerAssignee]?; var enabled:Bool;var retention_days:Int;var host:WorkerHostStatus;var people:[String];var workers:[WorkerIdentity];var reports:[WorkerReportRecord];var has_more:Bool;var grants:[WorkerGrantRecord];var more_grants:Bool }
 struct WorkerLink:Decodable { var url:String;var expires_at:String }
 struct WorkerGrantPreview:Decodable { var excerpt:[String:String];var worker_name:String;var workspace_id:String;var source_saved_at:String }
 struct WorkerReceiptPage:Decodable { var items:[WorkerReportRecord];var has_more:Bool }
@@ -30,6 +84,7 @@ struct WorkerWorkspace:View {
     @State private var repairSummary=""
     @State private var completeEffort=false
     @State private var snapshot:TaskDockSnapshot?
+    @State private var sharingPlan:PlanningRecord?
     @State private var reports:[WorkerReportRecord]=[]
     @State private var selected:String?
     @State private var filter="unread"
@@ -41,7 +96,6 @@ struct WorkerWorkspace:View {
     @State private var person=""
     @State private var chosenWorker=""
     @State private var taskID=""
-    @State private var fields:Set<String>=["title","room"]
     @State private var instructions=""
     @State private var shareDays=7
     @State private var preview:WorkerGrantPreview?
@@ -53,7 +107,6 @@ struct WorkerWorkspace:View {
     @State private var retention=0
     @State private var confirmation:String?
     @State private var targetID=""
-    private let shareFields=[("title","Task title"),("room","Room"),("issue_description","Issue description"),("requested_outcome","Requested outcome"),("due_date","Due date")]
     private let applying=[("actual_minutes","Actual minutes (replace, never add)"),("minutes","Remaining estimate"),("blocker","Blocker"),("next_action","Next action"),("resume","Handoff / where to resume")]
     private var local:Bool { store.sharedProfile == nil && !store.offline }
     private func binding(_ set:Binding<Set<String>>,_ key:String)->Binding<Bool> { Binding(get:{set.wrappedValue.contains(key)},set:{v in if v {set.wrappedValue.insert(key)}else{set.wrappedValue.remove(key)}}) }
@@ -61,12 +114,18 @@ struct WorkerWorkspace:View {
     private func load() async throws {
         let data=try await store.decode(WorkerOverview.self,"/v1/workers");overview=data;reports=data.reports;more=data.has_more;retention=data.retention_days
         snapshot=try await store.decode(TaskDockState.self,"/v1/taskdock").snapshot
+        sharingPlan=try await store.decode(PlanningRecord.self,"/v1/planning")
         repairHistory=try await store.decode(RepairHistory.self,"/v1/workers/repair-history")
-        if person.isEmpty {person=data.people.first ?? ""};if chosenWorker.isEmpty {chosenWorker=data.workers.first(where:{$0.active})?.id ?? ""};if taskID.isEmpty {taskID=snapshot?.items.first?.id ?? ""}
+        if person.isEmpty {person=data.people.first ?? ""};if chosenWorker.isEmpty {chosenWorker=data.workers.first(where:{$0.active})?.id ?? ""}
     }
-    private func openShare(){fields=["title","room"];instructions="";preview=nil;link=nil;sheet=WorkerSheet(kind:"share")}
-    private func consumeTask(){if let wanted=store.workerTaskID {taskID=wanted;store.workerTaskID=nil;openShare()}}
-    private func grantBody()->[String:Any] { ["worker_id":chosenWorker,"task_id":taskID,"expected_snapshot_id":snapshot?.id ?? "","fields":Array(fields).sorted(),"instructions":instructions,"days":shareDays] }
+    private func openShare(){instructions="";preview=nil;link=nil;sheet=WorkerSheet(kind:"share")}
+    private var assignedTaskGrants:[WorkerGrantRecord]{overview?.grants.filter{$0.active && $0.mode=="assigned" && $0.task_id==taskID} ?? []}
+    private func consumeTask(){if let wanted=store.workerTaskID {taskID=wanted;store.workerTaskID=nil;if assignedTaskGrants.isEmpty{openShare()}else{link=nil;sheet=WorkerSheet(kind:"assigned")}}}
+    private var shareRooms:[String:String]{
+        guard let planning=sharingPlan,planning.workspace_id==snapshot?.info.workspace_id else{return [:]}
+        return Dictionary(planning.tasks.filter{!$0.room.isEmpty}.map{($0.task_id,$0.room)},uniquingKeysWith:{first,_ in first})
+    }
+    private func grantBody()->[String:Any] { ["worker_id":chosenWorker,"task_id":taskID,"expected_snapshot_id":snapshot?.id ?? "","include_all":true,"instructions":instructions,"days":shareDays] }
     private func copy(_ value:String){NSPasteboard.general.clearContents();NSPasteboard.general.setString(value,forType:.string)}
     private var visible:[WorkerReportRecord] { reports.filter { r in (filter=="all" || r.review==filter) && (query.isEmpty || (r.worker_name+" "+r.title+" "+r.data.text+" "+r.data.location).localizedCaseInsensitiveContains(query)) } }
     var body:some View {
@@ -87,8 +146,15 @@ struct WorkerWorkspace:View {
                             Text("Disabling access invalidates browser sessions and invitations. Your repair history and laptop pairing stay intact.").font(.caption).foregroundStyle(.secondary)
                             HStack {Picker("Saved schedule person",selection:$person){Text("Choose a person").tag("");ForEach(data.people,id:\.self){Text($0).tag($0)}};Button("Add portal identity"){perform{_ = try await store.request("/v1/workers",method:"POST",body:["name":person]);try await load()}}.disabled(person.isEmpty||busy)}
                             ForEach(data.workers){worker in HStack {Text(worker.name + (worker.active ? "" : " · revoked"));Spacer();if worker.active {Button("Create invitation…"){chosenWorker=worker.id;link=nil;sheet=WorkerSheet(kind:"invite")}.disabled(!data.enabled || !data.host.running||busy);Button("Revoke access…"){targetID=worker.id;confirmation="worker"}.disabled(busy)}}}
-                            Button("Share a task…"){openShare()}.disabled(data.workers.filter{$0.active}.isEmpty||snapshot==nil||busy)
-                            DisclosureGroup("Shared tasks (latest 200)"){ForEach(data.grants){grant in HStack {VStack(alignment:.leading){Text(grant.excerpt["title"] ?? "Task excerpt withdrawn");Text((data.workers.first{$0.id==grant.worker_id}?.name ?? "Worker")+" · "+(grant.active ? "active until "+scheduleDate(grant.expires_at) : "expired or revoked")).font(.caption)};Spacer();if grant.active {Button("Copy task link"){copy(data.host.address+"/worker#task="+grant.id)}.disabled(!data.enabled || !data.host.running);Button("Revoke task…"){targetID=grant.id;confirmation="grant"}}}};if data.more_grants {Text("Older grants are not listed here. Revoke the worker identity to withdraw all of their access.").font(.caption)}}
+                            Text("Tasks assigned in TaskDock appear automatically after refresh for workers with a matching name. Match a different TaskDock name or email once below. Change task assignments in TaskDock.").font(.callout).foregroundStyle(.secondary)
+                            ForEach(data.workers.filter{$0.active}){worker in
+                                HStack {Text(worker.name);Picker("TaskDock identity",selection:Binding(get:{worker.assignment_keys?.first ?? ""},set:{key in perform{_ = try await store.request("/v1/workers/"+worker.id+"/assignment",method:"PUT",body:["key":key]);try await load()}})){
+                                    Text("Match by exact name").tag("")
+                                    ForEach(data.assignment_options ?? []){option in Text(option.label).tag(option.key)}
+                                }.disabled(busy)}
+                            }
+                            Button("Request help on a task…"){openShare()}.disabled(data.workers.filter{$0.active}.isEmpty||snapshot==nil||busy)
+                            DisclosureGroup("Shared tasks (latest 200)"){ForEach(data.grants){grant in HStack {VStack(alignment:.leading){Text(grant.excerpt["title"] ?? "Task excerpt withdrawn");Text((data.workers.first{$0.id==grant.worker_id}?.name ?? "Worker")+" · "+(grant.active ? (grant.mode=="assigned" ? "assigned in TaskDock" : "active until "+scheduleDate(grant.expires_at ?? "")) : "expired or revoked")).font(.caption)};Spacer();if grant.active {Button("Copy task link"){copy(data.host.address+"/worker#task="+grant.id)}.disabled(!data.enabled || !data.host.running);if grant.mode != "assigned"{Button("Revoke task…"){targetID=grant.id;confirmation="grant"}}}}};if data.more_grants {Text("Older grants are not listed here. Revoke the worker identity to withdraw all of their access.").font(.caption)}}
                         }.padding(.vertical,8) }.frame(maxHeight:260)
                     }
                 }
@@ -149,20 +215,28 @@ struct WorkerWorkspace:View {
     }.padding(24).frame(maxWidth:.infinity,alignment:.leading)}
     @ViewBuilder private func editor(_ request:WorkerSheet)->some View {
         VStack(alignment:.leading,spacing:16){
-            Text(request.kind=="share" ? "Share a task for an update" : request.kind=="invite" ? "Invite a worker" : request.kind=="apply" ? "Review planning changes" : "Review worker update").font(.title2.bold())
+            Text(request.kind=="assigned" ? "Assigned in TaskDock" : request.kind=="share" ? "Request help on a task" : request.kind=="invite" ? "Invite a worker" : request.kind=="apply" ? "Review planning changes" : "Review worker update").font(.title2.bold())
             ScrollView { VStack(alignment:.leading,spacing:16) {
             if request.kind=="invite" {Text("Verify the recipient before sharing. This one-use invitation expires in 24 hours; the enrolled session lasts at most seven days. It grants worker-only access.");Text(overview?.workers.first{$0.id==chosenWorker}?.name ?? "Worker").font(.headline);if link==nil{Button("Create private invitation"){perform{link=try await store.decode(WorkerLink.self,"/v1/workers/"+chosenWorker+"/invitations",method:"POST",body:[:])}}}}
+            else if request.kind=="assigned" {
+                Text("These workers already have this task in their portal. Refresh TaskDock in Juno after changing an assignment there.").foregroundStyle(.secondary)
+                ForEach(assignedTaskGrants){grant in
+                    Text(overview?.workers.first{$0.id==grant.worker_id}?.name ?? "Worker").font(.headline)
+                    Text(grant.excerpt["title"] ?? "Assigned task")
+                    Button("Copy task link"){copy((overview?.host.address ?? "")+"/worker#task="+grant.id)}.disabled(overview?.host.running != true)
+                }
+                Button("Request help from another worker…"){openShare()}
+            }
             else if request.kind=="share" {
-                if let preview {Text("Worker sees only these fields").font(.headline);Text(preview.worker_name);ForEach(["title","room","issue_description","requested_outcome","due_date","instructions"].filter{preview.excerpt[$0] != nil},id:\.self){key in Text(key.replacingOccurrences(of:"_",with:" ")+": "+(preview.excerpt[key].flatMap{$0.isEmpty ? nil:$0} ?? "Not supplied"))};Text("TaskDock copy saved: "+scheduleDate(preview.source_saved_at)).font(.caption)
+                if let preview {Text("Task details shared with the worker").font(.headline);Text(preview.worker_name);ForEach(workerDetailKeys(preview.excerpt),id:\.self){key in Text(workerDetailLabel(key)+": "+(preview.excerpt[key].flatMap{$0.isEmpty ? nil: key.hasSuffix("_at") || key=="taskdock_copy_saved" ? scheduleDate($0):$0} ?? "Not supplied"))};Text("TaskDock copy saved: "+scheduleDate(preview.source_saved_at)).font(.caption)
                     if overview?.enabled != true || overview?.host.running != true {Text("Enable approved worker HTTPS in Worker access before creating this link.").font(.callout).foregroundStyle(.secondary)}
-                    if link==nil {HStack{Button("Back to fields"){self.preview=nil};Button("Create task link"){perform{link=try await store.decode(WorkerLink.self,"/v1/workers/grants",method:"POST",body:grantBody());try await load()}}.disabled(overview?.enabled != true || overview?.host.running != true)}}
+                    if link==nil {HStack{Button("Back to task"){self.preview=nil};Button("Create task link"){perform{link=try await store.decode(WorkerLink.self,"/v1/workers/grants",method:"POST",body:grantBody());try await load()}}.disabled(overview?.enabled != true || overview?.host.running != true)}}
                 }else{
                     Picker("Worker",selection:$chosenWorker){Text("Choose worker").tag("");ForEach(overview?.workers.filter{$0.active} ?? []){Text($0.name).tag($0.id)}}
-                    Picker("Task",selection:$taskID){Text("Choose task").tag("");ForEach(snapshot?.items ?? []){Text($0.title).tag($0.id)}}
-                    Text("Choose the information to share. Private supervisor context is excluded.").foregroundStyle(.secondary)
-                    ForEach(shareFields,id:\.0){key,label in Toggle(label,isOn:binding($fields,key))}
+                    WorkerTaskChooser(tasks:snapshot?.items ?? [],rooms:shareRooms,selected:$taskID)
+                    Text("Available TaskDock details are included automatically. Private supervisor notes stay private. Assigned tasks already appear for matched workers; use this to request help from another worker.").font(.callout).foregroundStyle(.secondary)
                     TextField("Instructions for this worker (optional)",text:$instructions).textFieldStyle(.roundedBorder);Stepper("Share for \(shareDays) days",value:$shareDays,in:1...30)
-                    Button("Preview worker view"){perform{preview=try await store.decode(WorkerGrantPreview.self,"/v1/workers/grants/preview",method:"POST",body:grantBody())}}.disabled(chosenWorker.isEmpty||taskID.isEmpty||fields.isEmpty||busy)
+
                 }
             }else if let r=request.report {
                 if request.kind=="apply" {
@@ -190,7 +264,7 @@ struct WorkerWorkspace:View {
             if let link {Text("Expires "+scheduleDate(link.expires_at)).font(.caption);Button("Copy private link"){copy(link.url)};Text("Share it yourself with the intended worker. Nothing has been sent.").font(.caption)}
             if let issue {Text(issue).foregroundStyle(.orange).textSelection(.enabled)}
             } }.frame(maxHeight:460)
-            HStack{Spacer();Button(link==nil ? "Cancel" : "Done"){sheet=nil}.keyboardShortcut(.cancelAction).disabled(busy)}
+            HStack{if request.kind=="share" && preview==nil{Button("Preview worker view"){perform{preview=try await store.decode(WorkerGrantPreview.self,"/v1/workers/grants/preview",method:"POST",body:grantBody())}}.disabled(chosenWorker.isEmpty || !(snapshot?.items.contains(where:{$0.id==taskID}) ?? false) || busy)};Spacer();Button(link==nil ? "Cancel" : "Done"){sheet=nil}.keyboardShortcut(.cancelAction).disabled(busy)}
         }.padding(26).frame(width:600).fixedSize(horizontal:false,vertical:true).disabled(busy).interactiveDismissDisabled(busy)
         .onAppear{store.unsavedSections.insert("worker review")}.onDisappear{store.unsavedSections.remove("worker review")}
     }

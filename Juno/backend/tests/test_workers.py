@@ -200,4 +200,72 @@ class WorkerTests(unittest.TestCase):
         data=self.client.get('/v1/workers').json();self.assertEqual(len(data['reports']),1);self.assertEqual(len(data['workers']),2);self.assertEqual(data['retention_days'],0)
         self.assertEqual(len(self.portal.get('/worker/api/receipts').json()['items']),1)
 
-if __name__=='__main__':unittest.main()
+
+
+    def assignment(self,owner,channels=None):
+        with self.factory() as s:
+            row=s.get(TaskDockSnapshot,self.snapshot)
+            row.info={**row.info,'sharing':{'channels':channels or ['title','assignment','description','dates','custom_fields','priority'],'planning_fields':['room','issue_description','equipment','blockers']}}
+            row.items=[{**row.items[0],'owner':owner,'description':'Fictional full instructions','custom_values':{'asset':'test asset'},'planning_details':{**row.items[0]['planning_details'],'equipment':{'state':'provided','value':'Synthetic printer'},'blockers':{'state':'none'}}},row.items[1]]
+            s.commit()
+
+    def test_taskdock_assignment_controls_access_and_stale_submission(self):
+        self.enable();self.enroll();self.assignment('Synthetic Alex')
+        items=self.portal.get('/worker/api/tasks').json()['items'];self.assertEqual(len(items),1)
+        grant=items[0];self.assertEqual(grant['mode'],'assigned');self.assertIsNone(grant['expires_at'])
+        self.assertEqual(grant['excerpt']['description'],'Fictional full instructions')
+        self.assertEqual(grant['excerpt']['equipment'],'Synthetic printer');self.assertEqual(grant['excerpt']['blockers'],'Explicitly none')
+        report=self.report(grant['id'])
+        self.assignment('Synthetic Pat')
+        self.assertEqual(self.portal.post('/worker/api/reports',json=self.payload(grant['id'],'after-reassign-123456')).status_code,403)
+        self.assertEqual(self.portal.get('/worker/api/tasks').json()['items'],[])
+        self.assertEqual(self.client.get('/v1/workers/reports/'+report).status_code,200)
+        self.enroll(self.pat);items=self.portal.get('/worker/api/tasks').json()['items'];self.assertEqual(len(items),1)
+        self.assertNotEqual(items[0]['id'],grant['id'])
+        self.assertEqual(self.client.post('/v1/workers/grants/'+items[0]['id']+'/revoke').status_code,409)
+
+    def test_one_time_stable_identity_mapping_and_owner_isolation(self):
+        self.enable();self.enroll();self.assignment({'id':'student-42','name':'Synthetic Alex','email':'alex@example.invalid'})
+        self.assertEqual(self.portal.get('/worker/api/tasks').json()['items'],[])
+        overview=self.client.get('/v1/workers').json();key=overview['assignment_options'][0]['key'];self.assertEqual(__import__('json').loads(key),['worker-test','id:student-42'])
+        path='/v1/workers/'+self.worker+'/assignment'
+        self.assertEqual(self.client.put(path,json={'key':key},headers={'Authorization':'Bearer '+self.other_token}).status_code,404)
+        self.assertEqual(self.client.put(path,json={'key':'id:missing'}).status_code,409)
+        self.assertEqual(self.client.put(path,json={'key':key}).status_code,200)
+        self.assertEqual(len(self.portal.get('/worker/api/tasks').json()['items']),1)
+        self.assertEqual(self.client.put('/v1/workers/'+self.pat+'/assignment',json={'key':key}).status_code,409)
+        self.assertEqual(self.client.put(path,json={'key':''}).status_code,200)
+        self.assertEqual(self.portal.get('/worker/api/tasks').json()['items'],[])
+
+    def test_assignment_scope_and_ambiguous_names_fail_closed(self):
+        self.enable();self.enroll();self.assignment('Synthetic Alex',channels=['title'])
+        self.assertEqual(self.portal.get('/worker/api/tasks').json()['items'],[])
+        self.assignment('Synthetic Alex')
+        with self.factory() as s:
+            s.add(Worker(owner_id=self.actor.owner_id,name='synthetic alex'));s.commit()
+        self.assertEqual(self.portal.get('/worker/api/tasks').json()['items'],[])
+
+    def test_complete_details_dynamic_but_legacy_shares_remain_limited(self):
+        self.enable();self.enroll();self.assignment('No registered worker')
+        value={'worker_id':self.worker,'task_id':'task-1','expected_snapshot_id':self.snapshot,'include_all':True}
+        preview=self.client.post('/v1/workers/grants/preview',json=value);self.assertEqual(preview.status_code,200,preview.text)
+        self.assertIn('custom_values',preview.json()['excerpt'])
+        r=self.client.post('/v1/workers/grants',json=value);self.assertEqual(r.status_code,201,r.text)
+        with self.factory() as s:
+            row=s.get(TaskDockSnapshot,self.snapshot);row.items=[{**row.items[0],'description':'Updated instructions','secret_provider_token':'Never share'},row.items[1]];s.commit()
+        excerpt=self.portal.get('/worker/api/tasks').json()['items'][0]['excerpt']
+        self.assertEqual(excerpt['description'],'Updated instructions');self.assertNotIn('secret_provider_token',excerpt)
+        self.assignment('No registered worker',channels=['title'])
+        self.assertEqual(self.portal.get('/worker/api/tasks').json()['items'],[])
+
+    def test_assignment_mapping_is_workspace_bound_and_missing_task_revokes(self):
+        self.enable();self.enroll();self.assignment({'id':'student-42','name':'Synthetic Alex'})
+        key=self.client.get('/v1/workers').json()['assignment_options'][0]['key']
+        self.client.put('/v1/workers/'+self.worker+'/assignment',json={'key':key})
+        grant=self.portal.get('/worker/api/tasks').json()['items'][0]['id']
+        with self.factory() as s:
+            row=s.get(TaskDockSnapshot,self.snapshot);row.info={**row.info,'workspace_id':'another-workspace'};s.commit()
+        self.assertEqual(self.portal.get('/worker/api/tasks').json()['items'],[])
+        with self.factory() as s:
+            row=s.get(TaskDockSnapshot,self.snapshot);row.info={**row.info,'workspace_id':'worker-test'};row.items=[];s.commit()
+        self.assertEqual(self.portal.post('/worker/api/reports',json=self.payload(grant)).status_code,403)

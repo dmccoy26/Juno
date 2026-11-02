@@ -199,6 +199,7 @@ class Worker(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
     owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), index=True)
     name: Mapped[str] = mapped_column(String(300))
+    assignment_keys: Mapped[list] = mapped_column(JSONB, default=list)
     active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
@@ -228,7 +229,9 @@ class WorkerGrant(Base):
     task_id: Mapped[str] = mapped_column(String(500))
     policy_hash: Mapped[str] = mapped_column(String(64))
     excerpt: Mapped[dict] = mapped_column(JSONB)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    mode: Mapped[str] = mapped_column(String(20), default='manual')
+    include_all: Mapped[bool] = mapped_column(default=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

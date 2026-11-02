@@ -14,6 +14,7 @@ from .auth import digest
 from .models import WorkerPortal, Worker, WorkerInvitation, WorkerSession, WorkerGrant, WorkerReport, ScheduleState, PlanningState, Audit, now
 from .taskdock_api import active_snapshot
 from .taskdock_planning import provided
+from .worker_assignments import assignment_options, sync_assignments, complete_excerpt, matches_assignment, normalized, mapping_key
 
 COOKIE='__Host-juno-worker'
 ASSETS=Path(__file__).parent/'worker_web'
@@ -32,11 +33,16 @@ class WorkerInput(Strict):
     name:str=Field(min_length=1,max_length=300)
 
 
+class AssignmentInput(Strict):
+    key:str=Field(default="",max_length=2200)
+
+
 class GrantInput(Strict):
     worker_id:str=Field(min_length=36,max_length=36)
     task_id:str=Field(min_length=1,max_length=500)
     expected_snapshot_id:str=Field(min_length=36,max_length=36)
-    fields:list[Literal['title','room','issue_description','requested_outcome','due_date']]=Field(min_length=1,max_length=5)
+    fields:list[Literal['title','room','issue_description','requested_outcome','due_date']]=Field(default=['title','room'],min_length=1,max_length=5)
+    include_all:bool=False
     instructions:str=Field(default='',max_length=2000)
     days:int=Field(default=7,ge=1,le=30)
 
@@ -117,16 +123,23 @@ def current_task(session,owner,identity):
 
 
 def valid_grant(session,grant):
-    if not grant or grant.revoked or grant.expires_at<=now():return False
-    try:snapshot,_=current_task(session,grant.owner_id,grant.task_id)
+    if not grant or grant.revoked or (grant.expires_at is not None and grant.expires_at<=now()):return False
+    try:snapshot,task=current_task(session,grant.owner_id,grant.task_id)
     except HTTPException:return False
-    return snapshot.info.get('workspace_id')==grant.workspace_id and policy(snapshot)==grant.policy_hash
+    return snapshot.info.get('workspace_id')==grant.workspace_id and policy(snapshot)==grant.policy_hash and (grant.mode!='assigned' or matches_assignment(session,grant,snapshot,task))
+
+
+def grant_excerpt(session,grant):
+    if not valid_grant(session,grant):return {}
+    if not grant.include_all:return grant.excerpt
+    snapshot,task=current_task(session,grant.owner_id,grant.task_id)
+    return complete_excerpt(session,snapshot,task,grant.excerpt.get('instructions',''))
 
 
 def report_view(session,row):
     worker=session.get(Worker,row.worker_id)
     grant=session.get(WorkerGrant,row.grant_id) if row.grant_id else None
-    return {'id':row.id,'worker_id':row.worker_id,'worker_name':worker.name,'grant_id':row.grant_id,'task_id':grant.task_id if grant else None,'workspace_id':grant.workspace_id if grant else None,'shared_excerpt':grant.excerpt if grant and valid_grant(session,grant) else {},'grant_active':valid_grant(session,grant),'correction_of':row.correction_of,'data':row.data,'review':row.review,'review_note':row.review_note,'revision':row.revision,'applied':row.applied,'repair_context':row.repair_context,'submitted_at':row.submitted_at}
+    return {'id':row.id,'worker_id':row.worker_id,'worker_name':worker.name,'grant_id':row.grant_id,'task_id':grant.task_id if grant else None,'workspace_id':grant.workspace_id if grant else None,'shared_excerpt':grant_excerpt(session,grant) if grant else {},'grant_active':valid_grant(session,grant),'correction_of':row.correction_of,'data':row.data,'review':row.review,'review_note':row.review_note,'revision':row.revision,'applied':row.applied,'repair_context':row.repair_context,'submitted_at':row.submitted_at}
 
 
 def install(app,db,device,lock_owner,manager=None):
@@ -173,13 +186,13 @@ def install(app,db,device,lock_owner,manager=None):
 
     @app.get('/v1/workers',dependencies=[Depends(local)])
     def overview(actor=Depends(device),session=Depends(db)):
-        lock_owner(session,actor.owner_id);prune(session,actor.owner_id)
+        lock_owner(session,actor.owner_id);prune(session,actor.owner_id);sync_assignments(session,actor.owner_id)
         settings=config(session,actor.owner_id)
         people=session.get(ScheduleState,actor.owner_id)
         rows=session.scalars(select(Worker).where(Worker.owner_id==actor.owner_id).order_by(Worker.name)).all()
         reports=session.scalars(select(WorkerReport).where(WorkerReport.owner_id==actor.owner_id).order_by(WorkerReport.submitted_at.desc()).limit(201)).all()
         grants=session.scalars(select(WorkerGrant).where(WorkerGrant.owner_id==actor.owner_id).order_by(WorkerGrant.created_at.desc()).limit(201)).all()
-        result={'enabled':bool(settings and settings.enabled),'retention_days':0,'host':manager.status() if manager else {'ready':False,'running':False,'address':'','reason':'Worker hosting is unavailable in this service.'},'people':[p['name'] for p in people.data.get('people',[])] if people else [],'workers':[{'id':r.id,'name':r.name,'active':r.active} for r in rows],'reports':[report_view(session,r) for r in reports[:200]],'has_more':len(reports)>200,'grants':[{'id':g.id,'worker_id':g.worker_id,'task_id':g.task_id,'excerpt':g.excerpt if valid_grant(session,g) else {},'active':valid_grant(session,g),'expires_at':g.expires_at} for g in grants[:200]],'more_grants':len(grants)>200}
+        result={'enabled':bool(settings and settings.enabled),'retention_days':0,'host':manager.status() if manager else {'ready':False,'running':False,'address':'','reason':'Worker hosting is unavailable in this service.'},'people':[p['name'] for p in people.data.get('people',[])] if people else [],'assignment_options':assignment_options(active_snapshot(session,actor.owner_id)),'workers':[{'id':r.id,'name':r.name,'active':r.active,'assignment_keys':r.assignment_keys} for r in rows],'reports':[report_view(session,r) for r in reports[:200]],'has_more':len(reports)>200,'grants':[{'id':g.id,'worker_id':g.worker_id,'task_id':g.task_id,'mode':g.mode,'excerpt':grant_excerpt(session,g),'active':valid_grant(session,g),'expires_at':g.expires_at} for g in grants[:200]],'more_grants':len(grants)>200}
         session.commit();return result
 
     @app.put('/v1/workers/settings',dependencies=[Depends(local)])
@@ -216,6 +229,19 @@ def install(app,db,device,lock_owner,manager=None):
         session.execute(delete(WorkerSession).where(WorkerSession.worker_id==row.id));session.execute(delete(WorkerInvitation).where(WorkerInvitation.worker_id==row.id));session.execute(update(WorkerGrant).where(WorkerGrant.worker_id==row.id).values(revoked=True,excerpt={}))
         audit(session,actor,row.id,'worker.revoked');session.commit();return {'revoked':True}
 
+    @app.put('/v1/workers/{identity}/assignment',dependencies=[Depends(local)])
+    def map_assignment(identity:str,value:AssignmentInput,actor=Depends(device),session=Depends(db)):
+        lock_owner(session,actor.owner_id);worker=owned(session,Worker,actor.owner_id,identity)
+        if not worker.active:raise HTTPException(409,'Worker access was revoked.')
+        choices=assignment_options(active_snapshot(session,actor.owner_id))
+        if value.key and value.key not in [i['key'] for i in choices]:raise HTTPException(409,'Assignee changed; reload TaskDock before matching.')
+        others=session.scalars(select(Worker).where(Worker.owner_id==actor.owner_id,Worker.active.is_(True),Worker.id!=worker.id)).all()
+        if value.key and any(value.key in (w.assignment_keys or []) or (not w.assignment_keys and value.key==mapping_key(active_snapshot(session,actor.owner_id).info['workspace_id'],'name:'+normalized(w.name))) for w in others):
+            raise HTTPException(409,'This TaskDock identity already matches another worker.')
+        worker.assignment_keys=[value.key] if value.key else []
+        sync_assignments(session,actor.owner_id);audit(session,actor,worker.id,'worker.assignment_matched');session.commit()
+        return {'assignment_keys':worker.assignment_keys}
+
     @app.post('/v1/workers/{identity}/invitations',dependencies=[Depends(local)])
     def invite(identity:str,actor=Depends(device),session=Depends(db)):
         lock_owner(session,actor.owner_id);host=owner_ready(session,actor.owner_id);worker=owned(session,Worker,actor.owner_id,identity)
@@ -233,20 +259,22 @@ def install(app,db,device,lock_owner,manager=None):
         planning=session.get(PlanningState,actor.owner_id)
         confirmed_room=next((t.get('room','') for t in planning.data.get('tasks',[]) if t['task_id']==value.task_id),'') if planning and planning.data.get('workspace_id')==snapshot.info['workspace_id'] else ''
         facts={'title':task.get('title',''),'room':confirmed_room or provided(task,'room'),'issue_description':provided(task,'issue_description'),'requested_outcome':provided(task,'requested_outcome'),'due_date':task.get('due_date') or ''}
-        excerpt={k:str(facts[k])[:5000] for k in dict.fromkeys(value.fields)}
+        excerpt=complete_excerpt(session,snapshot,task,value.instructions) if value.include_all else {k:str(facts[k])[:5000] for k in dict.fromkeys(value.fields)}
         excerpt['instructions']=value.instructions
         return {'excerpt':excerpt,'worker_name':worker.name,'workspace_id':snapshot.info['workspace_id'],'source_saved_at':snapshot.fetched_at}
 
     @app.post('/v1/workers/grants',dependencies=[Depends(local)],status_code=201)
     def share(value:GrantInput,actor=Depends(device),session=Depends(db)):
         lock_owner(session,actor.owner_id);host=owner_ready(session,actor.owner_id);view=preview(value,actor,session);snapshot,_=current_task(session,actor.owner_id,value.task_id)
-        session.execute(update(WorkerGrant).where(WorkerGrant.owner_id==actor.owner_id,WorkerGrant.worker_id==value.worker_id,WorkerGrant.workspace_id==snapshot.info['workspace_id'],WorkerGrant.task_id==value.task_id,WorkerGrant.revoked.is_(False)).values(revoked=True,excerpt={}))
-        row=WorkerGrant(owner_id=actor.owner_id,worker_id=value.worker_id,workspace_id=snapshot.info['workspace_id'],task_id=value.task_id,policy_hash=policy(snapshot),excerpt=view['excerpt'],expires_at=now()+timedelta(days=value.days));session.add(row);session.flush();audit(session,actor,row.id,'worker.task_shared');session.commit()
-        return {'id':row.id,'url':host['address']+'/worker#task='+row.id,'excerpt':row.excerpt,'expires_at':row.expires_at}
+        session.execute(update(WorkerGrant).where(WorkerGrant.owner_id==actor.owner_id,WorkerGrant.worker_id==value.worker_id,WorkerGrant.workspace_id==snapshot.info['workspace_id'],WorkerGrant.task_id==value.task_id,WorkerGrant.revoked.is_(False),WorkerGrant.mode=='manual').values(revoked=True,excerpt={}))
+        row=WorkerGrant(owner_id=actor.owner_id,worker_id=value.worker_id,workspace_id=snapshot.info['workspace_id'],task_id=value.task_id,policy_hash=policy(snapshot),include_all=value.include_all,excerpt={'instructions':value.instructions} if value.include_all else view['excerpt'],expires_at=now()+timedelta(days=value.days));session.add(row);session.flush();audit(session,actor,row.id,'worker.task_shared');session.commit()
+        return {'id':row.id,'url':host['address']+'/worker#task='+row.id,'excerpt':grant_excerpt(session,row),'expires_at':row.expires_at}
 
     @app.post('/v1/workers/grants/{identity}/revoke',dependencies=[Depends(local)])
     def unshare(identity:str,actor=Depends(device),session=Depends(db)):
-        lock_owner(session,actor.owner_id);row=owned(session,WorkerGrant,actor.owner_id,identity);row.revoked=True;row.excerpt={};audit(session,actor,row.id,'worker.task_revoked');session.commit();return {'revoked':True}
+        lock_owner(session,actor.owner_id);row=owned(session,WorkerGrant,actor.owner_id,identity)
+        if row.mode=='assigned':raise HTTPException(409,'Change the assignment in TaskDock, or revoke the worker’s portal access.')
+        row.revoked=True;row.excerpt={};audit(session,actor,row.id,'worker.task_revoked');session.commit();return {'revoked':True}
 
     @app.get('/v1/workers/reports',dependencies=[Depends(local)])
     def reports(offset:int=Query(default=0,ge=0),actor=Depends(device),session=Depends(db)):
@@ -357,8 +385,10 @@ def install(app,db,device,lock_owner,manager=None):
 
     @app.get('/worker/api/tasks')
     def tasks(worker=Depends(actor),session=Depends(db)):
+        lock_owner(session,worker.owner_id);sync_assignments(session,worker.owner_id)
         rows=session.scalars(select(WorkerGrant).where(WorkerGrant.worker_id==worker.id,WorkerGrant.revoked.is_(False)).order_by(WorkerGrant.created_at.desc()).limit(501)).all()
-        return {'items':[{'id':r.id,'excerpt':r.excerpt,'expires_at':r.expires_at} for r in rows[:500] if valid_grant(session,r)],'limit':500}
+        result={'items':[{'id':r.id,'excerpt':grant_excerpt(session,r),'mode':r.mode,'expires_at':r.expires_at} for r in rows[:500] if valid_grant(session,r)],'limit':500}
+        session.commit();return result
 
     @app.get('/worker/api/receipts')
     def receipts(worker=Depends(actor),session=Depends(db)):

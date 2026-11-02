@@ -127,6 +127,9 @@ def install(app, db, device, lock_owner, reader_factory=TaskDockReader):
         session.add(row); session.flush()
         if state is None: state = TaskDockState(owner_id=actor.owner_id); session.add(state)
         state.active_id = row.id; state.error = None
+        session.flush()
+        from .worker_assignments import sync_assignments
+        sync_assignments(session,actor.owner_id)
         session.commit()
         return {'review_required': False, 'snapshot': snapshot_view(row)}
 
