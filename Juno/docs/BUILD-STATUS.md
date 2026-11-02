@@ -2,6 +2,10 @@
 
 Updated: November 2, 2026.
 
+## Work-Mac automatic backups — November 2
+
+An encrypted Juno backup is saved at `/Volumes/personal_folder/Juno Backups/Work Mac` and passed isolated database restore plus remote authenticated readback/extraction checks. An hourly per-user LaunchAgent is installed with 48 recent, 30 daily and 12 monthly retention. The first background run is waiting on macOS network-volume access while the Mac is locked; scheduled execution is not yet verified. Recovery-key kit is local under `~/Downloads/Juno-Backup-Recovery`, separate from the encrypted share. App installer/version and other applications are unchanged. See [setup/recovery guide](AUTOMATIC-BACKUPS.md) and [actual evidence/open gate](reports/automatic-backups-2026-11-02.md).
+
 ## Current installer — preview.15 TaskDock assignments and worker task search
 
 TaskDock is the assignment authority. Active portal workers receive matching assigned tasks after refresh, with one-time workspace-bound identity matching for different names/email/IDs and no ambiguous-name guessing. Assigned access follows assignment; manual collaboration retains its own expiry. New shares include supported authorized TaskDock details automatically; existing limited shares stay limited. Native search distinguishes 60 similar task titles using room, equipment, parent and reference, with pinned Preview/Cancel and stable selection. Already assigned tasks offer their existing worker links.
