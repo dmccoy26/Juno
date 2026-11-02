@@ -29,8 +29,8 @@ class WorkerBoundary:
         if scope.get('scheme')!='https':return await reject(403,'Use the approved HTTPS worker address.')
         try:
             ip=ipaddress.ip_address((scope.get('client') or ('',))[0])
-            if not (ip.is_loopback or any(ip in ipaddress.ip_network(n) for n in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16','fc00::/7','fe80::/10') if ip.version==ipaddress.ip_network(n).version)):return await reject(403,'Use the approved local network.')
-        except ValueError:return await reject(403,'Use the approved local network.')
+            if not (ip.is_loopback or (ip.version==4 and ip in ipaddress.ip_network('10.0.0.0/8'))):return await reject(403,'Worker access is restricted to the 10.0.0.0/8 network.')
+        except ValueError:return await reject(403,'Worker access is restricted to the 10.0.0.0/8 network.')
         if method=='POST':
             host=headers.get('host','');origin=headers.get('origin','')
             if origin!='https://'+host or headers.get('sec-fetch-site','same-origin') not in {'same-origin','none'}:return await reject(403,'Open this form from the worker portal itself.')
@@ -122,7 +122,9 @@ class WorkerHostManager:
             self.loaded_fingerprint=self.material_fingerprint()
             data=json.loads(self.config_path.read_text());u=urlsplit(data['address']);listener=socket.socket();listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
             try:
-                listener.bind(('0.0.0.0',u.port or 443));listener.listen(64)
+                try:bind_address=str(ipaddress.IPv4Address(u.hostname))
+                except ipaddress.AddressValueError:bind_address='0.0.0.0'
+                listener.bind((bind_address,u.port or 443));listener.listen(64)
                 import uvicorn
                 self.server=uvicorn.Server(uvicorn.Config(WorkerBoundary(self.app),access_log=False,log_level='critical',proxy_headers=False,timeout_keep_alive=2,timeout_graceful_shutdown=2,ssl_certfile=data['certificate'],ssl_keyfile=data['private_key']))
                 self.thread=threading.Thread(target=lambda:self.server.run(sockets=[listener]),daemon=True);self.thread.start()

@@ -2,7 +2,13 @@
 
 Updated: November 1, 2026.
 
-## Current installer — preview.13 worker updates
+## Current installer — preview.14 worker HTTPS on 10/8
+
+At the owner's request, worker hosting is configured and enabled at `https://10.3.66.50:8444/worker`. The listener binds the exact work-Mac IP; remote worker requests are restricted to actual `10.0.0.0/8` peers. Pairing at port 8443 is unchanged. A separate private CA constrained to 10/8 issues the exact-IP leaf; no global/browser trust or firewall/router settings were changed. Public-only trust files and instructions are in `~/Downloads/Juno-Worker-HTTPS`. Each worker device still needs approved CA trust installation before opening its invitation without a warning.
+
+139 backend tests pass without skips. Actual exact-IP TLS, out-of-range CA constraint, worker-only routing, default-trust rejection, listening address and host preservation checks passed. No worker invitation, session or report was created. Reports stay indefinitely retained and the existing worker identity is preserved. See [configuration evidence](reports/worker-https-10-network-2026-11-02.md), [operator guide](WORKER-UPDATES.md) and [installer report](reports/installer-preview-14.json). The latest installer is `dist/Juno-0.1.0-preview.14-macOS-arm64.pkg`; real worker-browser trust and Wi-Fi acceptance remain separate.
+
+## Previous installer — preview.13 worker updates
 
 Mission 11 adds a native Worker updates inbox (Command-9), explicit task-sharing previews, separate worker identities, expiring invitations/grants, browser task/shift/unexpected-work forms, attributed receipts/corrections and selective planning review. TaskDock stays read-only. Workers never receive owner-device credentials or access private chats, memory, diary or employee assessments. A dedicated HTTPS listener is gated on approved certificate/hostname/key verification; production worker access remains disabled.
 

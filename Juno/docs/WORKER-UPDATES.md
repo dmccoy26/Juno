@@ -1,4 +1,4 @@
-# Worker updates — preview.13
+# Worker updates — preview.14
 
 Juno remains a native Mac application. Workers use a small browser portal hosted by the approved work Mac; they do not install Juno. The portal is disabled by default, and it is separate from laptop pairing.
 
@@ -53,7 +53,7 @@ These are examples, not configured addresses. Omit `ca_bundle` when the chain ve
 
 Data roots remain unchanged: the work development installation uses the checkout's `.local`; the portable app uses `~/Library/Application Support/Juno`. Configure the root belonging to the actual approved host. Do not enable another host on the laptop or move/merge databases to set this up.
 
-On reopening Juno, Worker updates checks certificate chain, validity, hostname and key compatibility entirely in memory. It still stays disabled until Daniel explicitly enables worker access. Changed HTTPS configuration/certificate material requires disabling and re-enabling the portal. Test an actual worker browser/network before sharing real tasks. The dedicated listener permits only worker pages/API routes and local-network client addresses; it exposes no owner APIs, pairing, credentials or documentation. Disabling access invalidates sessions/invitations and stops its listener when no enabled owner remains, without changing paired-laptop hosting.
+On reopening Juno, Worker updates checks certificate chain, validity, hostname and key compatibility entirely in memory. It still stays disabled until Daniel explicitly enables worker access. Changed HTTPS configuration/certificate material requires disabling and re-enabling the portal. Test an actual worker browser/network before sharing real tasks. The dedicated listener permits only worker pages/API routes and remote IPv4 clients in `10.0.0.0/8` (plus loopback diagnostics); it exposes no owner APIs, pairing, credentials or documentation. Disabling access invalidates sessions/invitations and stops its listener when no enabled owner remains, without changing paired-laptop hosting.
 
 ## Retention and limitations
 
@@ -76,3 +76,9 @@ Not included: photos/attachments, Slack/email ingestion, institutional SSO, payr
 ## Verification boundaries
 
 See the [mission report](reports/worker-updates-2026-11-02.md) for actual test results. Synthetic browser fixtures deliberately use a loopback-only adapter with fake hosting; they are not HTTPS browser-trust acceptance and are not bundled in the app. Separate tests exercise the actual HTTPS listener/cookies with a temporary CA trusted only by the test client. Real campus certificate/network readiness and a supervised worker pilot remain outstanding.
+
+## Work-Mac IP configuration — November 2
+
+The owner requested `10.3.66.50` and remote access restricted to `10.*.*.*`. The worker endpoint is `https://10.3.66.50:8444/worker`; laptop pairing remains separate at port 8443. Literal-IP worker listeners bind to that address. The worker HTTP boundary accepts only actual 10/8 peers or local loopback diagnostics, ignores forwarded-IP claims, and rejects other private ranges, public IPs and remote IPv6. This is an application access restriction, not a system-wide firewall rule.
+
+A dedicated private worker CA and exact-IP server certificate can be used for this local setup. This does not make the CA publicly/browser trusted: each participating device needs the public CA certificate installed through its approved trust process. Never bypass a browser warning. The configured CA has an IP name constraint of 10/8 and a reserved `.invalid` DNS constraint; the actual server leaf has only the IP subject alternative name `10.3.66.50`. Root and server private keys stay in the work Mac's private Juno data root and must never be distributed. Public certificate files and the fingerprint are provided separately for device enrollment. This trust setup is independent from Juno's laptop-pairing certificate.

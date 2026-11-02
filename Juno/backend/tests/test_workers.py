@@ -74,6 +74,11 @@ class WorkerTests(unittest.TestCase):
             p=s.get(PlanningState,self.actor.owner_id);p.data={**p.data,'workspace_id':'other-workspace'};s.commit()
         self.assertEqual(self.client.post('/v1/workers/grants/preview',json=preview).json()['excerpt']['room'],'ARTS 121')
 
+    def test_worker_network_is_ten_slash_eight_only(self):
+        for address,expected in [('10.0.0.1',200),('10.3.66.50',200),('10.255.255.254',200),('192.168.1.20',403),('172.16.0.1',403),('8.8.8.8',403),('fc00::1',403),('fe80::1',403)]:
+            with TestClient(WorkerBoundary(self.app),base_url='https://localhost',client=(address,51000)) as client:
+                self.assertEqual(client.get('/worker',headers={'X-Forwarded-For':'10.3.66.50'}).status_code,expected,address)
+
     def test_one_use_expiry_and_revocation(self):
         self.enable();secret=self.enroll();self.assertEqual(self.portal.post('/worker/api/enroll',json={'invitation':secret}).status_code,401)
         self.client.post('/v1/workers/'+self.worker+'/revoke');self.assertEqual(self.portal.get('/worker/api/tasks').status_code,401)
