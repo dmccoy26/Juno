@@ -1,0 +1,109 @@
+{
+  "status": "blocked",
+  "requirements": [
+    "native_app",
+    "visual_perception",
+    "focus_observation"
+  ],
+  "limitations": [
+    {
+      "capability": "native_app",
+      "status": "unsupported",
+      "detail": "Not provided by the terminal instrument."
+    },
+    {
+      "capability": "visual_perception",
+      "status": "unsupported",
+      "detail": "Not provided by the terminal instrument."
+    },
+    {
+      "capability": "focus_observation",
+      "status": "unsupported",
+      "detail": "Not provided by the terminal instrument."
+    }
+  ],
+  "manifest": {
+    "schema_version": 1,
+    "interface": "tui",
+    "participant_observation": "rendered_terminal_text",
+    "capabilities": {
+      "click": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "replace_text": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "keypress": {
+        "status": "supported",
+        "detail": "Terminal key vocabulary; see terminal control protocol."
+      },
+      "scroll": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "history_navigation": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "reload": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "wait": {
+        "status": "supported",
+        "detail": "Bounded participant-requested wait."
+      },
+      "browser_dialog": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "native_select_keyboard": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "type_text": {
+        "status": "supported",
+        "detail": "Send text to the foreground terminal."
+      },
+      "drag": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "double_click": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "caret_placement": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "text_selection": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "file_upload": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "download_inspection": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "visual_perception": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "focus_observation": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      },
+      "native_app": {
+        "status": "unsupported",
+        "detail": "Not provided by the terminal instrument."
+      }
+    },
+    "scope": "Instrument inventory, not application behavior or a usability verdict."
+  }
+}

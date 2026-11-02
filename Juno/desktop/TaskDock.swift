@@ -97,7 +97,9 @@ struct TaskDockWorkspace: View {
     @State private var busy = false
     @State private var selected: String?
     @State private var search = ""
+    @FocusState private var searchFocused:Bool
     @State private var definitions = false
+    @State private var forgetting = false
     @State private var settingsExpanded = false
     @State private var history: TaskDockHistory?
     @State private var historyTask: String?
@@ -117,19 +119,19 @@ struct TaskDockWorkspace: View {
         Task {
             defer { busy = false }
             do {
-                guard let credential = try TaskDockKeychain.read(snapshot.origin) else { throw APIProblem(message: "Pair with TaskDock before reading history.", status: 0) }
+                guard let credential = try await credentialWork({ try TaskDockKeychain.read(snapshot.origin) }) else { throw APIProblem(message: "Pair with TaskDock before reading history.", status: 0) }
                 var parts = URLComponents(); parts.path = "/v1/taskdock/history"
                 parts.queryItems = [URLQueryItem(name: "task_id", value: task.id), URLQueryItem(name: "kind", value: kind)]
                 let result = try await store.decode(TaskDockHistory.self, parts.string!, method: "POST", body: ["base_url": snapshot.origin, "token": credential, "expected_snapshot_id": snapshot.id])
                 history = result; historyTask = task.id; historyKind = kind
-            } catch { notice = (error as? APIProblem)?.message ?? "History could not be read. The previous history view has been kept." }
+            } catch { notice = (error as? APIProblem)?.message ?? "History could not be read. Review the saved source status.";await load() }
         }
     }
     var tasks: [TaskDockTask] { (state?.snapshot?.items ?? []).filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) } }
     func load() async {
         do {
             let loaded = try await store.decode(TaskDockState.self, "/v1/taskdock")
-            if state?.snapshot?.id != loaded.snapshot?.id { history = nil; historyTask = nil }
+            if state?.snapshot?.id != loaded.snapshot?.id || loaded.snapshot?.info.sharing_restricted == true { history = nil; historyTask = nil }
             state = loaded
             if let id = store.currentConversation { try? await store.loadMessages(id) }
         }
@@ -143,7 +145,8 @@ struct TaskDockWorkspace: View {
             defer { busy = false }
             do {
                 guard store.sharedProfile == nil else { throw APIProblem(message: "Manage TaskDock on the work Mac.", status: 0) }
-                let credential = token.isEmpty ? try TaskDockKeychain.read(address) ?? "" : token
+                let entered = token
+                let credential = entered.isEmpty ? try await credentialWork { try TaskDockKeychain.read(address) } ?? "" : entered
                 guard !credential.isEmpty else { throw APIProblem(message: "Paste the dedicated Juno token from TaskDock Settings → Connections.", status: 0) }
                 var body: [String: Any] = ["base_url": address, "token": credential]
                 if let snapshot = state?.snapshot { body["expected_snapshot_id"] = snapshot.id }
@@ -151,7 +154,7 @@ struct TaskDockWorkspace: View {
                     body["reviewed_workspace_id"] = review.workspace_id; body["reviewed_device_id"] = review.device_id
                 }
                 let response = try await store.decode(TaskDockRefresh.self, "/v1/taskdock/refresh", method: "POST", body: body)
-                try TaskDockKeychain.save(credential, origin: address)
+                try await credentialWork { try TaskDockKeychain.save(credential, origin: address) }
                 token = ""; UserDefaults.standard.set(address, forKey: "taskdockOrigin")
                 if response.review_required {
                     reviewing = response.info; reviewOrigin = address
@@ -181,10 +184,7 @@ struct TaskDockWorkspace: View {
             }.disabled(busy)
             HStack {
                 Button("Connect / refresh snapshot") { reviewing = nil; refresh() }.disabled(busy || !store.connected)
-                Button("Forget saved token") {
-                    do { try TaskDockKeychain.forget(origin.trimmingCharacters(in: CharacterSet(charactersIn: "/"))); token = ""; reviewing = nil; notice = "Token removed from this Mac’s Keychain. Saved snapshots remain. Revoke access in TaskDock to invalidate the token." }
-                    catch { notice = (error as? APIProblem)?.message }
-                }.disabled(busy)
+                Button("Forget saved token…",role:.destructive) { forgetting = true }.disabled(busy)
                 if busy { ProgressView().controlSize(.small) }
             }
             if let review = reviewing {
@@ -214,7 +214,7 @@ struct TaskDockWorkspace: View {
                 DisclosureGroup("TaskDock source freshness (separate from Juno’s read time)") { Text(snapshot.sources.pretty).font(.caption.monospaced()).textSelection(.enabled).frame(maxHeight: 110) }
                 HSplitView {
                     VStack {
-                        TextField("Filter saved tasks", text: $search).textFieldStyle(.roundedBorder)
+                        TextField("Filter saved tasks", text: $search).focused($searchFocused).onReceive(NotificationCenter.default.publisher(for:Notification.Name("JunoFind"))) { _ in if store.section == "TaskDock" { searchFocused = true } }.textFieldStyle(.roundedBorder)
                         List(selection: $selected) {
                             ForEach(tasks) { task in
                                 VStack(alignment: .leading) { Text(task.title); Text(task.text("status_name") ?? task.text("behavior") ?? "Status unknown").font(.caption).foregroundStyle(.secondary) }.tag(task.id)
@@ -233,7 +233,7 @@ struct TaskDockWorkspace: View {
                                     if snapshot.info.capabilities["read_activity"] == true { Button("Read activity") { readHistory(task: task, kind: "activity") }.disabled(busy) }
                                 }
                                 if let history, historyTask == task.id {
-                                    Text("\(historyKind.capitalized) · read \(history.read_at)").font(.caption.bold())
+                                    Text("\(historyKind.capitalized) · read \(scheduleDate(history.read_at))").font(.caption.bold())
                                     Text(history.notice).font(.caption).foregroundStyle(.secondary)
                                     if history.items.isEmpty { Text("No recorded history.") }
                                     ForEach(Array(history.items.enumerated()), id: \.offset) { _, item in Text(item.pretty).font(.caption.monospaced()).textSelection(.enabled) }
@@ -249,7 +249,13 @@ struct TaskDockWorkspace: View {
                 Spacer(); Text("No complete TaskDock snapshot saved yet.").foregroundStyle(.secondary); Spacer()
             }
             Text("TaskDock stays read-only. Provider refresh and task changes happen in TaskDock. Chat can use selected dated task excerpts; suggested hours are estimates.").font(.caption).foregroundStyle(.secondary)
-        }.padding(22).task { await load();if state?.snapshot == nil { settingsExpanded = true } }.onChange(of:reviewing?.workspace_id) { id in if id != nil { settingsExpanded = true } }.onChange(of: selected) { _ in Task { await loadSavedHistory() } }
+        }.alert("Forget TaskDock access on this Mac?",isPresented:$forgetting) {
+            Button("Cancel",role:.cancel) { }
+            Button("Forget token",role:.destructive) {
+                let address = origin.trimmingCharacters(in:CharacterSet(charactersIn:"/"));busy = true
+                Task { defer { busy = false };do { try await credentialWork { try TaskDockKeychain.forget(address) };token = "";reviewing = nil;notice = "Saved token removed. TaskDock records and Juno’s saved copies are unchanged." } catch { notice = (error as? APIProblem)?.message ?? "The token could not be removed." } }
+            }
+        } message: { Text("Juno will need a dedicated token to refresh again. Saved task copies remain. This does not revoke access in TaskDock.") }.padding(22).onChange(of:store.section) { key in if key == "TaskDock",!busy { Task { await load() } } }.task { await load();if state?.snapshot == nil { settingsExpanded = true } }.onChange(of:reviewing?.workspace_id) { id in if id != nil { settingsExpanded = true } }.onChange(of: selected) { _ in Task { await loadSavedHistory() } }
     }
 }
 
@@ -262,7 +268,7 @@ struct TaskDockDetails: View {
         guard let v = values[key] else { return "Unknown" }
         switch v {
         case .null: return "Unknown"
-        case .string(let s): return s.isEmpty ? "None recorded" : s
+        case .string(let s): return s.isEmpty ? "None recorded" : ["start_date","due_date","completed_at","blocked_since"].contains(key) && s.contains("T") ? scheduleDate(s) : s
         default: return v.pretty
         }
     }

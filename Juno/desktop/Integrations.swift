@@ -73,6 +73,7 @@ struct IntegrationsWorkspace: View {
     @State private var busy = false
     @State private var notice: String?
     @State private var deleting: EvidenceSnapshot?
+    @State private var forgettingKey = false
     func snapshot(_ kind:String) -> EvidenceSnapshot? { state?.items.first { $0.kind == kind } }
     func load() async {
         do { state = try JSONDecoder().decode(EvidenceState.self,from:await store.request("/v1/integrations")) }
@@ -86,9 +87,11 @@ struct IntegrationsWorkspace: View {
         Task {
             defer { busy = false }
             do {
-                let size = try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0
-                guard size <= 8_000_000 else { throw APIProblem(message:"The selected file exceeds 8 MB. Export a smaller file.",status:0) }
-                let content = try String(contentsOf:url,encoding:.utf8)
+                let content = try await Task.detached(priority:.userInitiated) {
+                    let size = try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0
+                    guard size <= 8_000_000 else { throw APIProblem(message:"The selected file exceeds 8 MB. Export a smaller file.",status:0) }
+                    return try String(contentsOf:url,encoding:.utf8)
+                }.value
                 var body:[String:Any] = ["kind":kind,"content":content,"label":url.lastPathComponent,"start":start,"end":end,"timezone":zone]
                 if let previous = snapshot(kind) { body["expected_id"] = previous.id }
                 _ = try await store.request("/v1/integrations/import",method:"POST",body:body)
@@ -102,11 +105,12 @@ struct IntegrationsWorkspace: View {
         Task {
             defer { busy = false }
             do {
-                let key = token.isEmpty ? try BeaconKeychain.read(origin) ?? "" : token
+                let address = origin;let entered = token
+                let key = entered.isEmpty ? try await credentialWork { try BeaconKeychain.read(address) } ?? "" : entered
                 var body:[String:Any] = ["base_url":origin,"token":key]
                 if let previous = snapshot("beacon") { body["expected_id"] = previous.id }
                 _ = try await store.request("/v1/integrations/beacon/refresh",method:"POST",body:body)
-                try BeaconKeychain.save(key,origin:origin);token = "";UserDefaults.standard.set(origin,forKey:"beaconOrigin")
+                try await credentialWork { try BeaconKeychain.save(key,origin:address) };token = "";UserDefaults.standard.set(origin,forKey:"beaconOrigin")
                 notice = "Read Beacon's complete alert feed. No inventory records or tasks were changed."
             } catch { notice = (error as? APIProblem)?.message ?? "Beacon could not be refreshed. The previous snapshot has been retained." }
             await load()
@@ -133,8 +137,8 @@ struct IntegrationsWorkspace: View {
                             Picker("Source",selection:$kind) { Text("Calendar (.ics)").tag("calendar");Text("Semester schedule (.csv)").tag("schedules");Text("Beacon alerts (.json)").tag("beacon") }.pickerStyle(.segmented)
                             if kind != "beacon" {
                                 HStack {
-                                    VStack(alignment:.leading) { Text("From (YYYY-MM-DD)").font(.caption);TextField("2026-10-29",text:$start) }
-                                    VStack(alignment:.leading) { Text("Until, exclusive (YYYY-MM-DD)").font(.caption);TextField("2026-11-29",text:$end) }
+                                    VStack(alignment:.leading) { Text("From").font(.caption);DatePicker("From",selection:scheduleDayBinding($start),displayedComponents:.date).labelsHidden() }
+                                    VStack(alignment:.leading) { Text("Until (not included)").font(.caption);DatePicker("Until",selection:scheduleDayBinding($end),displayedComponents:.date).labelsHidden() }
                                 }
                                 TextField("Timezone, e.g. America/Chicago",text:$zone)
                                 Text("Import at most 366 days. This timezone interprets floating calendar times and controls day summaries. CSV rows each carry their own timezone; their semester end dates are inclusive.").font(.caption).foregroundStyle(.secondary)
@@ -149,7 +153,7 @@ struct IntegrationsWorkspace: View {
                             SecureField("Dedicated read-only integration key (blank uses Keychain)",text:$token)
                             HStack {
                                 Button("Read Beacon alerts") { refreshBeacon() }.disabled(busy)
-                                Button("Forget saved key") { do { try BeaconKeychain.forget(origin);token = "";notice = "Saved Beacon key removed from this Mac. Imported evidence remains until you remove it." } catch { notice = "The saved key could not be removed." } }.disabled(busy)
+                                Button("Forget saved key…",role:.destructive) { forgettingKey = true }.disabled(busy)
                             }
                             Text("Use the dedicated Beacon integration key. Juno reads only /api/alerts on loopback and stores the key in this Mac's Keychain. Refresh is manual.").font(.caption).foregroundStyle(.secondary)
                         }.padding(8)
@@ -219,7 +223,10 @@ struct IntegrationsWorkspace: View {
                     }
                 }
             }.padding(26).frame(maxWidth:.infinity,alignment:.leading)
-        }.task { await load() }
+        }.alert("Forget Beacon access on this Mac?",isPresented:$forgettingKey) {
+            Button("Cancel",role:.cancel) { }
+            Button("Forget key",role:.destructive) { let address = origin;busy = true;Task { defer { busy = false };do { try await credentialWork { try BeaconKeychain.forget(address) };token = "";notice = "Saved key removed. Imported evidence remains." } catch { notice = "The key could not be removed." } } }
+        } message: { Text("You will need the integration key to refresh again. Beacon records and Juno’s imported evidence are unchanged.") }.task { await load() }.onChange(of:store.section) { key in if key == "Evidence",!busy { Task { await load() } } }
         .alert("Remove this imported copy?",isPresented:Binding(get:{ deleting != nil },set:{ if !$0 { deleting = nil } })) {
             Button("Cancel",role:.cancel) { deleting = nil }
             Button("Remove copy",role:.destructive) {

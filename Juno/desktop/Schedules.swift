@@ -58,6 +58,28 @@ func scheduleDate(_ text: String) -> String {
     let f = DateFormatter(); f.timeZone = TimeZone(identifier:"America/Chicago"); f.dateFormat = "EEE MMM d, h:mm a"; return f.string(from:date)
 }
 
+func scheduleDayBinding(_ value:Binding<String>) -> Binding<Date> {
+    let formatter = DateFormatter();formatter.locale = Locale(identifier:"en_US_POSIX");formatter.timeZone = TimeZone(identifier:"America/Chicago");formatter.dateFormat = "yyyy-MM-dd";formatter.isLenient = false
+    return Binding(get:{formatter.date(from:value.wrappedValue) ?? Date()},set:{value.wrappedValue = formatter.string(from:$0)})
+}
+func scheduleDatesIssue(_ first:String,_ last:String,_ start:String,_ end:String,_ zone:String) -> String? {
+    let f = DateFormatter();f.locale = Locale(identifier:"en_US_POSIX");f.timeZone = TimeZone(identifier:"America/Chicago");f.dateFormat = "yyyy-MM-dd";f.isLenient = false
+    guard let a = f.date(from:first),let b = f.date(from:last),f.string(from:a) == first,f.string(from:b) == last else { return "Choose valid first and last dates." }
+    var calendar = Calendar(identifier:.gregorian);calendar.timeZone = f.timeZone
+    let span = calendar.dateComponents([.day],from:a,to:b).day ?? -1
+    guard (0...366).contains(span) else { return "The last date must be on or after the first, within one year." }
+    func minutes(_ value:String) -> Int? { let parts = value.split(separator:":");guard parts.count == 2,let h = Int(parts[0]),let m = Int(parts[1]),(0...23).contains(h),(0...59).contains(m) else { return nil };return h * 60 + m }
+    guard let start = minutes(start),let end = minutes(end),start < end else { return "Choose an end time after the start on the same day." }
+    guard TimeZone(identifier:zone) != nil else { return "Choose a valid timezone, such as America/Chicago." }
+    return nil
+}
+func schedulePersonIssue(_ name:String,_ limit:String,_ agreed:String) -> String? {
+    guard !name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { return "Enter a name before applying." }
+    guard let hours = Int(limit),(0...40).contains(hours) else { return "Funded hours must be a whole number from 0 to 40." }
+    if !agreed.isEmpty { guard let desired = Int(agreed),(0...hours).contains(desired) else { return "Agreed hours must be between zero and the funded limit, or blank if unknown." } }
+    return nil
+}
+
 struct SchedulesWorkspace: View {
     @ObservedObject var store: JunoStore
     @State private var record: ScheduleRecord?
@@ -122,7 +144,7 @@ struct SchedulesWorkspace: View {
                             } }
                             RoomTaskDockIssues(store:store,room:comparisonRoom,person:comparisonPerson)
                         } else {
-                            ScheduleWeekView(record:record, byRoom:scheduleView == "Week by room").id(scheduleView)
+                            ScheduleWeekView(record:record, byRoom:scheduleView == "Week by room",selectionBinding:scheduleView == "Week by room" ? $comparisonRoom : $comparisonPerson,weekBinding:$comparisonDate).id(scheduleView)
                         }
                         Button("Edit schedules and people") { scheduleView = "List & edit" }
                     } else {
@@ -165,8 +187,8 @@ struct SchedulesWorkspace: View {
                     }
                 }
             }.padding(24).disabled(busy)
-        }.task { comparisonDate = Date(); await load() }
-        .onChange(of:scheduleView) { _ in comparisonDate = Date() }
+        }.task { comparisonDate = Date(); await load() }.onChange(of:store.section) { key in if key == "Schedules",!dirty,!ruleEditor,!personEditor,!exceptionEditor { Task { await load() } } }
+        .onChange(of:dirty) { value in if value { store.unsavedSections.insert("Schedules") } else { store.unsavedSections.remove("Schedules") } }
         .sheet(isPresented:$ruleEditor) { ruleForm }
         .sheet(isPresented:$personEditor) { personForm }
         .sheet(isPresented:$exceptionEditor) { exceptionForm }
@@ -182,37 +204,45 @@ struct SchedulesWorkspace: View {
             Picker("Kind",selection:$rule.kind) { Text("My work hours").tag("work");Text("Building access").tag("room");Text("Classroom occupied").tag("classroom_busy");Text("Staff shift").tag("staff_available") }
             TextField("Room, employee or course name",text:$rule.name)
             if rule.kind == "classroom_busy" { TextField("Room location",text:$rule.location) }
-            HStack { TextField("First date YYYY-MM-DD",text:$rule.start_date);TextField("Last date YYYY-MM-DD",text:$rule.end_date) }
+            HStack { DatePicker("First date",selection:scheduleDayBinding($rule.start_date),displayedComponents:.date);DatePicker("Last date",selection:scheduleDayBinding($rule.end_date),displayedComponents:.date) }
             HStack { ForEach(0..<7,id:\.self) { d in Toggle(weekdays[d],isOn:Binding(get:{rule.days.contains(d)},set:{ yes in if yes { rule.days.append(d) } else { rule.days.removeAll { $0 == d } } })).toggleStyle(.checkbox) } }
             HStack { ScheduleTimeField(title:"Start",value:$rule.start_time);ScheduleTimeField(title:"End",value:$rule.end_time) }
             TextField("Timezone",text:$rule.timezone)
-            Text("Local times, including the final schedule date. Saving remains subject to validation.").font(.caption)
-            HStack { Button("Cancel") { ruleEditor = false };Spacer();Button("Apply to draft") { record?.rules.removeAll { $0.id == rule.id };record?.rules.append(rule);dirty = true;ruleEditor = false }.disabled(store.offline || rule.days.isEmpty) }
+            Text("Local times, including the final schedule date.").font(.caption)
+            if let issue = scheduleDatesIssue(rule.start_date,rule.end_date,rule.start_time,rule.end_time,rule.timezone) { Text(issue).foregroundStyle(.orange) }
+            if rule.kind != "work" && rule.name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { Text("Enter the room, person or course name.").foregroundStyle(.orange) }
+            if rule.kind == "classroom_busy" && rule.location.isEmpty { Text("Enter the classroom location.").foregroundStyle(.orange) }
+            HStack { Button("Cancel") { ruleEditor = false };Spacer();Button("Apply to draft") { record?.rules.removeAll { $0.id == rule.id };record?.rules.append(rule);dirty = true;ruleEditor = false }.disabled(store.offline || rule.days.isEmpty || scheduleDatesIssue(rule.start_date,rule.end_date,rule.start_time,rule.end_time,rule.timezone) != nil || rule.kind != "work" && rule.name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || rule.kind == "classroom_busy" && rule.location.isEmpty) }
         }.padding(24).frame(width:700)
     }
     private var personForm: some View {
         VStack(alignment:.leading,spacing:12) {
             Text("Person / hiring status").font(.title2.bold());TextField("Name",text:$person.name).disabled(editingPersonName != nil)
             Picker("Status",selection:$person.status) { Text("Active").tag("active");Text("Schedule unsettled").tag("tentative");Text("Candidate — not hired").tag("candidate") }
-            TextField("Funded weekly limit, whole hours",text:$limitHours);TextField("Agreed hours, optional",text:$desiredHours);TextField("Notes / unresolved details",text:$person.notes)
+            LabeledContent("Funded hours per week") { TextField("Funded weekly limit, whole hours",text:$limitHours).frame(width:100) }
+            LabeledContent("Agreed hours, if known") { TextField("Agreed hours, optional",text:$desiredHours).frame(width:100) }
+            TextField("Notes / unresolved details",text:$person.notes)
+            if let issue = schedulePersonIssue(person.name,limitHours,desiredHours) { Text(issue).foregroundStyle(.orange) }
             Text("Candidates and unsettled schedules are excluded from confirmed planning capacity. Funding does not imply agreed hours or independent capability.").font(.caption)
             HStack { Button("Cancel") { personEditor = false };Spacer();Button("Apply to draft") {
                 guard let hours = Int(limitHours), (0...40).contains(hours), desiredHours.isEmpty || (Int(desiredHours) != nil && (0...hours).contains(Int(desiredHours)!)) else { issue = "Use whole hours from 0–40; agreed hours cannot exceed funding.";return }
                 person.weekly_limit_minutes = hours*60;person.desired_minutes = Int(desiredHours).map { $0*60 }
                 record?.people.removeAll { $0.name.caseInsensitiveCompare(person.name) == .orderedSame };record?.people.append(person);dirty = true;personEditor = false
-            }.disabled(store.offline || person.name.trimmingCharacters(in:.whitespaces).isEmpty) }
+            }.disabled(store.offline || schedulePersonIssue(person.name,limitHours,desiredHours) != nil) }
         }.padding(24).frame(width:620)
     }
     private var exceptionForm: some View {
         VStack(alignment:.leading,spacing:12) {
             Text("Daily exception").font(.title2.bold())
             Picker("Kind",selection:$exception.kind) { Text("My hours").tag("work");Text("Building access").tag("room");Text("Staff shift").tag("staff_available");Text("Class occupancy").tag("classroom_busy") }
-            TextField("Exact room or employee name",text:$exception.name);TextField("Date YYYY-MM-DD",text:$exception.day)
+            TextField("Exact room or employee name",text:$exception.name);DatePicker("Date",selection:scheduleDayBinding($exception.day),displayedComponents:.date)
             Toggle(exception.kind == "classroom_busy" ? "No classes on this date" : "Unavailable / closed on this date",isOn:$exception.closed)
             if !exception.closed { HStack { ScheduleTimeField(title:"Replacement start",value:Binding(get:{exception.start_time ?? ""},set:{exception.start_time = $0}));ScheduleTimeField(title:"Replacement end",value:Binding(get:{exception.end_time ?? ""},set:{exception.end_time = $0})) } }
             TextField("Reason / note",text:$exception.note)
             Text("Exceptions use America/Chicago. A no-classes exception does not open a closed building.").font(.caption)
-            HStack { Button("Cancel") { exceptionEditor = false };Spacer();Button("Apply to draft") { record?.exceptions.removeAll { $0.id == exception.id };record?.exceptions.append(exception);dirty = true;exceptionEditor = false }.disabled(store.offline) }
+            if let issue = scheduleDatesIssue(exception.day,exception.day,exception.closed ? "00:00" : exception.start_time ?? "",exception.closed ? "23:59" : exception.end_time ?? "","America/Chicago") { Text(issue).foregroundStyle(.orange) }
+            if exception.kind != "work" && exception.name.isEmpty { Text("Enter the room or person this exception applies to.").foregroundStyle(.orange) }
+            HStack { Button("Cancel") { exceptionEditor = false };Spacer();Button("Apply to draft") { record?.exceptions.removeAll { $0.id == exception.id };record?.exceptions.append(exception);dirty = true;exceptionEditor = false }.disabled(store.offline || exception.kind != "work" && exception.name.isEmpty || scheduleDatesIssue(exception.day,exception.day,exception.closed ? "00:00" : exception.start_time ?? "",exception.closed ? "23:59" : exception.end_time ?? "","America/Chicago") != nil) }
         }.padding(24).frame(width:650)
     }
 }
@@ -236,7 +266,7 @@ struct RepairWindowsView: View {
     var body: some View {
         GroupBox("When could we work on this?") {
             VStack(alignment:.leading,spacing:10) {
-                HStack { TextField("Seven days starting YYYY-MM-DD",text:$day);TextField("Minutes needed",text:$minutes).frame(width:130) }
+                HStack { DatePicker("Seven days starting",selection:scheduleDayBinding($day),displayedComponents:.date);TextField("Minutes needed",text:$minutes).frame(width:130) }
                 HStack {
                     Picker("Room",selection:$room) { Text("Choose room").tag("");ForEach(rosterRooms,id:\.self) { Text($0).tag($0) } }
                     Picker("Who",selection:$employee) { Text("Me").tag("");ForEach(rosterPeople) { Text($0.name+" • "+$0.status).tag($0.name) } }
@@ -279,6 +309,7 @@ struct ScheduleWeekView: View {
     let byRoom: Bool
     var comparisonDate: Date? = nil
     var selectionBinding: Binding<String>? = nil
+    var weekBinding: Binding<Date>? = nil
     @State private var selected = ""
     @State private var anchor = Date()
     private var calendar: Calendar {
@@ -288,7 +319,7 @@ struct ScheduleWeekView: View {
         return c
     }
     private var week: [Date] {
-        let start = calendar.startOfDay(for:anchor)
+        let start = calendar.startOfDay(for:weekBinding?.wrappedValue ?? anchor)
         let offset = (calendar.component(.weekday,from:start) + 5) % 7
         let monday = calendar.date(byAdding:.day,value:-offset,to:start)!
         return (0..<7).map { calendar.date(byAdding:.day,value:$0,to:monday)! }
@@ -335,6 +366,7 @@ struct ScheduleWeekView: View {
         }
         return result.sorted { $0.order == $1.order ? $0.id < $1.id : $0.order < $1.order }
     }
+    private func moveWeek(_ days:Int) { anchor = calendar.date(byAdding:.day,value:days,to:weekBinding?.wrappedValue ?? anchor)!;weekBinding?.wrappedValue = anchor }
     private func color(_ kind: String) -> Color {
         switch kind { case "classroom_busy":return .orange;case "hold":return .purple;case "exception":return .red;default:return .blue }
     }
@@ -346,13 +378,13 @@ struct ScheduleWeekView: View {
                 }.frame(maxWidth:320)
                 Spacer()
                 if comparisonDate == nil {
-                Button("Previous week") { anchor = calendar.date(byAdding:.day,value:-7,to:anchor)! }
-                Button("This week") { anchor = Date() }
-                Button("Next week") { anchor = calendar.date(byAdding:.day,value:7,to:anchor)! }
+                Button("Previous week") { moveWeek(-7) }
+                Button("This week") { anchor = Date();weekBinding?.wrappedValue = anchor }
+                Button("Next week") { moveWeek(7) }
                 }
             }
             if comparisonDate == nil {
-            DatePicker("Week containing",selection:$anchor,displayedComponents:.date).environment(\.timeZone,calendar.timeZone)
+            DatePicker("Week containing",selection:Binding(get:{weekBinding?.wrappedValue ?? anchor},set:{anchor = $0;weekBinding?.wrappedValue = $0}),displayedComponents:.date).environment(\.timeZone,calendar.timeZone)
             Text(format(week[0],"MMM d") + " – " + format(week[6],"MMM d, yyyy") + " • America/Chicago").font(.headline)
             } else {
                 Text(format(comparisonDate!,"EEEE MMM d, yyyy") + " • America/Chicago").font(.headline)
@@ -388,7 +420,7 @@ struct ScheduleWeekView: View {
             if comparisonDate == nil { Text("Saved schedules, not confirmed free time. Use Plan to review task requirements and possible repair windows.").font(.caption).foregroundStyle(.secondary) }
             if let notice = record.reservation_notice, !notice.isEmpty { Text(notice).foregroundStyle(.orange) }
             if choices.isEmpty { Text("Add room schedules in List & edit to start this view.").foregroundStyle(.secondary) }
-        }.onAppear { anchor = Date(); if let selectionBinding, selectionBinding.wrappedValue != selection { selectionBinding.wrappedValue = selection } }
+        }.onAppear { anchor = weekBinding?.wrappedValue ?? Date(); if let selectionBinding, selectionBinding.wrappedValue != selection { selectionBinding.wrappedValue = selection } }
     }
 }
 

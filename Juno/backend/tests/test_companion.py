@@ -75,6 +75,8 @@ class CompanionTests(memory_tests.MemoryTests):
         self.assertIsNone(memory_request('Do you remember that fictional cutter?'))
         self.assertIsNone(memory_request('Remember when we fixed the printer?'))
         self.assertEqual(memory_request('Please remember this: Fictional note'), 'Fictional note')
+        self.assertEqual(memory_request('Hi Juno, can you remember this? Fictional note'), 'Fictional note')
+        self.assertIsNone(memory_request('Hey Juno, do you remember that printer?'))
         with self.factory() as session:
             connection = session.get(ModelConnection, self.actor.owner_id)
             session.delete(connection);session.commit()

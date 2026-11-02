@@ -1,0 +1,2147 @@
+{
+  "notice": "Declaration inventory, not evidence every state or action passed. Native, isolated API and external-account coverage are recorded separately.",
+  "controls": [
+    {
+      "file": "desktop/Companion.swift",
+      "line": 197,
+      "kind": "Button",
+      "declaration": "Button { showSidebar.toggle() } label: { Image(systemName:\"sidebar.left\") }.help(\"Show or hide navigation\")",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 203,
+      "kind": "Toggle",
+      "declaration": "Toggle(\"Meeting mode\",isOn:$store.meeting).toggleStyle(.switch).help(\"Professional tone; private-mode replies stay hidden.\")",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 210,
+      "kind": "Button",
+      "declaration": "Spacer();Button(\"Sync\") { store.reconnectShared() }.disabled(store.syncing)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 217,
+      "kind": "List",
+      "declaration": "List(selection:$store.section) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 220,
+      "kind": "Button",
+      "declaration": "Section { Button { NotificationCenter.default.post(name:Notification.Name(\"JunoSettings\"),object:nil) } label: { Label(\"Settings\u2026\",systemImage:\"gearshape\") }.buttonStyle(.plain) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 230,
+      "kind": "Button",
+      "declaration": "if let issue = store.problem { HStack { Text(issue).foregroundStyle(.orange);Spacer();Button(\"Dismiss\") { store.problem = nil } }.padding(12) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 235,
+      "kind": "alert",
+      "declaration": ".alert(\"Keep your existing chat draft?\",isPresented:Binding(get:{store.proposedChatDraft != nil},set:{if !$0 {store.proposedChatDraft = nil}})) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 236,
+      "kind": "Button",
+      "declaration": "Button(\"Keep draft\",role:.cancel) { store.proposedChatDraft = nil }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 237,
+      "kind": "Button",
+      "declaration": "Button(\"Add question to draft\") { if let proposal = store.proposedChatDraft { store.chatDraft += \"\\n\\n\" + proposal };store.proposedChatDraft = nil;store.section = \"Chat\" }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 250,
+      "kind": "Button",
+      "declaration": "Button { store.chooseConversation(nil) } label: { Label(\"New conversation\", systemImage: \"plus\") }.disabled(store.chatSending)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 251,
+      "kind": "List",
+      "declaration": "List(selection: Binding(get: { store.currentConversation }, set: { store.chooseConversation($0) })) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 253,
+      "kind": "contextMenu",
+      "declaration": "Text(row.title).lineLimit(2).tag(row.id).contextMenu {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 254,
+      "kind": "Button",
+      "declaration": "Button(\"Delete conversation\u2026\",role:.destructive) { deleteTarget = row;deleteIssue = nil }.disabled(store.offline || store.chatSending || deletingConversation)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 259,
+      "kind": "Button",
+      "declaration": "Button(\"Delete conversation\u2026\",role:.destructive) { deleteTarget = row;deleteIssue = nil }.disabled(store.offline || store.chatSending || deletingConversation)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 263,
+      "kind": "Button",
+      "declaration": "if store.conversationMore { Button(\"Older conversations\") { Task { do { try await store.loadConversations(more: true) } catch { store.report(error) } } } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 267,
+      "kind": "Button",
+      "declaration": "HStack { Text(\"Connect a local model to talk with Juno. The daily check-in works without one.\"); Spacer(); Button(\"Connect model\") { store.openSettings(\"Model\") } }.padding(12).background(.purple.opacity(0.1))",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 272,
+      "kind": "Button",
+      "declaration": "if store.olderMessages { Button(\"Load older messages\") { if let id = store.currentConversation { Task { do { try await store.loadMessages(id, older: true) } catch { store.report(error) } } } } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 285,
+      "kind": "Button",
+      "declaration": "Button(\"Review memory\") { Task { do {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 291,
+      "kind": "Button",
+      "declaration": "Button(\"Save as memory\u2026\") { store.memoryReviewOriginal = nil;store.memoryReviewMessageID = message.id;store.memoryReviewText = memoryRequestText(message.text) ?? message.text;store.memoryNotice = nil }.font(.caption).disabled(!store.connected)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 294,
+      "kind": "Button",
+      "declaration": "if message.status == \"failed\" { Button(\"Retry this reply\") { store.sendChat(retry: message) }.disabled(store.chatSending) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 301,
+      "kind": "Button",
+      "declaration": "if let notice = store.memoryNotice { HStack { Text(notice).font(.caption);Button(\"Review memory\") { store.section = \"Memories\" };Button(\"Dismiss\") { store.memoryNotice = nil } } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 301,
+      "kind": "Button",
+      "declaration": "if let notice = store.memoryNotice { HStack { Text(notice).font(.caption);Button(\"Review memory\") { store.section = \"Memories\" };Button(\"Dismiss\") { store.memoryNotice = nil } } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 304,
+      "kind": "TextEditor",
+      "declaration": "TextEditor(text: $store.chatDraft).frame(height: 75).padding(6).overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary)).accessibilityLabel(\"Message to Juno\")",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 306,
+      "kind": "Button",
+      "declaration": "Button(memoryRequestText(store.chatDraft) == nil ? \"Send\" : \"Review memory\") { store.sendChat() }.keyboardShortcut(.return, modifiers: .command).disabled(!store.connected || (store.offline && memoryRequestText(store.chatDraft) == nil) || (!store.pendingEdits.isEmpty && memoryRequestText(store.chatDraft) == nil) || (!store.modelConfigured && memoryRequestText(store.chatDraft) == nil) || store.chatSending || store.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.chatDraft.count > 6000)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 308,
+      "kind": "Button",
+      "declaration": "HStack { Text(\"\u2318 Return to send \u00b7 \\(store.chatDraft.count)/6000\").font(.caption).foregroundStyle(.secondary); Spacer(); Button(\"Refresh chat\") { if let id = store.currentConversation { Task { try? await store.loadMessages(id) } } }.disabled(store.chatSending) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 311,
+      "kind": "alert",
+      "declaration": ".alert(\"Delete this conversation?\",isPresented:Binding(get:{deleteTarget != nil},set:{if !$0 {deleteTarget = nil}})) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 312,
+      "kind": "Button",
+      "declaration": "Button(\"Cancel\",role:.cancel) { deleteTarget = nil }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 313,
+      "kind": "Button",
+      "declaration": "Button(\"Delete conversation\",role:.destructive) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 318,
+      "kind": "sheet",
+      "declaration": ".sheet(isPresented:Binding(get:{store.memoryReviewText != nil},set:{if !$0 {store.memoryReviewText = nil;store.memoryReviewOriginal = nil;store.memoryReviewMessageID = nil}})) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 336,
+      "kind": "TextField",
+      "declaration": "TextField(\"Local server\", text: $store.modelBase).textFieldStyle(.roundedBorder).accessibilityLabel(\"Local model server address\")",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 337,
+      "kind": "Button",
+      "declaration": "Button(\"Find models\") { store.probeModel() }.disabled(!store.connected || store.modelBusy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 339,
+      "kind": "Picker",
+      "declaration": "Picker(\"Chat model\", selection: $store.modelName) { ForEach(store.modelOptions, id: \\.self) { Text($0).tag($0) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 340,
+      "kind": "TextField",
+      "declaration": "} else { TextField(\"Model identifier\", text: $store.modelName).textFieldStyle(.roundedBorder) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 341,
+      "kind": "Button",
+      "declaration": "Button(\"Save connection\") { store.saveModel() }.disabled(!store.connected || store.modelBusy || store.modelName.isEmpty)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 359,
+      "kind": "DatePicker",
+      "declaration": "HStack { Text(\"Your daily check-in\").font(.title2.bold()); Spacer(); DatePicker(\"Day\", selection: $day, displayedComponents: .date).fixedSize().disabled(store.checkBusy) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 361,
+      "kind": "DisclosureGroup",
+      "declaration": "if let starter { DisclosureGroup(\"From your saved work context \u2014 review before answering\") { ScrollView { Text(starter.text).textSelection(.enabled); ForEach(starter.notices, id: \\.self) { Text($0).font(.caption).foregroundStyle(.secondary) } }.frame(maxHeight: 140) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 367,
+      "kind": "TextEditor",
+      "declaration": "TextEditor(text: $store.checkAnswer).frame(minHeight: 160).padding(8).overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary)).accessibilityLabel(\"Check-in answer\")",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 369,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Skip for now\") { store.saveAnswer(skip: true) }; Spacer(); Button(\"Save and continue\") { store.saveAnswer() }.disabled(store.checkAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.checkAnswer.count > 10000) }.disabled(store.checkBusy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 369,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Skip for now\") { store.saveAnswer(skip: true) }; Spacer(); Button(\"Save and continue\") { store.saveAnswer() }.disabled(store.checkAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.checkAnswer.count > 10000) }.disabled(store.checkBusy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 372,
+      "kind": "TextEditor",
+      "declaration": "TextEditor(text: $store.diaryDraft).frame(minHeight: 220).padding(8).overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary)).accessibilityLabel(\"Diary draft\")",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 374,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Save draft\") { store.saveDiary(confirm: false) }; Spacer(); Button(row.status == \"confirmed\" ? \"Save confirmed changes\" : \"Confirm diary\") { store.saveDiary(confirm: true) } }.disabled(store.checkBusy || store.diaryDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.diaryDraft.count > 60000)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 374,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Save draft\") { store.saveDiary(confirm: false) }; Spacer(); Button(row.status == \"confirmed\" ? \"Save confirmed changes\" : \"Confirm diary\") { store.saveDiary(confirm: true) } }.disabled(store.checkBusy || store.diaryDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.diaryDraft.count > 60000)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 378,
+      "kind": "Button",
+      "declaration": "Button(\"Reload saved check-in\") { store.loadCheckIn(day: dayKey) }.disabled(!store.connected || store.checkBusy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 439,
+      "kind": "Button",
+      "declaration": "Button { filter = selection } label: {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 449,
+      "kind": "Button",
+      "declaration": "Spacer();Button(\"Refresh overview\") { Task { await load() } }.disabled(busy || !store.connected)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 452,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Talk it through\") { store.section = \"Chat\" };Button(\"Rooms & people\") { store.section = \"Schedules\" };Button(\"Daily check-in\") { store.section = \"Check-in\" };Button(\"Remember something\") { remember = true }.disabled(!store.connected) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 452,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Talk it through\") { store.section = \"Chat\" };Button(\"Rooms & people\") { store.section = \"Schedules\" };Button(\"Daily check-in\") { store.section = \"Check-in\" };Button(\"Remember something\") { remember = true }.disabled(!store.connected) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 452,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Talk it through\") { store.section = \"Chat\" };Button(\"Rooms & people\") { store.section = \"Schedules\" };Button(\"Daily check-in\") { store.section = \"Check-in\" };Button(\"Remember something\") { remember = true }.disabled(!store.connected) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 452,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Talk it through\") { store.section = \"Chat\" };Button(\"Rooms & people\") { store.section = \"Schedules\" };Button(\"Daily check-in\") { store.section = \"Check-in\" };Button(\"Remember something\") { remember = true }.disabled(!store.connected) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 465,
+      "kind": "Picker",
+      "declaration": "HStack { Picker(\"Show\",selection:$filter) { Text(\"Due / overdue\").tag(\"Due / overdue\");Text(\"Recorded blockers\").tag(\"Recorded blockers\");Text(\"All unfinished\").tag(\"All unfinished\") };TextField(\"Find an issue\",text:$search).textFieldStyle(.roundedBorder) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 465,
+      "kind": "TextField",
+      "declaration": "HStack { Picker(\"Show\",selection:$filter) { Text(\"Due / overdue\").tag(\"Due / overdue\");Text(\"Recorded blockers\").tag(\"Recorded blockers\");Text(\"All unfinished\").tag(\"All unfinished\") };TextField(\"Find an issue\",text:$search).textFieldStyle(.roundedBorder) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 469,
+      "kind": "Button",
+      "declaration": "HStack { Text(task.title).font(.headline);Spacer();Button(\"Review\") { store.planningTaskID = task.id;store.section = \"Plan\" } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 476,
+      "kind": "Button",
+      "declaration": "Button(\"Open all TaskDock records\") { store.section = \"TaskDock\" }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 480,
+      "kind": "Button",
+      "declaration": "GroupBox(\"Start with your work context\") { VStack(alignment:.leading,spacing:10) { Text(\"No TaskDock snapshot is available yet. Connect TaskDock to see issues and deadlines here.\");Button(\"Open TaskDock\") { store.section = \"TaskDock\" } }.padding(12).frame(maxWidth:.infinity,alignment:.leading) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 492,
+      "kind": "Button",
+      "declaration": "Button(\"Review schedules\") { store.section = \"Schedules\" }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 499,
+      "kind": "sheet",
+      "declaration": ".sheet(isPresented:$remember) { Editor(store:store,original:nil) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 512,
+      "kind": "Picker",
+      "declaration": "case \"Appearance\": VStack(alignment:.leading,spacing:16) { Picker(\"Appearance\",selection:$appearance) { Text(\"Follow system\").tag(\"system\");Text(\"Light\").tag(\"light\");Text(\"Dark\").tag(\"dark\") };Text(\"Juno uses standard Mac fonts and controls. The system\u2019s accessibility settings remain in effect.\").foregroundStyle(.secondary) }.padding(24).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 513,
+      "kind": "Toggle",
+      "declaration": "case \"Conversation\": VStack(alignment:.leading,spacing:16) { Toggle(\"Meeting mode\",isOn:$store.meeting);Text(\"Meeting mode uses a professional tone and hides private-mode replies. You control when it changes.\").foregroundStyle(.secondary) }.padding(24).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Companion.swift",
+      "line": 519,
+      "kind": "List",
+      "declaration": "List(selection:$store.settingsSection) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 109,
+      "kind": "Picker",
+      "declaration": "Picker(\"Connection route\",selection:$route) { Text(\"Through TaskDock\").tag(\"taskdock\");Text(\"Direct programs\").tag(\"direct\") }.pickerStyle(.segmented).padding(20)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 302,
+      "kind": "TextField",
+      "declaration": "TextField(\"OAuth client ID\",text:$saved.clientID).disabled(busy || waiting).onChange(of:saved.clientID) { _ in reviewed = false }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 304,
+      "kind": "SecureField",
+      "declaration": "SecureField(\"Client secret (blank uses saved value)\",text:$secretField).disabled(busy || waiting)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 305,
+      "kind": "Button",
+      "declaration": "Button(\"Load Google Desktop client JSON\u2026\") { importGoogleClient() }.disabled(busy || waiting)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 306,
+      "kind": "TextField",
+      "declaration": "} else { TextField(\"Tenant: organizations, common, or approved tenant ID\",text:$saved.tenant).disabled(busy || waiting) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 308,
+      "kind": "Button",
+      "declaration": "Button(\"Save app setup\") { busy = true;Task { defer { busy = false };do { try await saveForm();notice = \"Setup saved in this Mac's Keychain. Sign in when ready.\" } catch { record(error) } } }.disabled(busy || waiting)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 309,
+      "kind": "Button",
+      "declaration": "Button(\"Sign in for read access\u2026\") { startSignIn() }.disabled(busy || waiting || saved.clientID.isEmpty)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 310,
+      "kind": "Button",
+      "declaration": "if waiting { Button(\"Cancel sign-in\") { cancelSignIn();notice = \"Sign-in cancelled in Juno. You can close the provider page.\" } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 312,
+      "kind": "DisclosureGroup",
+      "declaration": "if !saved.scope.isEmpty { DisclosureGroup(\"Granted authorization scopes\") { Text(saved.scope).font(.caption).textSelection(.enabled) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 314,
+      "kind": "SecureField",
+      "declaration": "SecureField(provider == .slack ? \"Approved Slack token (blank uses Keychain)\" : \"Approved Smartsheet API token (blank uses Keychain)\",text:$tokenField).disabled(busy || waiting).onChange(of:tokenField) { _ in reviewed = false }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 315,
+      "kind": "Button",
+      "declaration": "Button(\"Save credential in Keychain\") { busy = true;Task { defer { busy = false };do { try await saveForm();notice = \"Credential saved on this Mac. Discover and review the account before reading content.\" } catch { record(error) } } }.disabled(busy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 317,
+      "kind": "Button",
+      "declaration": "Button(\"Discover account and resources\") { discoverResources() }.disabled(busy || waiting || cooldown)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 327,
+      "kind": "TextField",
+      "declaration": "TextField(\"in:inbox is:unread\",text:$saved.query).onChange(of:saved.query) { _ in reviewed = false }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 332,
+      "kind": "TextField",
+      "declaration": "TextField(\"Filter discovered resources\",text:$resourceFilter)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 334,
+      "kind": "Toggle",
+      "declaration": "Toggle(resource.label,isOn:Binding(get:{ saved.resources.contains(resource.id) },set:{ yes in",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 343,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Enter exact resource IDs instead\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 344,
+      "kind": "TextField",
+      "declaration": "TextField(provider == .google_chat ? \"spaces/SPACE_ID, spaces/ANOTHER_ID\" : \"Comma-separated resource IDs\",text:$manualIDs).onChange(of:manualIDs) { _ in reviewed = false }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 350,
+      "kind": "DatePicker",
+      "declaration": "VStack(alignment:.leading) { Text(\"From\").font(.caption);DatePicker(\"From\",selection:dayBinding(\\.start),displayedComponents:.date).labelsHidden() }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 351,
+      "kind": "DatePicker",
+      "declaration": "VStack(alignment:.leading) { Text(\"Until (not included)\").font(.caption);DatePicker(\"Until\",selection:dayBinding(\\.end),displayedComponents:.date).labelsHidden() }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 353,
+      "kind": "TextField",
+      "declaration": "TextField(\"IANA timezone\",text:$saved.zone)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 356,
+      "kind": "Toggle",
+      "declaration": "if provider == .slack { Toggle(\"Include readable replies to parents in this window\",isOn:$saved.includeThreads);Text(\"Replies to older parents may be missing. Bot/user scope and provider retention limits still apply.\").font(.caption) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 357,
+      "kind": "Toggle",
+      "declaration": "Toggle(\"I reviewed this account, resource selection and coverage.\",isOn:$reviewed).toggleStyle(.checkbox).disabled(saved.accountID.isEmpty || busy || waiting)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 358,
+      "kind": "Button",
+      "declaration": "Button(\"Refresh read-only copy\") { refresh() }.disabled(busy || waiting || !reviewed || cooldown)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 366,
+      "kind": "Picker",
+      "declaration": "Picker(\"Program\",selection:$provider) { ForEach(WorkProvider.allCases) { p in Text(p.label).tag(p) } }.disabled(busy || waiting)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 377,
+      "kind": "Button",
+      "declaration": "Button(\"Disconnect and forget this Mac's credential\u2026\",role:.destructive) { forget = true }.disabled(busy || waiting)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 387,
+      "kind": "alert",
+      "declaration": ".alert(\"Forget this connection on this Mac?\",isPresented:$forget) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 388,
+      "kind": "Button",
+      "declaration": "Button(\"Cancel\",role:.cancel) {}",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 389,
+      "kind": "Button",
+      "declaration": "Button(\"Disconnect and forget\",role:.destructive) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 468,
+      "kind": "TextField",
+      "declaration": "TextField(\"Local TaskDock API address\",text:$origin).disabled(busy).onChange(of:origin) { _ in catalog = nil;reviewed = false }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 469,
+      "kind": "SecureField",
+      "declaration": "SecureField(\"Dedicated Juno token (blank uses Juno's saved TaskDock key)\",text:$tokenField).disabled(busy).onChange(of:tokenField) { _ in catalog = nil;reviewed = false }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 470,
+      "kind": "Button",
+      "declaration": "Button(\"Discover TaskDock connections\") { discover() }.disabled(busy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 478,
+      "kind": "Button",
+      "declaration": "if let provider = WorkProvider(rawValue:source.id) { Button(\"Set up direct \" + provider.label + \" access\u2026\") { onDirect(provider) }.disabled(busy) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 483,
+      "kind": "Toggle",
+      "declaration": "ForEach(catalog.grants,id:\\.self) { kind in Toggle(label(kind),isOn:Binding(get:{ selected.contains(kind) },set:{ yes in if yes { selected.append(kind) } else { selected.removeAll { $0 == kind } };reviewed = false })).toggleStyle(.checkbox) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 485,
+      "kind": "Toggle",
+      "declaration": "Toggle(\"I reviewed this TaskDock workspace and selected saved sections.\",isOn:$reviewed).toggleStyle(.checkbox)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Connections.swift",
+      "line": 486,
+      "kind": "Button",
+      "declaration": "Button(\"Read shared saved evidence\") { readSaved() }.disabled(busy || !reviewed || selected.isEmpty)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 135,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Import a dated copy\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 137,
+      "kind": "Picker",
+      "declaration": "Picker(\"Source\",selection:$kind) { Text(\"Calendar (.ics)\").tag(\"calendar\");Text(\"Semester schedule (.csv)\").tag(\"schedules\");Text(\"Beacon alerts (.json)\").tag(\"beacon\") }.pickerStyle(.segmented)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 140,
+      "kind": "DatePicker",
+      "declaration": "VStack(alignment:.leading) { Text(\"From\").font(.caption);DatePicker(\"From\",selection:scheduleDayBinding($start),displayedComponents:.date).labelsHidden() }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 141,
+      "kind": "DatePicker",
+      "declaration": "VStack(alignment:.leading) { Text(\"Until (not included)\").font(.caption);DatePicker(\"Until\",selection:scheduleDayBinding($end),displayedComponents:.date).labelsHidden() }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 143,
+      "kind": "TextField",
+      "declaration": "TextField(\"Timezone, e.g. America/Chicago\",text:$zone)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 146,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Choose file and import\u2026\") { importFile() };Button(\"Save schedule CSV template\u2026\") { template() } }.disabled(busy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 146,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Choose file and import\u2026\") { importFile() };Button(\"Save schedule CSV template\u2026\") { template() } }.disabled(busy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 150,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Beacon connection & refresh\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 152,
+      "kind": "TextField",
+      "declaration": "TextField(\"Loopback API address\",text:$origin)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 153,
+      "kind": "SecureField",
+      "declaration": "SecureField(\"Dedicated read-only integration key (blank uses Keychain)\",text:$token)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 155,
+      "kind": "Button",
+      "declaration": "Button(\"Read Beacon alerts\") { refreshBeacon() }.disabled(busy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 156,
+      "kind": "Button",
+      "declaration": "Button(\"Forget saved key\u2026\",role:.destructive) { forgettingKey = true }.disabled(busy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 169,
+      "kind": "TextField",
+      "declaration": "TextField(\"Filter saved items\",text:$search)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 177,
+      "kind": "Button",
+      "declaration": "if store.sharedProfile == nil { Button(\"Remove copy\u2026\",role:.destructive) { deleting = source }.disabled(busy) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 187,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Recorded busy time by day (overlaps counted once)\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 194,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(row.heading + (row.location?.isEmpty == false ? \" \u00b7 \" + row.location! : \"\")) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 226,
+      "kind": "alert",
+      "declaration": "}.alert(\"Forget Beacon access on this Mac?\",isPresented:$forgettingKey) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 227,
+      "kind": "Button",
+      "declaration": "Button(\"Cancel\",role:.cancel) { }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 228,
+      "kind": "Button",
+      "declaration": "Button(\"Forget key\",role:.destructive) { let address = origin;busy = true;Task { defer { busy = false };do { try await credentialWork { try BeaconKeychain.forget(address) };token = \"\";notice = \"Saved key removed. Imported evidence remains.\" } catch { notice = \"The key could not be removed.\" } } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 230,
+      "kind": "alert",
+      "declaration": ".alert(\"Remove this imported copy?\",isPresented:Binding(get:{ deleting != nil },set:{ if !$0 { deleting = nil } })) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 231,
+      "kind": "Button",
+      "declaration": "Button(\"Cancel\",role:.cancel) { deleting = nil }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Integrations.swift",
+      "line": 232,
+      "kind": "Button",
+      "declaration": "Button(\"Remove copy\",role:.destructive) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 293,
+      "kind": "TextEditor",
+      "declaration": "TextEditor(text: $text).font(.body).frame(height: 160).padding(6).overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 295,
+      "kind": "TextField",
+      "declaration": "TextField(\"Source\", text: $source).textFieldStyle(.roundedBorder)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 296,
+      "kind": "Picker",
+      "declaration": "Picker(\"How do we know?\", selection: $confidence) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 301,
+      "kind": "Button",
+      "declaration": "Button(\"Load latest saved version\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 312,
+      "kind": "Button",
+      "declaration": "Button(\"Use latest values\") { text = latest.text;source = latest.source;confidence = latest.confidence;base = latest;comparison = nil;conflict = false;issue = nil }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 313,
+      "kind": "Button",
+      "declaration": "Button(\"Keep my draft for review\") { base = latest;comparison = nil;conflict = false;issue = \"Review your draft, then Save memory. Nothing has been overwritten.\" }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 319,
+      "kind": "Button",
+      "declaration": "Button(\"Cancel\") { dismiss() }.keyboardShortcut(.cancelAction).disabled(saving)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 321,
+      "kind": "Button",
+      "declaration": "Button(saving ? \"Saving\u2026\" : \"Save memory\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 349,
+      "kind": "TextField",
+      "declaration": "TextField(\"Search memories\", text: $store.query).focused($searchFocused).onReceive(NotificationCenter.default.publisher(for:Notification.Name(\"JunoFind\"))) { _ in if store.section == \"Memories\" { searchFocused = true } }.textFieldStyle(.roundedBorder).onSubmit { store.refresh() }.disabled(!store.connected)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 349,
+      "kind": "onSubmit",
+      "declaration": "TextField(\"Search memories\", text: $store.query).focused($searchFocused).onReceive(NotificationCenter.default.publisher(for:Notification.Name(\"JunoFind\"))) { _ in if store.section == \"Memories\" { searchFocused = true } }.textFieldStyle(.roundedBorder).onSubmit { store.refresh() }.disabled(!store.connected)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 350,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Search\") { store.refresh() }; Button(\"Clear\") { store.query = \"\"; store.refresh() } }.disabled(!store.connected || store.busy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 350,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Search\") { store.refresh() }; Button(\"Clear\") { store.query = \"\"; store.refresh() } }.disabled(!store.connected || store.busy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 351,
+      "kind": "List",
+      "declaration": "List(selection: $store.selected) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 359,
+      "kind": "Button",
+      "declaration": "if store.hasMore { Button(\"Load more\") { store.refresh(more: true) }.disabled(store.busy) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 360,
+      "kind": "Button",
+      "declaration": "Button { editRequest = MemoryEditRequest(original:nil) } label: { Label(\"Add memory\", systemImage: \"plus\") }.disabled(!store.connected || store.busy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 370,
+      "kind": "Button",
+      "declaration": "Button(\"Correct memory\") { editRequest = MemoryEditRequest(original:row) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 371,
+      "kind": "Button",
+      "declaration": "Button(\"Delete\u2026\", role: .destructive) { deleteTarget = row; deleting = true }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 383,
+      "kind": "sheet",
+      "declaration": ".sheet(item:$editRequest) { request in Editor(store:store,original:request.original).id(request.id) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 384,
+      "kind": "alert",
+      "declaration": ".alert(\"Delete this memory?\", isPresented: $deleting) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 385,
+      "kind": "Button",
+      "declaration": "Button(\"Cancel\", role: .cancel) { deleteTarget = nil }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Juno.swift",
+      "line": 386,
+      "kind": "Button",
+      "declaration": "Button(\"Delete memory\", role: .destructive) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 150,
+      "kind": "DatePicker",
+      "declaration": "DatePicker(\"Seven days starting\", selection: $day, displayedComponents: .date)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 151,
+      "kind": "Button",
+      "declaration": "Button(\"Reload saved planning\") { Task { await load() } }.disabled(busy || dirty)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 152,
+      "kind": "Button",
+      "declaration": "Button(\"Save planning\") { Task { await save() } }.disabled(busy || !dirty || store.offline)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 155,
+      "kind": "Button",
+      "declaration": "if dirty { HStack { Text(\"Unsaved planning changes\").foregroundStyle(.orange); Button(\"Discard draft and reload\") { Task { await load() } } } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 157,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Find a room and person\u2019s work window\") { RepairWindowsView(store: store, tasks: plan?.tasks ?? [], workspace: record?.workspace_id) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 159,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Legacy dated availability (\\(record.windows.count) windows)\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 169,
+      "kind": "Button",
+      "declaration": "Spacer(); Button(\"Remove\") { self.record?.windows.remove(at: index); dirty = true }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 173,
+      "kind": "Picker",
+      "declaration": "Picker(\"Window\", selection: $windowKind) { Text(\"My work\").tag(\"work\"); Text(\"Room access\").tag(\"room\"); Text(\"Staff available\").tag(\"staff\") }.frame(width: 220)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 174,
+      "kind": "TextField",
+      "declaration": "if windowKind != \"work\" { TextField(\"Exact room or employee name\", text: $windowName) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 176,
+      "kind": "DatePicker",
+      "declaration": "DatePicker(\"Start\", selection: $windowStart)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 177,
+      "kind": "DatePicker",
+      "declaration": "DatePicker(\"End\", selection: $windowEnd)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 178,
+      "kind": "Button",
+      "declaration": "Button(\"Add confirmed window\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 192,
+      "kind": "Button",
+      "declaration": "Button(\"Prioritize: \" + task.title) { record?.priority_choice = task.id; record?.priority_choice_date = dateString(day); dirty = true }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 196,
+      "kind": "TextField",
+      "declaration": "TextField(\"Find an issue from TaskDock\", text: $taskSearch).focused($searchFocused).onReceive(NotificationCenter.default.publisher(for:Notification.Name(\"JunoFind\"))) { _ in if store.section == \"Plan\" { searchFocused = true } }.textFieldStyle(.roundedBorder)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 197,
+      "kind": "Picker",
+      "declaration": "Picker(\"Show\",selection:$taskFilter) { Text(\"All issues\").tag(\"All issues\");Text(\"Needs details\").tag(\"Needs details\");Text(\"Blocked\").tag(\"Blocked\");Text(\"Ready to review\").tag(\"Ready to review\") }.frame(width:210)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 199,
+      "kind": "Button",
+      "declaration": "Button(\"Refresh tasks in TaskDock connection\") { store.section = \"TaskDock\" }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 203,
+      "kind": "Button",
+      "declaration": "Button { inspected = inspected == task.id ? nil : task.id } label: {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 214,
+      "kind": "Button",
+      "declaration": "HStack { Text(task.title).font(.headline); if plan.recommended_task_id == task.id { Text(\"Suggested next\").foregroundStyle(.green) }; Spacer(); Button(\"Discuss estimate\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 216,
+      "kind": "Button",
+      "declaration": "}; Button(\"Clarify with Juno\") { choose(task,guidedMode:true) }; Button(\"Planning details\") { choose(task) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 216,
+      "kind": "Button",
+      "declaration": "}; Button(\"Clarify with Juno\") { choose(task,guidedMode:true) }; Button(\"Planning details\") { choose(task) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 222,
+      "kind": "DisclosureGroup",
+      "declaration": "if !task.missing.isEmpty { DisclosureGroup(\"\\(task.missing.count) details to confirm\") { ForEach(task.missing,id:\\.self) { Text($0).font(.caption).foregroundStyle(.orange) } } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 240,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Source details & limits\") { VStack(alignment: .leading) { ForEach(plan.notices, id: \\.self) { Text($0).font(.caption) }; Text(plan.notice).font(.caption) }.frame(maxWidth: .infinity, alignment: .leading) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 246,
+      "kind": "Button",
+      "declaration": "Button(\"Open daily check-in\") { store.section = \"Check-in\" }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 249,
+      "kind": "Button",
+      "declaration": "Button(\"Prepare draft\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 258,
+      "kind": "TextEditor",
+      "declaration": "TextEditor(text: $weekly).frame(minHeight: 220)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 260,
+      "kind": "Button",
+      "declaration": "Button(\"Copy reviewed draft\") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(weekly, forType: .string) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 265,
+      "kind": "sheet",
+      "declaration": ".sheet(isPresented: Binding(get:{ selected != nil },set:{ if !$0 { selected = nil } }),onDismiss:{ estimateTask?.cancel();estimating = false }) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 269,
+      "kind": "Button",
+      "declaration": "HStack { Text(guided ? \"One question at a time\" : \"All task details\").font(.caption).foregroundStyle(.secondary);Spacer();Button(guided ? \"Show all fields\" : \"Guide me through this\") { guided.toggle();guideStep = 0 } }.padding(.horizontal,20).padding(.vertical,8)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 274,
+      "kind": "Button",
+      "declaration": "Button(\"Cancel\",role:.cancel) { estimateTask?.cancel();estimating = false;selected = nil }.keyboardShortcut(.cancelAction)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 276,
+      "kind": "Button",
+      "declaration": "if guided && guideStep > 0 { Button(\"Back\") { guideStep -= 1 } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 277,
+      "kind": "Button",
+      "declaration": "if guided && guideStep < 5 { Button(\"Next\") { guideStep += 1 } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 278,
+      "kind": "Button",
+      "declaration": "Button(\"Apply to draft\") { if applyFacts() { estimateTask?.cancel();estimating = false;selected = nil } }.keyboardShortcut(.defaultAction).disabled(store.offline || estimating || (guided && guideStep < 5))",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 295,
+      "kind": "TextField",
+      "declaration": "TextField(\"Estimated minutes \u2014 leave blank if unknown\",text:$estimate).textFieldStyle(.roundedBorder)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 299,
+      "kind": "TextField",
+      "declaration": "TextField(\"Room \u2014 leave blank if not room-related or unknown\",text:$facts.room).textFieldStyle(.roundedBorder)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 300,
+      "kind": "Button",
+      "declaration": "if let hint = plan?.tasks.first(where: { $0.id == selected })?.room_hint { Button(\"Use suggested room: \" + hint) { facts.room = hint };Text(\"Confirm that the suggested room is correct before applying it.\").font(.caption) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 303,
+      "kind": "TextField",
+      "declaration": "TextField(\"Possible employee \u2014 leave blank if not confirmed\",text:$facts.employee).textFieldStyle(.roundedBorder)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 307,
+      "kind": "TextField",
+      "declaration": "TextField(\"Relevant experience or training\",text:$facts.capability).textFieldStyle(.roundedBorder)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 308,
+      "kind": "Toggle",
+      "declaration": "Toggle(\"Confirmed able to work independently\",isOn:$facts.independent)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 309,
+      "kind": "Toggle",
+      "declaration": "Toggle(\"Needs my supervision / collaboration\",isOn:Binding(get:{facts.supervision ?? false},set:{facts.supervision = $0}))",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 313,
+      "kind": "TextField",
+      "declaration": "TextField(\"Blocker \u2014 parts, approval, research or access\",text:$facts.blocker).textFieldStyle(.roundedBorder)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 314,
+      "kind": "TextField",
+      "declaration": "TextField(\"Waiting on whom or what?\",text:$facts.waiting_on).textFieldStyle(.roundedBorder)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 315,
+      "kind": "TextField",
+      "declaration": "TextField(\"Next step to unblock it\",text:$facts.next_action).textFieldStyle(.roundedBorder)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 335,
+      "kind": "TextField",
+      "declaration": "HStack { TextField(\"Estimate (minutes)\", text: $estimate); TextField(\"Actual work (minutes, optional)\", text: $actual) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 336,
+      "kind": "Button",
+      "declaration": "Button(\"Suggest a duration range\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 348,
+      "kind": "Button",
+      "declaration": "Button(\"Use midpoint in this draft\") { estimate = String((suggestion.minimum + suggestion.maximum)/2) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 351,
+      "kind": "Toggle",
+      "declaration": "Toggle(\"Dean request\", isOn: $facts.dean)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 352,
+      "kind": "Toggle",
+      "declaration": "Toggle(\"Teaching or operations need\", isOn: $facts.operational)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 355,
+      "kind": "TextField",
+      "declaration": "TextField(\"Room needing confirmed access\", text: $facts.room)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 356,
+      "kind": "Button",
+      "declaration": "if let hint = plan?.tasks.first(where: { $0.id == selected })?.room_hint { Button(\"Use suggested room: \" + hint) { facts.room = hint } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 357,
+      "kind": "TextField",
+      "declaration": "TextField(\"Possible employee\", text: $facts.employee)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 358,
+      "kind": "TextField",
+      "declaration": "TextField(\"Confirmed relevant experience / capability\", text: $facts.capability)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 359,
+      "kind": "Toggle",
+      "declaration": "Toggle(\"I confirm this employee can do this independently\", isOn: $facts.independent)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 360,
+      "kind": "Toggle",
+      "declaration": "Toggle(\"Needs my supervision / collaboration\", isOn: Binding(get:{facts.supervision ?? false},set:{facts.supervision = $0}))",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 363,
+      "kind": "TextField",
+      "declaration": "TextField(\"Blocker / dependency (parts, approval, bill, research\u2026)\", text: $facts.blocker)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 364,
+      "kind": "TextField",
+      "declaration": "TextField(\"Waiting on whom or what?\", text: $facts.waiting_on)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 365,
+      "kind": "TextField",
+      "declaration": "TextField(\"Next unblocking action\", text: $facts.next_action)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 366,
+      "kind": "TextField",
+      "declaration": "TextField(\"Next check date, YYYY-MM-DD (optional)\", text: $checkDate)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 367,
+      "kind": "TextField",
+      "declaration": "TextField(\"Where we stopped and how to resume\", text: $facts.resume)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 368,
+      "kind": "Button",
+      "declaration": "Button(\"Remove saved details from draft\",role:.destructive) { record?.tasks.removeAll { $0.task_id == facts.task_id }; selected = nil; dirty = true }.disabled(store.offline)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 404,
+      "kind": "Button",
+      "declaration": "Button(\"Discuss this detail\") { clarify(question) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Planning.swift",
+      "line": 408,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Request details & source\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 50,
+      "kind": "DatePicker",
+      "declaration": "DatePicker(title,selection:Binding(get:{formatter.date(from:value) ?? Date()},set:{value = formatter.string(from:$0)}),displayedComponents:.hourAndMinute)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 115,
+      "kind": "Button",
+      "declaration": "Button(\"Reload saved schedules\") { Task { await load() } }.disabled(dirty || busy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 116,
+      "kind": "Button",
+      "declaration": "Button(\"Save schedules\") { Task { await save() } }.disabled(!dirty || busy || store.offline)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 117,
+      "kind": "Button",
+      "declaration": "if dirty { Text(\"Unsaved changes\").foregroundStyle(.orange);Button(\"Discard draft\") { Task { await load() } } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 123,
+      "kind": "Picker",
+      "declaration": "Picker(\"Schedule view\", selection:$scheduleView) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 132,
+      "kind": "DatePicker",
+      "declaration": "DatePicker(\"Compare date\",selection:$comparisonDate,displayedComponents:.date)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 134,
+      "kind": "Button",
+      "declaration": "Button(\"Previous day\") { moveComparisonDay(-1) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 135,
+      "kind": "Button",
+      "declaration": "Button(\"Today\") { comparisonDate = Date() }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 136,
+      "kind": "Button",
+      "declaration": "Button(\"Next day\") { moveComparisonDay(1) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 149,
+      "kind": "Button",
+      "declaration": "Button(\"Edit schedules and people\") { scheduleView = \"List & edit\" }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 154,
+      "kind": "Button",
+      "declaration": "HStack { VStack(alignment:.leading) { Text(p.name + \" \u2022 \" + p.status).font(.headline);Text(\"Funded limit: \\(p.weekly_limit_minutes / 60) hours \u2022 agreed hours: \" + (p.desired_minutes.map { \"\\($0 / 60)\" } ?? \"unknown\"));Text(p.notes).font(.caption).foregroundStyle(.secondary) };Spacer();Button(\"Edit\") { person = p;editingPersonName = p.name;limitHours = String(p.weekly_limit_minutes/60);desiredHours = p.desired_minutes.map { String($0/60) } ?? \"\";personEditor = true } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 156,
+      "kind": "Button",
+      "declaration": "Button(\"Add person / candidate\") { person = StaffSchedule();editingPersonName = nil;limitHours = \"20\";desiredHours = \"\";personEditor = true }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 162,
+      "kind": "Button",
+      "declaration": "HStack { VStack(alignment:.leading) { Text(scheduleKind(r.kind) + \": \" + (r.kind == \"classroom_busy\" ? r.location + \" \u2014 \" + r.name : r.name.isEmpty ? \"My normal work\" : r.name)).font(.headline);Text(r.days.sorted().map { weekdays[$0] }.joined(separator:\", \") + \"  \" + scheduleTime(r.start_time) + \"\u2013\" + scheduleTime(r.end_time));Text(r.start_date + \" through \" + r.end_date + \" \u2022 \" + r.timezone).font(.caption).foregroundStyle(.secondary) };Spacer();Button(\"Edit\") { rule = r;ruleEditor = true };Button(\"Remove rule\") { self.record?.rules.removeAll { $0.id == r.id };dirty = true } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 162,
+      "kind": "Button",
+      "declaration": "HStack { VStack(alignment:.leading) { Text(scheduleKind(r.kind) + \": \" + (r.kind == \"classroom_busy\" ? r.location + \" \u2014 \" + r.name : r.name.isEmpty ? \"My normal work\" : r.name)).font(.headline);Text(r.days.sorted().map { weekdays[$0] }.joined(separator:\", \") + \"  \" + scheduleTime(r.start_time) + \"\u2013\" + scheduleTime(r.end_time));Text(r.start_date + \" through \" + r.end_date + \" \u2022 \" + r.timezone).font(.caption).foregroundStyle(.secondary) };Spacer();Button(\"Edit\") { rule = r;ruleEditor = true };Button(\"Remove rule\") { self.record?.rules.removeAll { $0.id == r.id };dirty = true } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 164,
+      "kind": "Button",
+      "declaration": "Button(\"Add recurring schedule\") { rule = RecurringSchedule();ruleEditor = true }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 171,
+      "kind": "Button",
+      "declaration": "HStack { Text(e.day + \" \u2022 \" + scheduleKind(e.kind) + \" \u2022 \" + e.name + \" \u2022 \" + (e.closed ? \"unavailable / no classes\" : scheduleTime(e.start_time ?? \"\") + \"\u2013\" + scheduleTime(e.end_time ?? \"\")));Spacer();Button(\"Edit\") { exception = e;exceptionEditor = true };Button(\"Remove exception\") { self.record?.exceptions.removeAll { $0.id == e.id };dirty = true } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 171,
+      "kind": "Button",
+      "declaration": "HStack { Text(e.day + \" \u2022 \" + scheduleKind(e.kind) + \" \u2022 \" + e.name + \" \u2022 \" + (e.closed ? \"unavailable / no classes\" : scheduleTime(e.start_time ?? \"\") + \"\u2013\" + scheduleTime(e.end_time ?? \"\")));Spacer();Button(\"Edit\") { exception = e;exceptionEditor = true };Button(\"Remove exception\") { self.record?.exceptions.removeAll { $0.id == e.id };dirty = true } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 173,
+      "kind": "Button",
+      "declaration": "Button(\"Add closure / shift exception\") { exception = DailyScheduleException();exceptionEditor = true }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 181,
+      "kind": "Button",
+      "declaration": "HStack { VStack(alignment:.leading) { Text(r.room + \" \u2022 \" + (r.employee.isEmpty ? \"My work\" : r.employee));Text(scheduleDate(r.start) + \" \u2192 \" + scheduleDate(r.end)).font(.caption) };Spacer();Button(\"Release hold\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 192,
+      "kind": "sheet",
+      "declaration": ".sheet(isPresented:$ruleEditor) { ruleForm }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 193,
+      "kind": "sheet",
+      "declaration": ".sheet(isPresented:$personEditor) { personForm }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 194,
+      "kind": "sheet",
+      "declaration": ".sheet(isPresented:$exceptionEditor) { exceptionForm }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 204,
+      "kind": "Picker",
+      "declaration": "Picker(\"Kind\",selection:$rule.kind) { Text(\"My work hours\").tag(\"work\");Text(\"Building access\").tag(\"room\");Text(\"Classroom occupied\").tag(\"classroom_busy\");Text(\"Staff shift\").tag(\"staff_available\") }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 205,
+      "kind": "TextField",
+      "declaration": "TextField(\"Room, employee or course name\",text:$rule.name)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 206,
+      "kind": "TextField",
+      "declaration": "if rule.kind == \"classroom_busy\" { TextField(\"Room location\",text:$rule.location) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 207,
+      "kind": "DatePicker",
+      "declaration": "HStack { DatePicker(\"First date\",selection:scheduleDayBinding($rule.start_date),displayedComponents:.date);DatePicker(\"Last date\",selection:scheduleDayBinding($rule.end_date),displayedComponents:.date) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 208,
+      "kind": "Toggle",
+      "declaration": "HStack { ForEach(0..<7,id:\\.self) { d in Toggle(weekdays[d],isOn:Binding(get:{rule.days.contains(d)},set:{ yes in if yes { rule.days.append(d) } else { rule.days.removeAll { $0 == d } } })).toggleStyle(.checkbox) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 210,
+      "kind": "TextField",
+      "declaration": "TextField(\"Timezone\",text:$rule.timezone)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 215,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Cancel\") { ruleEditor = false };Spacer();Button(\"Apply to draft\") { record?.rules.removeAll { $0.id == rule.id };record?.rules.append(rule);dirty = true;ruleEditor = false }.disabled(store.offline || rule.days.isEmpty || scheduleDatesIssue(rule.start_date,rule.end_date,rule.start_time,rule.end_time,rule.timezone) != nil || rule.kind != \"work\" && rule.name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || rule.kind == \"classroom_busy\" && rule.location.isEmpty) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 215,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Cancel\") { ruleEditor = false };Spacer();Button(\"Apply to draft\") { record?.rules.removeAll { $0.id == rule.id };record?.rules.append(rule);dirty = true;ruleEditor = false }.disabled(store.offline || rule.days.isEmpty || scheduleDatesIssue(rule.start_date,rule.end_date,rule.start_time,rule.end_time,rule.timezone) != nil || rule.kind != \"work\" && rule.name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || rule.kind == \"classroom_busy\" && rule.location.isEmpty) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 220,
+      "kind": "TextField",
+      "declaration": "Text(\"Person / hiring status\").font(.title2.bold());TextField(\"Name\",text:$person.name).disabled(editingPersonName != nil)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 221,
+      "kind": "Picker",
+      "declaration": "Picker(\"Status\",selection:$person.status) { Text(\"Active\").tag(\"active\");Text(\"Schedule unsettled\").tag(\"tentative\");Text(\"Candidate \u2014 not hired\").tag(\"candidate\") }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 222,
+      "kind": "TextField",
+      "declaration": "LabeledContent(\"Funded hours per week\") { TextField(\"Funded weekly limit, whole hours\",text:$limitHours).frame(width:100) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 223,
+      "kind": "TextField",
+      "declaration": "LabeledContent(\"Agreed hours, if known\") { TextField(\"Agreed hours, optional\",text:$desiredHours).frame(width:100) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 224,
+      "kind": "TextField",
+      "declaration": "TextField(\"Notes / unresolved details\",text:$person.notes)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 227,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Cancel\") { personEditor = false };Spacer();Button(\"Apply to draft\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 227,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Cancel\") { personEditor = false };Spacer();Button(\"Apply to draft\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 237,
+      "kind": "Picker",
+      "declaration": "Picker(\"Kind\",selection:$exception.kind) { Text(\"My hours\").tag(\"work\");Text(\"Building access\").tag(\"room\");Text(\"Staff shift\").tag(\"staff_available\");Text(\"Class occupancy\").tag(\"classroom_busy\") }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 238,
+      "kind": "TextField",
+      "declaration": "TextField(\"Exact room or employee name\",text:$exception.name);DatePicker(\"Date\",selection:scheduleDayBinding($exception.day),displayedComponents:.date)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 239,
+      "kind": "Toggle",
+      "declaration": "Toggle(exception.kind == \"classroom_busy\" ? \"No classes on this date\" : \"Unavailable / closed on this date\",isOn:$exception.closed)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 241,
+      "kind": "TextField",
+      "declaration": "TextField(\"Reason / note\",text:$exception.note)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 245,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Cancel\") { exceptionEditor = false };Spacer();Button(\"Apply to draft\") { record?.exceptions.removeAll { $0.id == exception.id };record?.exceptions.append(exception);dirty = true;exceptionEditor = false }.disabled(store.offline || exception.kind != \"work\" && exception.name.isEmpty || scheduleDatesIssue(exception.day,exception.day,exception.closed ? \"00:00\" : exception.start_time ?? \"\",exception.closed ? \"23:59\" : exception.end_time ?? \"\",\"America/Chicago\") != nil) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 245,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Cancel\") { exceptionEditor = false };Spacer();Button(\"Apply to draft\") { record?.exceptions.removeAll { $0.id == exception.id };record?.exceptions.append(exception);dirty = true;exceptionEditor = false }.disabled(store.offline || exception.kind != \"work\" && exception.name.isEmpty || scheduleDatesIssue(exception.day,exception.day,exception.closed ? \"00:00\" : exception.start_time ?? \"\",exception.closed ? \"23:59\" : exception.end_time ?? \"\",\"America/Chicago\") != nil) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 269,
+      "kind": "DatePicker",
+      "declaration": "HStack { DatePicker(\"Seven days starting\",selection:scheduleDayBinding($day),displayedComponents:.date);TextField(\"Minutes needed\",text:$minutes).frame(width:130) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 271,
+      "kind": "Picker",
+      "declaration": "Picker(\"Room\",selection:$room) { Text(\"Choose room\").tag(\"\");ForEach(rosterRooms,id:\\.self) { Text($0).tag($0) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 272,
+      "kind": "Picker",
+      "declaration": "Picker(\"Who\",selection:$employee) { Text(\"Me\").tag(\"\");ForEach(rosterPeople) { Text($0.name+\" \u2022 \"+$0.status).tag($0.name) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 274,
+      "kind": "Toggle",
+      "declaration": "if !employee.isEmpty { Toggle(\"Needs my supervision / collaboration\",isOn:$supervision) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 275,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Find possible windows\") { Task { await find() } }.disabled(busy || store.offline);Button(\"Manage schedules\") { store.section = \"Schedules\" };if busy { ProgressView().controlSize(.small) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 275,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Find possible windows\") { Task { await find() } }.disabled(busy || store.offline);Button(\"Manage schedules\") { store.section = \"Schedules\" };if busy { ProgressView().controlSize(.small) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 280,
+      "kind": "Picker",
+      "declaration": "Picker(\"Issue for a planning hold\",selection:$taskID) { Text(\"Explore windows only\").tag(\"\");ForEach(tasks) { Text($0.title).tag($0.id) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 285,
+      "kind": "Button",
+      "declaration": "Spacer();Button(\"Reserve reviewed task\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 294,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Source dates\") { ForEach(data.source_notices,id:\\.self) { Text($0).font(.caption) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 376,
+      "kind": "Picker",
+      "declaration": "Picker(byRoom ? \"Room\" : \"Person\",selection:Binding(get:{selection},set:{selected = $0; selectionBinding?.wrappedValue = $0})) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 381,
+      "kind": "Button",
+      "declaration": "Button(\"Previous week\") { moveWeek(-7) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 382,
+      "kind": "Button",
+      "declaration": "Button(\"This week\") { anchor = Date();weekBinding?.wrappedValue = anchor }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 383,
+      "kind": "Button",
+      "declaration": "Button(\"Next week\") { moveWeek(7) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 387,
+      "kind": "DatePicker",
+      "declaration": "DatePicker(\"Week containing\",selection:Binding(get:{weekBinding?.wrappedValue ?? anchor},set:{anchor = $0;weekBinding?.wrappedValue = $0}),displayedComponents:.date).environment(\\.timeZone,calendar.timeZone)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 394,
+      "kind": "DisclosureGroup",
+      "declaration": "if !p.notes.isEmpty { DisclosureGroup(\"Schedule notes\") { Text(p.notes).font(.caption).foregroundStyle(.secondary) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 482,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Source dates\") { ForEach(result.source_notices,id:\\.self) { Text($0).font(.caption) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 484,
+      "kind": "Button",
+      "declaration": "Button(\"Review task in Plan\") { store.section = \"Plan\" }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 486,
+      "kind": "Button",
+      "declaration": "Button(\"Refresh matching times\") { Task { await load() } }.disabled(loading || store.offline || dirty)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 553,
+      "kind": "TextField",
+      "declaration": "TextField(\"Search issues\",text:$search).textFieldStyle(.roundedBorder)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 554,
+      "kind": "Toggle",
+      "declaration": "Toggle(\"Show all rooms / unlinked issues\",isOn:$showAll)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 555,
+      "kind": "Button",
+      "declaration": "Button(\"Reload saved issues\") { Task { await load() } }.disabled(busy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 567,
+      "kind": "Button",
+      "declaration": "HStack { Text(task.title).font(.headline);Spacer();Button(\"Open planning details\") { store.planningTaskID = task.id;store.section = \"Plan\" } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 569,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Shared TaskDock request information\") { TaskDockRequestFacts(task:task) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 570,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Planning context & blockers\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Schedules.swift",
+      "line": 579,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"TaskDock record details\") { TaskDockDetails(task:task,info:snapshot.info) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 550,
+      "kind": "Button",
+      "declaration": "Button(\"Import a new pairing file\u2026\") { importInvitation() }.disabled(busy || store.syncing)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 551,
+      "kind": "Button",
+      "declaration": "Button(store.syncing ? \"Synchronizing\u2026\" : \"Reconnect and synchronize\") { store.reconnectShared() }.disabled(store.syncing)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 557,
+      "kind": "Button",
+      "declaration": "Button(\"Compare with current work Mac record\") { review(edit) }.disabled(busy || store.syncing)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 565,
+      "kind": "Button",
+      "declaration": "Button(\"Apply queued changes to the reviewed revision\") { resolve(edit,keepLaptop:true) }.disabled(reviewed == nil)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 566,
+      "kind": "Button",
+      "declaration": "Button(\"Use work Mac version for this record\u2026\",role:.destructive) { discardRecord = true }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 568,
+      "kind": "Button",
+      "declaration": "Button(\"Preserve laptop memory as a new record\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 580,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(edit.kind + \" \u00b7 \" + edit.createdAt.formatted()) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 584,
+      "kind": "Button",
+      "declaration": "Button(\"Export queued edits\u2026\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 590,
+      "kind": "Button",
+      "declaration": "Button(\"Discard queued edits and use the work Mac's versions\u2026\",role:.destructive) { discard = true }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 592,
+      "kind": "Button",
+      "declaration": "Button(\"Use standalone Juno on this Mac\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 607,
+      "kind": "Button",
+      "declaration": "Button(host.enabled ? \"Stop hosting\" : \"Host Juno on this Mac\") { toggleHost(!host.enabled) }.disabled(busy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 608,
+      "kind": "Button",
+      "declaration": "Button(\"Create laptop pairing file\u2026\") { exportInvitation() }.disabled(busy || !host.enabled)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 612,
+      "kind": "Button",
+      "declaration": "Button(\"Import work Mac pairing file\u2026\") { importInvitation() }.disabled(busy || host?.enabled == true)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 617,
+      "kind": "Button",
+      "declaration": "HStack { Text(device.label); Spacer(); if device.current { Text(\"This app\").foregroundStyle(.secondary) } else { Button(\"Revoke access\") {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 627,
+      "kind": "alert",
+      "declaration": ".alert(\"Use the work Mac version for this record?\",isPresented:$discardRecord) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 628,
+      "kind": "Button",
+      "declaration": "Button(\"Keep laptop edits\",role:.cancel) {}",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 629,
+      "kind": "Button",
+      "declaration": "Button(\"Use work Mac version\",role:.destructive) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 633,
+      "kind": "alert",
+      "declaration": ".alert(\"Discard all queued edits?\",isPresented:$discard) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 634,
+      "kind": "Button",
+      "declaration": "Button(\"Keep edits\",role:.cancel) {}",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/Shared.swift",
+      "line": 635,
+      "kind": "Button",
+      "declaration": "Button(\"Discard queued edits\",role:.destructive) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 178,
+      "kind": "Button",
+      "declaration": "HStack { Button(\"Refresh from TaskDock\") { reviewing = nil;refresh() }.disabled(busy || !store.connected); if busy { ProgressView().controlSize(.small) } }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 179,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"TaskDock connection settings\",isExpanded:$settingsExpanded) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 182,
+      "kind": "TextField",
+      "declaration": "TextField(\"Local TaskDock API address\", text: $origin).textFieldStyle(.roundedBorder)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 183,
+      "kind": "SecureField",
+      "declaration": "SecureField(\"Dedicated Juno token (leave blank to use Keychain)\", text: $token).textFieldStyle(.roundedBorder)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 186,
+      "kind": "Button",
+      "declaration": "Button(\"Connect / refresh snapshot\") { reviewing = nil; refresh() }.disabled(busy || !store.connected)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 187,
+      "kind": "Button",
+      "declaration": "Button(\"Forget saved token\u2026\",role:.destructive) { forgetting = true }.disabled(busy)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 194,
+      "kind": "Button",
+      "declaration": "Button(\"Use this workspace and installation\") { refresh(accept: true) }.disabled(busy || origin.trimmingCharacters(in: CharacterSet(charactersIn: \"/\")) != reviewOrigin)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 203,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Shared information groups\") { Text(snapshot.info.sharing?.pretty ?? \"Unknown selection\").font(.caption).textSelection(.enabled) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 214,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"TaskDock source freshness (separate from Juno\u2019s read time)\") { Text(snapshot.sources.pretty).font(.caption.monospaced()).textSelection(.enabled).frame(maxHeight: 110) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 217,
+      "kind": "TextField",
+      "declaration": "TextField(\"Filter saved tasks\", text: $search).focused($searchFocused).onReceive(NotificationCenter.default.publisher(for:Notification.Name(\"JunoFind\"))) { _ in if store.section == \"TaskDock\" { searchFocused = true } }.textFieldStyle(.roundedBorder)",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 218,
+      "kind": "List",
+      "declaration": "List(selection: $selected) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 229,
+      "kind": "Button",
+      "declaration": "Button(\"Plan this task in Juno\") { store.planningTaskID = task.id; store.section = \"Plan\" }.disabled([\"completed\",\"archived\",\"done\"].contains(task.text(\"behavior\") ?? \"\"))",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 232,
+      "kind": "Button",
+      "declaration": "if snapshot.info.capabilities[\"read_updates\"] == true { Button(\"Read updates\") { readHistory(task: task, kind: \"updates\") }.disabled(busy) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 233,
+      "kind": "Button",
+      "declaration": "if snapshot.info.capabilities[\"read_activity\"] == true { Button(\"Read activity\") { readHistory(task: task, kind: \"activity\") }.disabled(busy) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 241,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Original recorded fields\") { Text(task.fields.pretty).font(.caption.monospaced()).textSelection(.enabled) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 246,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Field definitions\", isExpanded: $definitions) { ScrollView { Text(snapshot.info.definitions.pretty).font(.caption.monospaced()).textSelection(.enabled) }.frame(maxHeight: 100) }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 252,
+      "kind": "alert",
+      "declaration": "}.alert(\"Forget TaskDock access on this Mac?\",isPresented:$forgetting) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 253,
+      "kind": "Button",
+      "declaration": "Button(\"Cancel\",role:.cancel) { }",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 254,
+      "kind": "Button",
+      "declaration": "Button(\"Forget token\",role:.destructive) {",
+      "status": "inventoried; interaction evidence required"
+    },
+    {
+      "file": "desktop/TaskDock.swift",
+      "line": 337,
+      "kind": "DisclosureGroup",
+      "declaration": "DisclosureGroup(\"Saved source comment sample (\\(comments.count))\") {",
+      "status": "inventoried; interaction evidence required"
+    }
+  ]
+}

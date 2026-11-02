@@ -114,6 +114,12 @@ struct ConnectionsWorkspace: View {
     }
 }
 
+extension ProviderVault {
+    func readAsync(_ provider:WorkProvider) async throws -> SavedConnection? { try await credentialWork { try self.read(provider) } }
+    func saveAsync(_ value:SavedConnection,provider:WorkProvider) async throws { try await credentialWork { try self.save(value,provider:provider) } }
+    func forgetAsync(_ provider:WorkProvider) async throws { try await credentialWork { try self.forget(provider) } }
+}
+
 struct DirectProviderWorkspace: View {
     @ObservedObject var store:JunoStore
     @Binding var provider:WorkProvider
@@ -145,31 +151,35 @@ struct DirectProviderWorkspace: View {
                 try await Task.sleep(nanoseconds:UInt64(max(0,retry.timeIntervalSinceNow) * 1_000_000_000))
                 try Task.checkCancellation()
                 guard provider == expectedProvider,saved.retryAt == retry else { return }
-                saved.retryAt = nil;try? vault.save(saved,provider:provider)
+                saved.retryAt = nil;try? await vault.saveAsync(saved,provider:provider)
             } catch {}
         }
     }
-    func loadSaved() {
-        do { saved = try vault.read(provider) ?? SavedConnection();tokenField = "";secretField = "";resources = [];manualIDs = "";reviewed = false;notice = nil }
+    func loadSaved() async {
+        let expected = provider
+        busy = true;defer { busy = false }
+        // Never show or reuse another provider's fields if its Keychain read fails.
+        saved = SavedConnection();tokenField = "";secretField = "";resources = [];manualIDs = "";reviewed = false
+        do { let loaded = try await vault.readAsync(expected) ?? SavedConnection();guard provider == expected else { return };saved = loaded;tokenField = "";secretField = "";resources = [];manualIDs = "";reviewed = false;notice = nil }
         catch { notice = (error as? APIProblem)?.message ?? "Saved connection unavailable." }
     }
     func loadState() async {
         do { snapshots = try JSONDecoder().decode(ConnectionSnapshots.self,from:await store.localRequest("/v1/providers/state")).items }
         catch { notice = (error as? APIProblem)?.message ?? "Saved connection status is unavailable." }
     }
-    func saveForm() throws {
+    func saveForm() async throws {
         if !tokenField.isEmpty { saved.accessToken = tokenField; saved.accountID = "";saved.accountLabel = "";saved.resources = [];reviewed = false }
         if !secretField.isEmpty { saved.clientSecret = secretField }
-        if let previous = try vault.read(provider),provider.oauth,(previous.clientID != saved.clientID || previous.clientSecret != saved.clientSecret || previous.tenant != saved.tenant) {
+        if let previous = try await vault.readAsync(provider),provider.oauth,(previous.clientID != saved.clientID || previous.clientSecret != saved.clientSecret || previous.tenant != saved.tenant) {
             saved.accessToken = "";saved.refreshToken = "";saved.expiry = nil;saved.accountID = "";saved.accountLabel = "";saved.resources = [];reviewed = false
         }
-        try vault.save(saved,provider:provider);tokenField = "";secretField = ""
+        try await vault.saveAsync(saved,provider:provider);tokenField = "";secretField = ""
     }
     func record(_ error:Error) {
         if Task.isCancelled || error is CancellationError { return }
         if let issue = error as? APIProblem {
             notice = issue.message
-            if issue.status == 429 { saved.retryAt = Date().addingTimeInterval(Double(issue.retryAfter ?? 60));try? vault.save(saved,provider:provider) }
+            if issue.status == 429 { saved.retryAt = Date().addingTimeInterval(Double(issue.retryAfter ?? 60));let value = saved;let target = provider;Task { try? await credentialWork { try vault.save(value,provider:target) } } }
         } else { notice = "The connection could not be completed. The last saved source copy has been retained." }
     }
     func token(force:Bool = false) async throws -> String {
@@ -178,16 +188,16 @@ struct DirectProviderWorkspace: View {
             guard !saved.refreshToken.isEmpty else { throw APIProblem(message:"Sign in again to authorize this program.",status:401) }
             let data = try await store.localRequest("/v1/providers/oauth/renew",method:"POST",body:["provider":provider.rawValue,"client_id":saved.clientID,"client_secret":saved.clientSecret,"tenant":saved.tenant,"refresh_token":saved.refreshToken])
             try Task.checkCancellation();guard provider == expectedProvider else { throw CancellationError() }
-            try applyTokens(JSONDecoder().decode(OAuthTokens.self,from:data))
+            try await applyTokens(JSONDecoder().decode(OAuthTokens.self,from:data))
         }
         guard !saved.accessToken.isEmpty else { throw APIProblem(message:provider.oauth ? "Save your OAuth app setup, then sign in." : "Enter a provider token first.",status:401) }
         return saved.accessToken
     }
-    func applyTokens(_ value:OAuthTokens) throws {
+    func applyTokens(_ value:OAuthTokens) async throws {
         try Task.checkCancellation()
         guard let expiry = providerDate(value.expires_at) else { throw APIProblem(message:"The provider token expiry could not be read.",status:0) }
         var next = saved;next.accessToken = value.access_token;if let refresh = value.refresh_token { next.refreshToken = refresh };next.expiry = expiry;next.scope = value.scope;next.retryAt = nil
-        try vault.save(next,provider:provider);saved = next
+        try await vault.saveAsync(next,provider:provider);saved = next
     }
     func importGoogleClient() {
         let panel = NSOpenPanel();panel.canChooseDirectories = false;panel.allowsMultipleSelection = false;panel.message = "Choose the JSON for your approved Google Desktop app OAuth client. Juno uses fixed Google endpoints and stores this setup in Keychain."
@@ -202,7 +212,7 @@ struct DirectProviderWorkspace: View {
         operationTask = Task {
             defer { busy = false }
             do {
-                try saveForm();let expectedProvider = provider
+                try await saveForm();let expectedProvider = provider
                 let response = try JSONDecoder().decode(OAuthStartReply.self,from:await store.localRequest("/v1/providers/oauth/start",method:"POST",body:["provider":provider.rawValue,"client_id":saved.clientID,"client_secret":saved.clientSecret,"tenant":saved.tenant]))
                 try Task.checkCancellation();guard provider == expectedProvider else { throw CancellationError() }
                 let address = try validatedAuthorization(response.authorization_url,provider:provider,flow:response.flow_id,client:saved.clientID)
@@ -217,7 +227,7 @@ struct DirectProviderWorkspace: View {
                             try Task.checkCancellation()
                             guard provider == expectedProvider,value.provider == expectedProvider.rawValue else { return }
                             if value.phase == "complete",let tokens = value.tokens {
-                                try applyTokens(tokens)
+                                try await applyTokens(tokens)
                                 _ = try? await store.localRequest("/v1/providers/oauth/session/"+response.flow_id+"/ack",method:"POST")
                                 flowID = nil;reviewed = false;notice = "Signed in. Credentials are saved in this Mac's Keychain. Discover resources, review the account, then refresh."
                                 return
@@ -240,7 +250,7 @@ struct DirectProviderWorkspace: View {
         operationTask = Task {
             defer { busy = false }
             do {
-                try saveForm()
+                try await saveForm()
                 func fetch(_ credential:String) async throws -> Data { try await store.localRequest("/v1/providers/"+provider.rawValue+"/discover",method:"POST",body:["token":credential]) }
                 let data:Data
                 do { data = try await fetch(token()) }
@@ -266,7 +276,7 @@ struct DirectProviderWorkspace: View {
                     saved.resources = ids
                 }
                 guard provider == .gmail || !saved.resources.isEmpty else { throw APIProblem(message:"Choose at least one resource before refreshing.",status:0) }
-                try saveForm()
+                try await saveForm()
                 let selection:[String:Any] = ["resources":saved.resources,"query":saved.query,"start":saved.start,"end":saved.end,"timezone":saved.zone,"include_threads":saved.includeThreads,"reviewed_account":saved.accountID]
                 let expectedID = current?.id
                 func fetch(_ credential:String) async throws -> Data {
@@ -280,7 +290,7 @@ struct DirectProviderWorkspace: View {
                 try Task.checkCancellation()
                 let result = try JSONDecoder().decode(ProviderRefreshReply.self,from:data)
                 if result.review_required { reviewed = false;notice = "The provider account changed. Discover again and review the account before replacing the saved copy." }
-                else { saved.retryAt = nil;try vault.save(saved,provider:provider);notice = "Read-only refresh complete. Open Evidence to review the dated copy; TaskDock tasks were not changed." }
+                else { saved.retryAt = nil;try await vault.saveAsync(saved,provider:provider);notice = "Read-only refresh complete. Open Evidence to review the dated copy; TaskDock tasks were not changed." }
             } catch { record(error) }
             await loadState()
         }
@@ -295,17 +305,21 @@ struct DirectProviderWorkspace: View {
                 Button("Load Google Desktop client JSON…") { importGoogleClient() }.disabled(busy || waiting)
             } else { TextField("Tenant: organizations, common, or approved tenant ID",text:$saved.tenant).disabled(busy || waiting) }
             HStack {
-                Button("Save app setup") { do { try saveForm();notice = "Setup saved in this Mac's Keychain. Sign in when ready." } catch { record(error) } }.disabled(busy || waiting)
+                Button("Save app setup") { busy = true;Task { defer { busy = false };do { try await saveForm();notice = "Setup saved in this Mac's Keychain. Sign in when ready." } catch { record(error) } } }.disabled(busy || waiting)
                 Button("Sign in for read access…") { startSignIn() }.disabled(busy || waiting || saved.clientID.isEmpty)
                 if waiting { Button("Cancel sign-in") { cancelSignIn();notice = "Sign-in cancelled in Juno. You can close the provider page." } }
             }
             if !saved.scope.isEmpty { DisclosureGroup("Granted authorization scopes") { Text(saved.scope).font(.caption).textSelection(.enabled) } }
         } else {
             SecureField(provider == .slack ? "Approved Slack token (blank uses Keychain)" : "Approved Smartsheet API token (blank uses Keychain)",text:$tokenField).disabled(busy || waiting).onChange(of:tokenField) { _ in reviewed = false }
-            Button("Save credential in Keychain") { do { try saveForm();notice = "Credential saved on this Mac. Discover and review the account before reading content." } catch { record(error) } }.disabled(busy)
+            Button("Save credential in Keychain") { busy = true;Task { defer { busy = false };do { try await saveForm();notice = "Credential saved on this Mac. Discover and review the account before reading content." } catch { record(error) } } }.disabled(busy)
         }
         Button("Discover account and resources") { discoverResources() }.disabled(busy || waiting || cooldown)
         if !saved.accountLabel.isEmpty { Text("Account: " + saved.accountLabel).font(.headline).textSelection(.enabled) }
+    }
+    private func dayBinding(_ path:WritableKeyPath<SavedConnection,String>) -> Binding<Date> {
+        let formatter = DateFormatter();formatter.locale = Locale(identifier:"en_US_POSIX");formatter.timeZone = TimeZone(identifier:"America/Chicago");formatter.dateFormat = "yyyy-MM-dd"
+        return Binding(get:{formatter.date(from:saved[keyPath:path]) ?? Date()},set:{saved[keyPath:path] = formatter.string(from:$0);reviewed = false})
     }
     @ViewBuilder var selectionFields:some View {
         if provider == .gmail {
@@ -333,8 +347,8 @@ struct DirectProviderWorkspace: View {
         }
         if provider.timed {
             HStack {
-                VStack(alignment:.leading) { Text("From (YYYY-MM-DD)").font(.caption);TextField("2026-10-29",text:$saved.start) }
-                VStack(alignment:.leading) { Text("Until, exclusive (YYYY-MM-DD)").font(.caption);TextField("2026-11-29",text:$saved.end) }
+                VStack(alignment:.leading) { Text("From").font(.caption);DatePicker("From",selection:dayBinding(\.start),displayedComponents:.date).labelsHidden() }
+                VStack(alignment:.leading) { Text("Until (not included)").font(.caption);DatePicker("Until",selection:dayBinding(\.end),displayedComponents:.date).labelsHidden() }
             }
             TextField("IANA timezone",text:$saved.zone)
             Text("Choose a window of 1–366 days. Missing records do not prove free time, room access, employee availability or capability.").font(.caption).foregroundStyle(.secondary)
@@ -362,13 +376,13 @@ struct DirectProviderWorkspace: View {
                 if let notice { Text(notice).foregroundStyle(.secondary).textSelection(.enabled) }
                 Button("Disconnect and forget this Mac's credential…",role:.destructive) { forget = true }.disabled(busy || waiting)
             }.padding(28).frame(maxWidth:.infinity,alignment:.leading)
-        }.task { loadSaved();await loadState() }
+        }.task { await loadSaved();await loadState() }
         .onChange(of:saved.retryAt) { _ in scheduleCooldown() }
         .onChange(of:saved.start) { _ in reviewed = false }
         .onChange(of:saved.end) { _ in reviewed = false }
         .onChange(of:saved.zone) { _ in reviewed = false }
         .onChange(of:saved.includeThreads) { _ in reviewed = false }
-        .onChange(of:provider) { _ in cancelSignIn();operationTask?.cancel();loadSaved() }
+        .onChange(of:provider) { _ in cancelSignIn();operationTask?.cancel();Task { await loadSaved() } }
         .onDisappear { cancelSignIn();operationTask?.cancel();cooldownTask?.cancel() }
         .alert("Forget this connection on this Mac?",isPresented:$forget) {
             Button("Cancel",role:.cancel) {}
@@ -377,7 +391,7 @@ struct DirectProviderWorkspace: View {
                 operationTask = Task {
                     defer { busy = false }
                     do {
-                        try vault.forget(expectedProvider)
+                        try await vault.forgetAsync(expectedProvider)
                         var body:[String:Any] = [:];if let previousID { body["expected_id"] = previousID }
                         _ = try await store.localRequest("/v1/providers/"+expectedProvider.rawValue+"/disconnect",method:"POST",body:body)
                         guard provider == expectedProvider,!Task.isCancelled else { return }
@@ -407,8 +421,9 @@ struct TaskDockBridgeWorkspace: View {
     @State private var busy = false
     @State private var notice:String?
     var current:ConnectionSnapshot? { snapshots.first { $0.kind == "taskdock_saved" } }
-    func credential() throws -> String {
-        let value = tokenField.isEmpty ? try TaskDockKeychain.read(origin) ?? "" : tokenField
+    func credential() async throws -> String {
+        let address = origin;let entered = tokenField
+        let value = entered.isEmpty ? try await credentialWork { try TaskDockKeychain.read(address) } ?? "" : entered
         guard !value.isEmpty else { throw APIProblem(message:"Pair in Juno's TaskDock tab first, or enter the dedicated Juno token created in TaskDock Settings.",status:0) }
         return value
     }
@@ -422,9 +437,9 @@ struct TaskDockBridgeWorkspace: View {
             defer { busy = false }
             do {
                 let requestedOrigin = origin
-                let key = try credential()
+                let key = try await credential()
                 let next = try JSONDecoder().decode(BridgeCatalog.self,from:await store.localRequest("/v1/taskdock/catalog",method:"POST",body:["base_url":origin,"token":key]))
-                try TaskDockKeychain.save(key,origin:requestedOrigin);tokenField = "";UserDefaults.standard.set(requestedOrigin,forKey:"taskdockOrigin")
+                try await credentialWork { try TaskDockKeychain.save(key,origin:requestedOrigin) };tokenField = "";UserDefaults.standard.set(requestedOrigin,forKey:"taskdockOrigin")
                 catalog = next;selected = next.grants;notice = next.notice
             } catch { notice = (error as? APIProblem)?.message ?? "TaskDock could not be discovered. Existing copies were retained." }
             await load()
@@ -435,7 +450,7 @@ struct TaskDockBridgeWorkspace: View {
         Task {
             defer { busy = false }
             do {
-                var body:[String:Any] = ["base_url":origin,"token":try credential(),"kinds":selected,"reviewed_workspace_id":catalog.info.workspace_id,"reviewed_device_id":catalog.info.device_id]
+                var body:[String:Any] = ["base_url":origin,"token":try await credential(),"kinds":selected,"reviewed_workspace_id":catalog.info.workspace_id,"reviewed_device_id":catalog.info.device_id]
                 if let current { body["expected_id"] = current.id }
                 let result = try JSONDecoder().decode(BridgeRefreshReply.self,from:await store.localRequest("/v1/taskdock/evidence",method:"POST",body:body))
                 if result.review_required { self.catalog = result.catalog;reviewed = false;notice = "The TaskDock identity changed. Review this workspace before replacing its saved evidence." }
@@ -453,7 +468,7 @@ struct TaskDockBridgeWorkspace: View {
                 TextField("Local TaskDock API address",text:$origin).disabled(busy).onChange(of:origin) { _ in catalog = nil;reviewed = false }
                 SecureField("Dedicated Juno token (blank uses Juno's saved TaskDock key)",text:$tokenField).disabled(busy).onChange(of:tokenField) { _ in catalog = nil;reviewed = false }
                 Button("Discover TaskDock connections") { discover() }.disabled(busy)
-                Text("Existing task access works with build 14. The source catalog and optional additional evidence require the build 15 candidate. After installing it, review sharing in TaskDock Settings → Connections → Juno. Existing task-only credentials are not automatically expanded.").font(.caption).foregroundStyle(.secondary)
+                Text("Choose which saved information Juno may read in TaskDock Settings → Juno. Provider credentials stay in TaskDock. Sharing additional information always requires your review.").font(.caption).foregroundStyle(.secondary)
                 if let catalog {
                     ForEach(catalog.sources) { source in
                         VStack(alignment:.leading,spacing:6) {

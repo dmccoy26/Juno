@@ -1,8 +1,18 @@
 # Build status
 
-Updated: October 30, 2026.
+Updated: November 1, 2026.
 
-## Portable installer — preview.11
+## Current installer — preview.12 native Mac usability
+
+Mission 10 delivers a usability increment: native sidebar and grouped Settings, local Help and workspace shortcuts, a compact Plan list with one expanded inspector, draft-preserving navigation/prompt handoff, memory correction and stale-save comparison, native schedule controls and shared day/week selection, appearance choices and background credential operations. Native testing caught and fixed a memory editor identity defect that could create a new record instead of correcting the selected one.
+
+121 backend tests pass with zero skips; native offline, schedule/planning, credential isolation/responsiveness and pinned-TLS outage/reconnect checks pass. The actual extracted/relocated installer passed bundled-runtime, dependency, schema-upgrade, persistence and privacy checks. See the [native coverage and limits](reports/native-review-2026-11-01.md), [installer report](reports/installer-preview-12.json) and [mission](missions/2026-11-01-10-native-mac-experience.md). A declaration inventory is not a claim every control/state was tested. HumanLab's terminal instrument cannot run native visual/focus scenarios; actual native inspection supplied separate evidence.
+
+The work development app at `~/Applications/Juno.app` is updated and connected with its saved TaskDock context. A read-only before/after guard verified the same owner, work-record counts, existing paired-device states and certificate/key; only the temporary local app credential rotated. The previous app bundle remains privately under `.local/host-app-before-mission10`. No work records were used for mutation tests. The separate portable desktop data root was not moved or merged.
+
+Installer: `dist/Juno-0.1.0-preview.12-macOS-arm64.pkg`; verified copy, checksum, report and instructions in `~/Downloads/Juno-0.1.0-preview.12`. Internal ad-hoc-signed preview; no Developer ID notarization. Physical laptop upgrade, real network acceptance, VoiceOver/larger-text walkthrough and high-volume performance benchmarking remain open. This is not exhaustive perfection or full beta signoff.
+
+## Previous portable installer — preview.11
 
 The Apple Silicon installer now includes the latest Plan request overview, focused clarification drafts, TaskDock controlled planning fields/version checks, chat deletion and saved-memory status through schema 0008. Bundle build is 11; installer receipt version is 0.1.0.11. The About panel reads the packaged release version. The installer retains its quit-before-update guard and keeps user data outside the application bundle.
 

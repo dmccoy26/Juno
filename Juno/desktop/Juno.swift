@@ -11,15 +11,21 @@ struct Memory: Codable, Identifiable, Equatable {
     let updated_at: String
     var source_message_id: String? = nil
     var updatedLabel: String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = formatter.date(from: updated_at) else { return updated_at }
-        return date.formatted(date: .abbreviated, time: .shortened)
+        let parser = ISO8601DateFormatter();parser.formatOptions = [.withInternetDateTime,.withFractionalSeconds]
+        var date = parser.date(from:updated_at)
+        if date == nil { parser.formatOptions = [.withInternetDateTime];date = parser.date(from:updated_at) }
+        guard let date else { return "Unknown update time" }
+        let f = DateFormatter();f.locale = Locale(identifier:"en_US_POSIX");f.timeZone = TimeZone(identifier:"America/Chicago");f.dateFormat = "MMM d, yyyy 'at' h:mm a";return f.string(from:date)
     }
 }
 struct MemoryPage: Codable { let items: [Memory]; let has_more: Bool }
 struct Handshake: Decodable { let url: String?; let token: String?; let error: String? }
 struct APIProblem: Error { let message: String; let status: Int; var retryAfter: Int? = nil }
+
+// Security.framework can wait for macOS authorization; never run it on the UI thread.
+func credentialWork<T>(_ operation: @escaping () throws -> T) async throws -> T {
+    try await Task.detached(priority:.userInitiated) { try operation() }.value
+}
 
 @MainActor
 final class JunoStore: ObservableObject {
@@ -35,6 +41,17 @@ final class JunoStore: ObservableObject {
         didSet { UserDefaults.standard.set(meeting, forKey: "meetingMode") }
     }
     @Published var section = "Today"
+    @Published var settingsSection = "Connections"
+    @Published var unsavedSections:Set<String> = []
+    func openSettings(_ section:String) {
+        settingsSection = section
+        NotificationCenter.default.post(name:Notification.Name("JunoSettings"),object:nil)
+    }
+    @Published var proposedChatDraft: String?
+    func prepareChat(_ text: String) {
+        if chatDraft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { chatDraft = text;section = "Chat" }
+        else { proposedChatDraft = text }
+    }
     @Published var planningTaskID: String?
     @Published var memoryReviewText: String?
     @Published var memoryReviewOriginal: String?
@@ -85,7 +102,7 @@ final class JunoStore: ObservableObject {
             problem = "The app is missing its service files."; return
         }
         let python = packaged ? resources + "/runtime/python/bin/python3" : root + "/.venv/bin/python"
-        let state = packaged ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Juno").path : root + "/.local"
+        let state = !packaged && Bundle.main.object(forInfoDictionaryKey:"JunoTestDataRoot") is String ? Bundle.main.object(forInfoDictionaryKey:"JunoTestDataRoot") as! String : packaged ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Juno").path : root + "/.local"
         guard FileManager.default.isExecutableFile(atPath: python) else {
             problem = "The local Juno environment is missing. Rebuild the development app after setting up its backend."; return
         }
@@ -130,7 +147,7 @@ final class JunoStore: ObservableObject {
                 }
                 self.localEndpoint = url; self.localToken = token
                 self.endpoint = url; self.token = token
-                do { try self.restoreShared() } catch { self.problem = (error as? APIProblem)?.message ?? "Shared connection could not be restored." }
+                do { try await self.restoreShared() } catch { self.problem = (error as? APIProblem)?.message ?? "Shared connection could not be restored." }
                 self.startupTask = Task {
                     for _ in 0..<40 {
                         do { try await self.load(); await self.loadCompanion(); self.startSharedMonitor(); return }
@@ -232,7 +249,7 @@ final class JunoStore: ObservableObject {
         let data = try await request(original.map { "/v1/memories/" + $0.id } ?? "/v1/memories", method: original == nil ? "POST" : "PUT", body: body)
         let saved = try JSONDecoder().decode(Memory.self, from: data)
         query = ""; items.removeAll { $0.id == saved.id }; items.insert(saved, at: 0); selected = saved.id
-        do { try await load() } catch { problem = "Your memory was saved, but the list could not refresh. Try Refresh." }
+        do { try await load() } catch { problem = "Your memory was saved, but the list could not refresh. Use Search to refresh the list." }
         messages.removeAll { $0.role == "assistant" }
         if let id = currentConversation { try? await loadMessages(id) }
         return saved
@@ -240,7 +257,7 @@ final class JunoStore: ObservableObject {
     func delete(_ row: Memory) async throws {
         _ = try await request("/v1/memories/\(row.id)?expected_revision=\(row.revision)", method: "DELETE")
         selected = nil; items.removeAll { $0.id == row.id }
-        do { try await load() } catch { problem = "The memory was deleted, but the list could not refresh. Try Refresh." }
+        do { try await load() } catch { problem = "The memory was deleted, but the list could not refresh. Use Search to refresh the list." }
         messages.removeAll { $0.role == "assistant" }
         if let id = currentConversation { try? await loadMessages(id) }
     }
@@ -258,8 +275,12 @@ struct Editor: View {
     @State var confidence: String
     @State private var saving = false
     @State private var issue: String?
+    @State private var base:Memory?
+    @State private var conflict = false
+    @State private var comparison:Memory?
     init(store: JunoStore, original: Memory?, initialText: String = "", sourceMessageID: String? = nil, onSaved: ((Memory) -> Void)? = nil) {
         self.store = store; self.original = original;self.onSaved = onSaved;self.sourceMessageID = sourceMessageID
+        _base = State(initialValue:original)
         _text = State(initialValue: original?.text ?? initialText)
         _source = State(initialValue: original?.source ?? "Manual entry")
         _confidence = State(initialValue: original?.confidence ?? "confirmed")
@@ -276,25 +297,47 @@ struct Editor: View {
                 Text("Confirmed by you").tag("confirmed"); Text("Observed in a source").tag("observed"); Text("An assumption to verify").tag("inferred")
             }
             if let issue { Text(issue).foregroundStyle(.red).textSelection(.enabled) }
+            if conflict {
+                Button("Load latest saved version") {
+                    guard let base else { return };saving = true
+                    Task { defer { saving = false };do { comparison = try await store.decode(Memory.self,"/v1/memories/"+base.id) } catch { issue = (error as? APIProblem)?.message ?? "The saved version could not be loaded. Your draft remains here." } }
+                }.disabled(saving)
+            }
+            if let latest = comparison {
+                GroupBox("Latest saved version · revision \(latest.revision)") {
+                    VStack(alignment:.leading,spacing:6) {
+                        ScrollView { Text(latest.text).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading) }.frame(height:65)
+                        Text("Source: " + latest.source + " • " + latest.confidence).font(.caption).lineLimit(1).help(latest.source)
+                        HStack {
+                            Button("Use latest values") { text = latest.text;source = latest.source;confidence = latest.confidence;base = latest;comparison = nil;conflict = false;issue = nil }
+                            Button("Keep my draft for review") { base = latest;comparison = nil;conflict = false;issue = "Review your draft, then Save memory. Nothing has been overwritten." }
+                        }.font(.caption)
+                    }
+                }
+            }
             HStack {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction).disabled(saving)
                 Spacer()
                 Button(saving ? "Saving…" : "Save memory") {
                     saving = true
                     Task {
-                        do { let saved = try await store.save(original: original, text: text, source: source, confidence: confidence,sourceMessageID:sourceMessageID);onSaved?(saved); dismiss() }
-                        catch { issue = (error as? APIProblem)?.message ?? "Could not save. Your draft is still here."; saving = false }
+                        do { let saved = try await store.save(original: base, text: text, source: source, confidence: confidence,sourceMessageID:sourceMessageID);onSaved?(saved); dismiss() }
+                        catch { issue = (error as? APIProblem)?.message ?? "Could not save. Your draft is still here."; saving = false;conflict = (error as? APIProblem)?.status == 409 && base != nil && !store.offline }
                     }
                 }.keyboardShortcut(.defaultAction).disabled(saving || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || text.count > 10000 || source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || source.count > 500)
             }
-        }.padding(28).frame(width: 560).interactiveDismissDisabled(saving)
+        }.padding(28).frame(width: 600).interactiveDismissDisabled(saving)
+        .onAppear { store.unsavedSections.insert("memory review") }
+        .onDisappear { store.unsavedSections.remove("memory review") }
     }
 }
 
+struct MemoryEditRequest: Identifiable { let id = UUID(); let original:Memory? }
+
 struct MemoryWorkspace: View {
     @ObservedObject var store: JunoStore
-    @State private var editing = false
-    @State private var draft: Memory?
+    @State private var editRequest:MemoryEditRequest?
+    @FocusState private var searchFocused:Bool
     @State private var deleting = false
     @State private var deleteTarget: Memory?
     @State private var removing = false
@@ -303,7 +346,7 @@ struct MemoryWorkspace: View {
             HSplitView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("MEMORY").font(.caption.bold()).foregroundStyle(.secondary)
-                    TextField("Search memories", text: $store.query).textFieldStyle(.roundedBorder).onSubmit { store.refresh() }.disabled(!store.connected)
+                    TextField("Search memories", text: $store.query).focused($searchFocused).onReceive(NotificationCenter.default.publisher(for:Notification.Name("JunoFind"))) { _ in if store.section == "Memories" { searchFocused = true } }.textFieldStyle(.roundedBorder).onSubmit { store.refresh() }.disabled(!store.connected)
                     HStack { Button("Search") { store.refresh() }; Button("Clear") { store.query = ""; store.refresh() } }.disabled(!store.connected || store.busy)
                     List(selection: $store.selected) {
                         ForEach(store.items) { row in
@@ -314,7 +357,7 @@ struct MemoryWorkspace: View {
                         }
                     }.listStyle(.sidebar)
                     if store.hasMore { Button("Load more") { store.refresh(more: true) }.disabled(store.busy) }
-                    Button { draft = nil; editing = true } label: { Label("Add memory", systemImage: "plus") }.disabled(!store.connected || store.busy)
+                    Button { editRequest = MemoryEditRequest(original:nil) } label: { Label("Add memory", systemImage: "plus") }.disabled(!store.connected || store.busy)
                 }.padding(16).frame(minWidth: 250, idealWidth: 300, maxWidth: 370)
                 VStack(alignment: .leading, spacing: 20) {
                     if let row = store.selectedMemory {
@@ -324,7 +367,7 @@ struct MemoryWorkspace: View {
                         Text("Source: \(row.source)").textSelection(.enabled)
                         Text("Updated \(row.updatedLabel) · Revision \(row.revision)").font(.caption).foregroundStyle(.secondary)
                         HStack {
-                            Button("Correct memory") { draft = row; editing = true }
+                            Button("Correct memory") { editRequest = MemoryEditRequest(original:row) }
                             Button("Delete…", role: .destructive) { deleteTarget = row; deleting = true }
                         }.disabled(removing || !store.connected)
                     } else {
@@ -337,8 +380,7 @@ struct MemoryWorkspace: View {
                 }.padding(32).frame(minWidth: 400, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }.frame(minWidth: 850, minHeight: 570)
-        .toolbar { Button { store.refresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }.disabled(store.busy || store.endpoint == nil) }
-        .sheet(isPresented: $editing) { Editor(store: store, original: draft) }
+        .sheet(item:$editRequest) { request in Editor(store:store,original:request.original).id(request.id) }
         .alert("Delete this memory?", isPresented: $deleting) {
             Button("Cancel", role: .cancel) { deleteTarget = nil }
             Button("Delete memory", role: .destructive) {
@@ -350,31 +392,77 @@ struct MemoryWorkspace: View {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     let store = JunoStore()
     var window: NSWindow?
+    var settingsWindow: NSWindow?
+    var helpWindow: NSWindow?
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         let menu = NSMenu(); let appItem = NSMenuItem(); menu.addItem(appItem)
         let appMenu = NSMenu(); appItem.submenu = appMenu
         appMenu.addItem(withTitle: "About Juno", action: #selector(about), keyEquivalent: "").target = self
+        appMenu.addItem(withTitle:"Settings…",action:#selector(showSettings),keyEquivalent:",").target = self
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Juno", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(withTitle: "Quit Juno", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let editItem = NSMenuItem(); menu.addItem(editItem); let edit = NSMenu(title: "Edit"); editItem.submenu = edit
         for (name, action, key) in [("Undo", "undo:", "z"), ("Cut", "cut:", "x"), ("Copy", "copy:", "c"), ("Paste", "paste:", "v"), ("Select All", "selectAll:", "a")] { edit.addItem(withTitle: name, action: Selector(action), keyEquivalent: key) }
+        let find = edit.addItem(withTitle:"Find…",action:#selector(findInWorkspace),keyEquivalent:"f");find.target = self
+        let redo = edit.addItem(withTitle:"Redo",action:Selector(("redo:")),keyEquivalent:"z");redo.keyEquivalentModifierMask = [.command,.shift]
+        let viewItem = NSMenuItem();menu.addItem(viewItem);let view = NSMenu(title:"View");viewItem.submenu = view
+        for (index,title) in ["Today","Chat","Plan","Schedules","Check-in","Memories","TaskDock","Evidence"].enumerated() {
+            let item = view.addItem(withTitle:title == "Check-in" ? "Daily check-in" : title,action:#selector(navigate(_:)),keyEquivalent:String(index+1));item.representedObject = title;item.target = self
+        }
         let windowItem = NSMenuItem(); menu.addItem(windowItem); let windows = NSMenu(title: "Window"); windowItem.submenu = windows; NSApp.windowsMenu = windows
-        windows.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        windows.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windows.addItem(withTitle: "Minimize", action: #selector(minimizeCurrent(_:)), keyEquivalent: "m").target = self
+        windows.addItem(withTitle: "Close Window", action: #selector(closeCurrent(_:)), keyEquivalent: "w").target = self
+        windows.addItem(withTitle:"Bring All to Front",action:#selector(NSApplication.arrangeInFront(_:)),keyEquivalent:"").target = NSApp
+        let helpItem = NSMenuItem();menu.addItem(helpItem);let help = NSMenu(title:"Help");helpItem.submenu = help;NSApp.helpMenu = help
+        help.addItem(withTitle:"Juno Help",action:#selector(showHelp),keyEquivalent:"?").target = self
+        NotificationCenter.default.addObserver(self,selector:#selector(showSettings),name:Notification.Name("JunoSettings"),object:nil)
         NSApp.mainMenu = menu
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1080, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "Juno"; window.isReleasedWhenClosed = false
+        window.title = Bundle.main.object(forInfoDictionaryKey:"JunoTestDataRoot") == nil ? "Juno" : "Juno — Interaction Lab"; window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: RootView(store: store)); self.window = window
         window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
         store.start()
     }
-    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Juno", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "JunoReleaseVersion") as? String ?? "0.1.0-preview.10", .credits: NSAttributedString(string: "Native Mac work companion\nChat, check-ins and memory · local shared host\nEncrypted work-Mac connection with offline memory and diary edits")]) }
+    private var activeWindow:NSWindow? { NSApp.keyWindow ?? NSApp.mainWindow ?? window }
+    func validateMenuItem(_ item:NSMenuItem) -> Bool {
+        if item.action == #selector(findInWorkspace) { return ["Plan","Memories","TaskDock"].contains(store.section) && (NSApp.keyWindow == nil || NSApp.keyWindow === window) }
+        if item.action == #selector(minimizeCurrent(_:)) { return activeWindow?.isVisible == true && activeWindow?.isMiniaturized == false }
+        if item.action == #selector(closeCurrent(_:)) { return activeWindow?.isVisible == true }
+        return true
+    }
+    @objc func minimizeCurrent(_ sender:Any?) { activeWindow?.miniaturize(sender) }
+    @objc func closeCurrent(_ sender:Any?) { activeWindow?.performClose(sender) }
+    @objc func navigate(_ item:NSMenuItem) { NSApp.unhide(nil);NSApp.activate(ignoringOtherApps:true); if let key = item.representedObject as? String { store.section = key };window?.deminiaturize(nil);window?.makeKeyAndOrderFront(nil) }
+    @objc func showSettings() {
+        if settingsWindow == nil {
+            let panel = NSWindow(contentRect:NSRect(x:0,y:0,width:860,height:650),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
+            panel.title = "Juno Settings";panel.isReleasedWhenClosed = false
+            panel.contentView = NSHostingView(rootView:JunoSettingsView(store:store));panel.center();settingsWindow = panel
+        }
+        settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+    @objc func showHelp() {
+        if helpWindow == nil {
+            let panel = NSWindow(contentRect:NSRect(x:0,y:0,width:640,height:540),styleMask:[.titled,.closable,.resizable],backing:.buffered,defer:false)
+            panel.title = "Juno Help";panel.isReleasedWhenClosed = false;panel.contentView = NSHostingView(rootView:JunoHelpView());panel.center();helpWindow = panel
+        }
+        helpWindow?.makeKeyAndOrderFront(nil)
+    }
+    @objc func findInWorkspace() { window?.makeKeyAndOrderFront(nil);NotificationCenter.default.post(name:Notification.Name("JunoFind"),object:nil) }
+    @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Juno", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "JunoReleaseVersion") as? String ?? "Development", .credits: NSAttributedString(string: "Native Mac work companion\nChat, check-ins and memory · local shared host\nEncrypted work-Mac connection with offline memory and diary edits")]) }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { window?.makeKeyAndOrderFront(nil); return true }
+    func applicationShouldTerminate(_ sender:NSApplication) -> NSApplication.TerminateReply {
+        guard !store.unsavedSections.isEmpty else { return .terminateNow }
+        let alert = NSAlert();alert.messageText = "You have unsaved changes"
+        alert.informativeText = "Return to " + store.unsavedSections.sorted().joined(separator:" and ") + " to save your draft, or quit and discard those draft changes. Your saved records are kept."
+        alert.addButton(withTitle:"Return to Juno");alert.addButton(withTitle:"Quit without saving")
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateCancel : .terminateNow
+    }
     func applicationWillTerminate(_ notification: Notification) { store.stop() }
 }
 

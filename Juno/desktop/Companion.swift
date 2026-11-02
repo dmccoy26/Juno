@@ -17,7 +17,7 @@ struct CheckInRecord: Decodable {
 }
 
 func memoryRequestText(_ text: String) -> String? {
-    let pattern = #"^\s*(?:please\s+)?(?:(?:can|could|will)\s+you\s+)?(?:please\s+)?remember\s+(?:that\b|this\b)[:?,\s]*(.*)$"#
+    let pattern = #"^\s*(?:(?:hi|hey|hello)\s+juno[,!:.?\s]+)?(?:please\s+)?(?:(?:can|could|will)\s+you\s+)?(?:please\s+)?remember\s+(?:that\b|this\b)[:?,\s]*(.*)$"#
     guard let regex = try? NSRegularExpression(pattern:pattern,options:[.caseInsensitive,.dotMatchesLineSeparators]),let match = regex.firstMatch(in:text,range:NSRange(text.startIndex...,in:text)),let range = Range(match.range(at:1),in:text) else { return nil }
     return String(text[range]).trimmingCharacters(in:.whitespacesAndNewlines)
 }
@@ -168,24 +168,14 @@ extension JunoStore {
 
 struct RootView: View {
     @ObservedObject var store: JunoStore
-    @State private var showSidebar = true
+    @AppStorage("sidebarVisible") private var showSidebar = true
+    @State private var visited = ["Today"]
+    @AppStorage("appearance") private var appearance = "system"
     private let daily = [("Today","sun.max"),("Chat","bubble.left.and.bubble.right"),("Plan","checklist"),("Schedules","calendar"),("Check-in","square.and.pencil"),("Memories","book.closed")]
     private let sources = [("TaskDock","tray.full"),("Evidence","doc.text.magnifyingglass")]
-    private let setup = [("Connections","link"),("Model","sparkles"),("Computers","desktopcomputer")]
     private func title(_ key: String) -> String { ["Check-in":"Daily check-in","Model":"Local model" ][key] ?? key }
-    private func links(_ label: String, _ rows: [(String,String)]) -> some View {
-        VStack(alignment:.leading,spacing:4) {
-            Text(label.uppercased()).font(.caption.bold()).foregroundStyle(.secondary).padding(.horizontal,10).padding(.top,14)
-            ForEach(rows,id:\.0) { key,icon in
-                Button { store.section = key } label: {
-                    Label(title(key),systemImage:icon).frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,10).padding(.vertical,8)
-                        .background(store.section == key ? Color.accentColor.opacity(0.16) : Color.clear).clipShape(RoundedRectangle(cornerRadius:7))
-                }.buttonStyle(.plain).accessibilityLabel(title(key) + (store.section == key ? ", selected" : ""))
-            }
-        }
-    }
-    @ViewBuilder private var workspace: some View {
-        switch store.section {
+    @ViewBuilder private func workspace(_ key:String) -> some View {
+        switch key {
         case "Today": TodayWorkspace(store:store)
         case "Schedules": SchedulesWorkspace(store:store)
         case "Plan": PlanningWorkspace(store:store)
@@ -224,16 +214,28 @@ struct RootView: View {
             Divider()
             HStack(spacing:0) {
                 if showSidebar {
-                    ScrollView { VStack(alignment:.leading,spacing:4) { links("My workday",daily);links("Saved sources",sources);links("Setup",setup);Spacer(minLength:20) }.padding(10) }
-                        .frame(width:178).background(Color.secondary.opacity(0.035))
+                    List(selection:$store.section) {
+                        Section("My workday") { ForEach(daily,id:\.0) { key,icon in Label(title(key),systemImage:icon).tag(key) } }
+                        Section("Saved sources") { ForEach(sources,id:\.0) { key,icon in Label(title(key),systemImage:icon).tag(key) } }
+                        Section { Button { NotificationCenter.default.post(name:Notification.Name("JunoSettings"),object:nil) } label: { Label("Settings…",systemImage:"gearshape") }.buttonStyle(.plain) }
+                    }.listStyle(.sidebar).frame(width:178)
                     Divider()
                 }
-                workspace.frame(maxWidth:.infinity,maxHeight:.infinity)
+                ZStack { ForEach(visited,id:\.self) { key in
+                    workspace(key).frame(maxWidth:.infinity,maxHeight:.infinity)
+                        .opacity(store.section == key ? 1 : 0).disabled(store.section != key)
+                        .allowsHitTesting(store.section == key).accessibilityHidden(store.section != key)
+                } }
             }
             if let issue = store.problem { HStack { Text(issue).foregroundStyle(.orange);Spacer();Button("Dismiss") { store.problem = nil } }.padding(12) }
             Divider()
-            HStack { Text(store.sharedProfile == nil ? "Saved on this Mac" : "Work Mac + offline laptop copy");Spacer();Text("Juno 0.1.0-preview.10") }.font(.caption).foregroundStyle(.secondary).padding(.horizontal,14).padding(.vertical,8)
-        }.frame(minWidth:1040,minHeight:650)
+            HStack { Text(store.sharedProfile == nil ? "Saved on this Mac" : "Work Mac + offline laptop copy");Spacer();Text("Juno " + (Bundle.main.object(forInfoDictionaryKey:"JunoReleaseVersion") as? String ?? "Development")) }.font(.caption).foregroundStyle(.secondary).padding(.horizontal,14).padding(.vertical,8)
+        }.frame(minWidth:1000,minHeight:650).preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
+        .onChange(of:store.section) { key in if !visited.contains(key) { visited.append(key) } }
+        .alert("Keep your existing chat draft?",isPresented:Binding(get:{store.proposedChatDraft != nil},set:{if !$0 {store.proposedChatDraft = nil}})) {
+            Button("Keep draft",role:.cancel) { store.proposedChatDraft = nil }
+            Button("Add question to draft") { if let proposal = store.proposedChatDraft { store.chatDraft += "\n\n" + proposal };store.proposedChatDraft = nil;store.section = "Chat" }
+        } message: { Text("Your unsent message is still here. You can add the planning question below it or keep working on your message.") }
     }
 }
 
@@ -262,7 +264,7 @@ struct ChatWorkspace: View {
             }.padding(14).frame(minWidth: 210, idealWidth: 250, maxWidth: 300)
             VStack(alignment: .leading, spacing: 14) {
                 if !store.modelConfigured {
-                    HStack { Text("Connect a local model to talk with Juno. The daily check-in works without one."); Spacer(); Button("Connect model") { store.section = "Model" } }.padding(12).background(.purple.opacity(0.1))
+                    HStack { Text("Connect a local model to talk with Juno. The daily check-in works without one."); Spacer(); Button("Connect model") { store.openSettings("Model") } }.padding(12).background(.purple.opacity(0.1))
                 }
                 ScrollViewReader { reader in
                     ScrollView {
@@ -495,5 +497,49 @@ struct TodayWorkspace: View {
             }.padding(26).frame(maxWidth:1100,alignment:.leading)
         }.task(id:store.connected) { await load() }
         .sheet(isPresented:$remember) { Editor(store:store,original:nil) }
+    }
+}
+
+
+struct JunoSettingsView: View {
+    @ObservedObject var store:JunoStore
+    @AppStorage("appearance") private var appearance = "system"
+    @State private var visited = ["Connections"]
+    @ViewBuilder private func page(_ key:String) -> some View {
+        switch key {
+        case "Model": if store.sharedProfile == nil { ModelWorkspace(store:store) } else { Text("Your work Mac runs Juno’s model. Memory and diary edits work offline.").padding(24) }
+        case "Computers": ComputersWorkspace(store:store)
+        case "Appearance": VStack(alignment:.leading,spacing:16) { Picker("Appearance",selection:$appearance) { Text("Follow system").tag("system");Text("Light").tag("light");Text("Dark").tag("dark") };Text("Juno uses standard Mac fonts and controls. The system’s accessibility settings remain in effect.").foregroundStyle(.secondary) }.padding(24).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+        case "Conversation": VStack(alignment:.leading,spacing:16) { Toggle("Meeting mode",isOn:$store.meeting);Text("Meeting mode uses a professional tone and hides private-mode replies. You control when it changes.").foregroundStyle(.secondary) }.padding(24).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
+        default: ConnectionsWorkspace(store:store)
+        }
+    }
+    var body: some View {
+        HSplitView {
+            List(selection:$store.settingsSection) {
+                Label("Connections",systemImage:"link").tag("Connections")
+                Label("Local model",systemImage:"sparkles").tag("Model")
+                Label("Computers & sync",systemImage:"desktopcomputer").tag("Computers")
+                Label("Appearance",systemImage:"circle.lefthalf.filled").tag("Appearance")
+                Label("Conversation",systemImage:"bubble.left.and.bubble.right").tag("Conversation")
+            }.listStyle(.sidebar).frame(minWidth:170,idealWidth:190,maxWidth:210)
+            ZStack { ForEach(visited,id:\.self) { key in
+                page(key).opacity(store.settingsSection == key ? 1 : 0).disabled(store.settingsSection != key).allowsHitTesting(store.settingsSection == key).accessibilityHidden(store.settingsSection != key)
+            }
+            }.frame(minWidth:560,maxWidth:.infinity,maxHeight:.infinity)
+        }.frame(minWidth:780,minHeight:560).onAppear { if !visited.contains(store.settingsSection) { visited.append(store.settingsSection) } }.preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil).onChange(of:store.settingsSection) { key in if !visited.contains(key) { visited.append(key) } }
+    }
+}
+struct JunoHelpView: View {
+    var body: some View {
+        ScrollView { VStack(alignment:.leading,spacing:20) {
+            Text("A little less to keep in your head").font(.title2.bold())
+            Text("Start in Today for a saved overview. Plan helps you review one issue at a time. Schedules compares rooms, people and possible work windows.")
+            GroupBox("Talk and remember") { Text("Chat drafts stay until you send or clear them. Saving a memory opens a review first. A Saved to memory badge means a memory record exists; a model’s promise does not. Review and correct facts in Memories.").frame(maxWidth:.infinity,alignment:.leading) }
+            GroupBox("Plan with confidence") { Text("TaskDock is your task hub. Juno reads shared information and labels unknowns. Estimates and possible work windows need review. Apply changes a draft; Save planning persists it. Juno does not assign or notify staff.").frame(maxWidth:.infinity,alignment:.leading) }
+            GroupBox("At the end of the day") { Text("Daily check-in asks five questions. Review the diary before confirming. Leave time for accomplishments, interruptions, blockers, staff contributions and tomorrow.").frame(maxWidth:.infinity,alignment:.leading) }
+            GroupBox("Away from work") { Text("A paired laptop keeps a dated offline copy and queues memory and diary edits. AI replies need the work Mac awake and reachable. Review sync conflicts in Settings → Computers & sync.").frame(maxWidth:.infinity,alignment:.leading) }
+            Text("Command-comma opens Settings. Command-F focuses the current workspace’s search when available. Escape cancels an open editor. Close Window keeps Juno running; Quit stops this app’s local service.").font(.callout).foregroundStyle(.secondary)
+        }.padding(24).textSelection(.enabled) }.frame(minWidth:560,minHeight:440)
     }
 }

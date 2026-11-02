@@ -7,7 +7,7 @@ source = (ROOT / 'desktop/Schedules.swift').read_text()
 models = source.split('struct SchedulesWorkspace:', 1)[0]
 projection = source.split('struct ScheduleWeekItem:', 1)[1]
 projection = 'struct ScheduleWeekItem:' + projection.split('    var body: some View {', 1)[0] + '}\n'
-projection = projection.replace('struct ScheduleWeekView: View', 'struct ScheduleWeekView').replace('@State ', '').replace('private ', '')
+projection = projection.replace('struct ScheduleWeekView: View', 'struct ScheduleWeekView').replace('@State ', '').replace('private ', '').replace('func moveWeek(', 'mutating func moveWeek(')
 # The production parser is ISO8601 based; fixtures use the same explicit offsets.
 parser = '''
 func providerDate(_ text:String) -> Date? { ISO8601DateFormatter().date(from:text) }
@@ -17,6 +17,14 @@ checks = r'''
 func rule(_ id:String,_ kind:String,_ name:String,_ location:String="",_ start:String="09:00",_ end:String="12:00") -> RecurringSchedule {
     RecurringSchedule(id:id,kind:kind,name:name,location:location,start_date:"2026-08-24",end_date:"2026-12-10",days:[0,2],start_time:start,end_time:end,timezone:"America/Chicago")
 }
+precondition(scheduleDatesIssue("2026-11-02","2026-12-10","09:00","17:00","America/Chicago") == nil)
+precondition(scheduleDatesIssue("2026-11-02","2026-11-01","09:00","17:00","America/Chicago") != nil)
+precondition(scheduleDatesIssue("2026-02-30","2026-12-10","09:00","17:00","America/Chicago") != nil)
+precondition(scheduleDatesIssue("2026-11-02","2026-12-10","17:00","09:00","America/Chicago") != nil)
+precondition(scheduleDatesIssue("2026-11-02","2026-12-10","09:00","17:00","Unknown/Place") != nil)
+precondition(schedulePersonIssue("Alex","20","21") != nil)
+precondition(schedulePersonIssue("Alex","20","") == nil)
+precondition(schedulePersonIssue("Alex","twenty","") != nil)
 precondition(scheduleTime("00:00") == "12:00 AM")
 precondition(scheduleTime("12:00") == "12:00 PM")
 precondition(scheduleTime("19:05") == "7:05 PM")
@@ -25,6 +33,14 @@ var record = ScheduleRecord(revision:1,rules:[rule("owner","work",""),rule("staf
 let anchor = providerDate("2026-11-04T12:00:00-06:00")!
 var room = ScheduleWeekView(record:record,byRoom:true,selected:"ROOM 1",anchor:anchor)
 precondition(room.format(room.week[0],"yyyy-MM-dd") == "2026-11-02")
+room.moveWeek(7)
+precondition(room.format(room.week[0],"yyyy-MM-dd") == "2026-11-09")
+room.moveWeek(-7)
+var sharedDay = anchor
+var linked = ScheduleWeekView(record:record,byRoom:true,weekBinding:Binding(get:{sharedDay},set:{sharedDay = $0}))
+linked.moveWeek(7)
+precondition(linked.format(sharedDay,"yyyy-MM-dd") == "2026-11-11")
+precondition(linked.format(linked.week[0],"yyyy-MM-dd") == "2026-11-09")
 precondition(room.choices == ["ROOM 1","ROOM 2"])
 precondition(Set(room.items(room.week[0]).map(\.id)) == ["access","class","hold"])
 precondition(room.items(room.week[1]).isEmpty)

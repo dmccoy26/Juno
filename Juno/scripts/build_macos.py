@@ -1,12 +1,14 @@
 """Build a native Juno development app for this Mac; no browser tab required."""
 from pathlib import Path
 import plistlib
+import json
 import subprocess
 import tempfile
 import shutil
 import argparse
 
 ROOT = Path(__file__).resolve().parents[1]
+RELEASE = json.loads((ROOT/'packaging/release.json').read_text())
 DEST = Path.home() / 'Applications/Juno.app'
 
 
@@ -45,7 +47,7 @@ def main():
         subprocess.run(['iconutil','-c','icns',str(iconset),'-o',str(resources/'Juno.icns')], check=True)
         info = dict(CFBundleIconFile='Juno', CFBundleName='Juno', CFBundleDisplayName='Juno', CFBundleIdentifier='com.dmccoy.juno.development',
                     CFBundleExecutable='Juno', CFBundlePackageType='APPL', CFBundleShortVersionString='0.1.0',
-                    CFBundleVersion='10', LSMinimumSystemVersion='13.5', NSHighResolutionCapable=True,
+                    CFBundleVersion=str(RELEASE['build']), JunoReleaseVersion=RELEASE['version'], LSMinimumSystemVersion='13.5', NSHighResolutionCapable=True,
                     NSAppTransportSecurity={'NSAllowsLocalNetworking':True}, JunoProjectRoot=str(ROOT))
         (contents/'Info.plist').write_bytes(plistlib.dumps(info))
         subprocess.run(['codesign','--force','--sign','-',str(bundle)], check=True)

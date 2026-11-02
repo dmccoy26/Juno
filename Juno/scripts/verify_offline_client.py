@@ -103,7 +103,14 @@ import Foundation
         defer { try? FileManager.default.removeItem(at:copy.file) }
         let questions = ["completed","interruptions","blockers","employee_work","tomorrow"].map { ["key":$0,"text":"Synthetic question"] }
         try copy.replace(JSONSerialization.data(withJSONObject:["version":1,"owner_id":profile.owner_id,"pages":[["path":"/v1/memories?offset=0","body":["items":[[String:Any]](),"has_more":false]],["path":"/v1/check-in-template","body":["questions":questions]]]]),owner:profile.owner_id)
-        let store = JunoStore(); store.sharedProfile = profile;store.endpoint = try validatedHost(profile.address);store.token = "synthetic-never-transmitted";store.offlineCopy = copy;store.offline = true
+        let store = JunoStore()
+        store.chatDraft = "Synthetic unsent draft"
+        store.prepareChat("Synthetic planning question")
+        precondition(store.chatDraft == "Synthetic unsent draft" && store.proposedChatDraft == "Synthetic planning question")
+        store.proposedChatDraft = nil;store.chatDraft = ""
+        store.prepareChat("Synthetic planning question")
+        precondition(store.chatDraft == "Synthetic planning question" && store.section == "Chat")
+        store.chatDraft = ""; store.sharedProfile = profile;store.endpoint = try validatedHost(profile.address);store.token = "synthetic-never-transmitted";store.offlineCopy = copy;store.offline = true
         do { _ = try await store.request("/v1/memories?offset=0");fatalError("Missing pinned session used another connection") } catch is APIProblem {}
         store.hostSession = PinnedHostSession(profile.certificate_sha256).session()
         defer { store.hostSession?.invalidateAndCancel() }

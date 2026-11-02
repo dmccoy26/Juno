@@ -12,6 +12,8 @@ precondition(memoryRequestText("Do you remember that printer?") == nil)
 precondition(memoryRequestText("Remember when we fixed the printer?") == nil)
 precondition(memoryRequestText("Tell me what you remember") == nil)
 precondition(memoryRequestText("Remember this") == "")
+precondition(memoryRequestText("Hi Juno, can you remember this? Fictional note") == "Fictional note")
+precondition(memoryRequestText("Hey Juno, do you remember that printer?") == nil)
 print("PASS native explicit memory-review intent, multiline text and recall-question boundaries")
 '''
 with tempfile.TemporaryDirectory(prefix='juno-memory-intent-') as tmp:

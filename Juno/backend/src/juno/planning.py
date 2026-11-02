@@ -245,7 +245,7 @@ def build_plan(session, owner, day):
         minutes = int(sum((b-a).total_seconds()/60 for a,b in availability))
         loads.append({'employee':employee, 'reported_assignment_minutes':sum(r['estimate_minutes'] for r in assigned if r['estimate_confirmed']),
             'unknown_estimates':sum(not r['estimate_confirmed'] for r in assigned), 'blocked_tasks':sum(bool(r['blocker']) for r in assigned),
-            'available_minutes':minutes if availability else None,
+            'available_minutes':minutes if availability else None,'weekly_limit_minutes':profile.get('weekly_limit_minutes') if profile else None,
             'notice':'Only the assignments and scheduled availability you supplied; not a complete workload or a performance measure.'})
     return {'day':str(day),'end':str(day+timedelta(days=7)),'generated_at':now(), 'revision':state['revision'],
             'capacity_minutes':capacity,'free_minutes':total,'reserve_minutes':state['reserve_minutes'],

@@ -29,6 +29,7 @@ struct PlanningTask: Decodable, Identifiable {
     var estimate_reason: String; var missing: [String]; var actionable: Bool; var reason: String
     var blocker: String; var next_action: String; var next_check: String?; var resume: String; var employee: String
     var room: String; var room_hint: String?
+    var dean: Bool?
     var request_fields: [PlanningRequestField]?; var request_questions: [PlanningRequestQuestion]?
     var due_date: String?; var priority_label: String?; var taskdock_saved_at: String?; var request_scope_notice: String?
     func requestField(_ key: String) -> PlanningRequestField? { request_fields?.first { $0.key == key } }
@@ -40,7 +41,7 @@ struct PlanningTask: Decodable, Identifiable {
     var id: String { task_id }
 }
 struct StaffPlanningLoad: Decodable, Identifiable {
-    var employee: String; var reported_assignment_minutes: Int; var unknown_estimates: Int; var blocked_tasks: Int; var available_minutes: Int?; var notice: String
+    var employee: String; var reported_assignment_minutes: Int; var unknown_estimates: Int; var blocked_tasks: Int; var available_minutes: Int?; var weekly_limit_minutes: Int?; var notice: String
     var id: String { employee }
 }
 struct PlanningResult: Decodable {
@@ -81,10 +82,12 @@ struct PlanningWorkspace: View {
     @State private var weekly = ""
     @State private var estimateSuggestion: TaskEstimate?
     @State private var taskSearch = ""
+    @FocusState private var searchFocused:Bool
     @State private var editorIssue: String?
     @State private var estimateTask: Task<Void,Never>?
     @State private var estimating = false
     @State private var taskFilter = "All issues"
+    @State private var inspected: String?
     @State private var guided = false
     @State private var guideStep = 0
     private func dateString(_ date: Date) -> String {
@@ -101,7 +104,11 @@ struct PlanningWorkspace: View {
             record = fresh; dirty = false; selected = nil
             if store.offline { plan = nil; issue = "Saved planning facts are available offline. Reconnect to calculate recommendations or save planning changes. Diary and memory edits still work offline."; return }
             plan = try await store.decode(PlanningResult.self, "/v1/planning/next?day=" + dateString(day)); issue = nil
-            if let wanted = store.planningTaskID, let task = plan?.tasks.first(where: { $0.id == wanted }) { choose(task); store.planningTaskID = nil }
+            if let wanted = store.planningTaskID {
+                if let task = plan?.tasks.first(where:{$0.id == wanted}) { inspected = task.id;choose(task) }
+                else { issue = "This issue is completed or outside the current planning candidate set. Review the source details in TaskDock." }
+                store.planningTaskID = nil
+            }
         } catch { issue = (error as? APIProblem)?.message ?? "Could not load planning. Your changes remain here." }
     }
     private func save() async {
@@ -137,8 +144,8 @@ struct PlanningWorkspace: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("What should I do next?").font(.title2.bold())
-                Text("Confirm your work windows and task details. Juno checks constraints before suggesting a next task. TaskDock remains your task hub.").foregroundStyle(.secondary)
+                Text("Plan your week").font(.title2.bold())
+                Text("Choose one issue to review its context, clarify what’s missing and decide the next step.").foregroundStyle(.secondary)
                 HStack {
                     DatePicker("Seven days starting", selection: $day, displayedComponents: .date)
                     Button("Reload saved planning") { Task { await load() } }.disabled(busy || dirty)
@@ -147,7 +154,7 @@ struct PlanningWorkspace: View {
                 }
                 if dirty { HStack { Text("Unsaved planning changes").foregroundStyle(.orange); Button("Discard draft and reload") { Task { await load() } } } }
                 if let issue { Text(issue).foregroundStyle(.orange).textSelection(.enabled) }
-                RepairWindowsView(store: store, tasks: plan?.tasks ?? [], workspace: record?.workspace_id)
+                DisclosureGroup("Find a room and person’s work window") { RepairWindowsView(store: store, tasks: plan?.tasks ?? [], workspace: record?.workspace_id) }
                 if let record {
                     DisclosureGroup("Legacy dated availability (\(record.windows.count) windows)") {
                         VStack(alignment: .leading, spacing: 10) {
@@ -179,27 +186,36 @@ struct PlanningWorkspace: View {
                 }
                 if let plan, !dirty, !busy {
                     Text("\(plan.capacity_minutes) minutes to plan • \(plan.free_minutes) after recorded meetings • \(plan.reserve_minutes) reserved for interruptions").font(.headline)
-                    if let question = plan.question { Text("Before I choose: " + question).font(.headline).foregroundStyle(.purple); Text("Discuss it in Chat, or confirm which priority should lead for this planning date.").font(.caption)
+                    if let question = plan.question,plan.tasks.contains(where:{$0.dean == true}) && plan.tasks.contains(where:{$0.reason == "Teaching/operations need"}) { Text("Before I choose: " + question).font(.headline).foregroundStyle(.purple); Text("Discuss it in Chat, or confirm which priority should lead for this planning date.").font(.caption)
                         HStack {
                             ForEach(plan.tasks.filter { $0.reason == "Dean request" || $0.reason == "Teaching/operations need" }.prefix(4)) { task in
                                 Button("Prioritize: " + task.title) { record?.priority_choice = task.id; record?.priority_choice_date = dateString(day); dirty = true }
                             }
                         } }
                     HStack {
-                        TextField("Find an issue from TaskDock", text: $taskSearch).textFieldStyle(.roundedBorder)
+                        TextField("Find an issue from TaskDock", text: $taskSearch).focused($searchFocused).onReceive(NotificationCenter.default.publisher(for:Notification.Name("JunoFind"))) { _ in if store.section == "Plan" { searchFocused = true } }.textFieldStyle(.roundedBorder)
                         Picker("Show",selection:$taskFilter) { Text("All issues").tag("All issues");Text("Needs details").tag("Needs details");Text("Blocked").tag("Blocked");Text("Ready to review").tag("Ready to review") }.frame(width:210)
                     }
                     Button("Refresh tasks in TaskDock connection") { store.section = "TaskDock" }
                     ForEach(plan.tasks.filter { (taskSearch.isEmpty || $0.title.localizedCaseInsensitiveContains(taskSearch)) && (taskFilter == "All issues" || taskFilter == "Needs details" && (!$0.missing.isEmpty || !($0.request_questions ?? []).isEmpty) || taskFilter == "Blocked" && !$0.blocker.isEmpty || taskFilter == "Ready to review" && $0.actionable) }) { task in
                         GroupBox {
                             VStack(alignment: .leading, spacing: 6) {
+                                Button { inspected = inspected == task.id ? nil : task.id } label: {
+                                    HStack(alignment:.top) {
+                                        Image(systemName: inspected == task.id ? "chevron.down" : "chevron.right")
+                                        VStack(alignment:.leading,spacing:4) { Text(task.title).font(.headline);Text(task.roomSummary + " • " + (task.priority_label ?? "Priority unknown")).font(.caption).foregroundStyle(.secondary) }
+                                        Spacer()
+                                        if !task.blocker.isEmpty { Label("Blocked",systemImage:"hand.raised").foregroundStyle(.orange) }
+                                        else if !(task.request_questions ?? []).isEmpty || !task.missing.isEmpty { Label("Needs details",systemImage:"questionmark.circle").foregroundStyle(.secondary) }
+                                        else { Label("Ready to review",systemImage:"checkmark.circle") }
+                                    }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+                                }.buttonStyle(.plain).accessibilityLabel("Inspect " + task.title)
+                                if inspected == task.id {
                                 HStack { Text(task.title).font(.headline); if plan.recommended_task_id == task.id { Text("Suggested next").foregroundStyle(.green) }; Spacer(); Button("Discuss estimate") {
-                                    store.chatDraft = "Help me estimate this task from the saved evidence: “" + task.title + "”. Give a range and explain the uncertainty. Ask one scope question if needed. Do not change my confirmed estimate; I will review and enter it in Plan."
-                                    store.section = "Chat"
+                                    store.prepareChat("Help me estimate this task from the saved evidence: “" + task.title + "”. Give a range and explain the uncertainty. Ask one scope question if needed. Do not change my confirmed estimate; I will review and enter it in Plan.")
                                 }; Button("Clarify with Juno") { choose(task,guidedMode:true) }; Button("Planning details") { choose(task) } }
                                 PlanningRequestOverview(task:task) { question in
-                                    store.chatDraft = "Help me clarify “" + task.title + "”. Start with this question: “" + question.question + "” Ask me one question at a time."
-                                    store.section = "Chat"
+                                    store.prepareChat("Help me clarify “" + task.title + "”. Start with this question: “" + question.question + "” Ask me one question at a time.")
                                 }
                                 Text("\(task.estimate_minutes) min • \(task.reason)")
                                 Text(task.estimate_reason).font(.caption).foregroundStyle(.secondary)
@@ -207,6 +223,7 @@ struct PlanningWorkspace: View {
                                 if !task.next_action.isEmpty { Text("Unblock: " + task.next_action) }
                                 if let check = task.next_check { Text("Next blocker check: " + check).font(.caption) }
                                 if !task.resume.isEmpty { Text("Resume: " + task.resume) }
+                                }
                             }.frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
@@ -214,7 +231,8 @@ struct PlanningWorkspace: View {
                         GroupBox(load.employee + " — supplied workload") {
                             VStack(alignment: .leading) {
                                 Text("\(load.reported_assignment_minutes) estimated assignment minutes • \(load.unknown_estimates) unestimated • \(load.blocked_tasks) blocked")
-                                Text(load.available_minutes.map { "\($0) minutes of recorded availability" } ?? "Availability unknown")
+                                Text(load.available_minutes.map { "\($0) minutes of scheduled availability before weekly limits" } ?? "Availability unknown")
+                                if let limit = load.weekly_limit_minutes { Text("Weekly work limit: \(limit / 60) hours").font(.callout) }
                                 Text(load.notice).font(.caption).foregroundStyle(.secondary)
                             }.frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -260,6 +278,11 @@ struct PlanningWorkspace: View {
                     Button("Apply to draft") { if applyFacts() { estimateTask?.cancel();estimating = false;selected = nil } }.keyboardShortcut(.defaultAction).disabled(store.offline || estimating || (guided && guideStep < 5))
                 }.padding(18)
             }.frame(width:700,height:620)
+        }
+        .onChange(of:dirty) { value in if value { store.unsavedSections.insert("Plan") } else { store.unsavedSections.remove("Plan") } }
+        .onChange(of:store.section) { key in if key == "Plan",!dirty,selected == nil { Task { await load() } } }
+        .onChange(of:store.planningTaskID) { wanted in
+            if let task = plan?.tasks.first(where:{$0.id == wanted}) { inspected = task.id;choose(task);store.planningTaskID = nil }
         }
         .onChange(of: day) { _ in if !dirty { Task { await load() } } }
     }
@@ -361,6 +384,10 @@ struct PlanningRequestOverview: View {
     }
     var body: some View {
         VStack(alignment:.leading,spacing:8) {
+            if let description = task.requestField("issue_description"),description.state == "provided",let text = description.value {
+                Text(text).lineLimit(4).frame(maxWidth:.infinity,alignment:.leading)
+            }
+            if let outcome = task.requestField("requested_outcome"),outcome.state == "provided",let text = outcome.value { Text("Goal: " + text).font(.callout).lineLimit(3) }
             ViewThatFits(in:.horizontal) {
                 HStack(alignment:.top,spacing:28) { location;priority }.frame(maxWidth:.infinity,alignment:.leading)
                 VStack(alignment:.leading,spacing:8) { location;priority }

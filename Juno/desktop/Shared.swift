@@ -366,8 +366,8 @@ extension OfflineCopy {
 
 extension JunoStore {
     var sharedLabel: String { sharedProfile == nil ? "Connected · This Mac" : offline ? "Offline · Laptop copy" : "Connected · Work Mac" }
-    func activateShared(_ profile: SharedProfile) throws {
-        let credential = try SharedKeychain.read(profile.address) ?? ""
+    func activateShared(_ profile: SharedProfile) async throws {
+        let credential = try await credentialWork { try SharedKeychain.read(profile.address) } ?? ""
         let address = try validatedHost(profile.address)
         guard profile.certificate_sha256.count == 64 else { throw APIProblem(message:"Invalid host certificate identity.",status:0) }
         sharedProfile = profile; endpoint = address; token = credential; offline = true
@@ -376,8 +376,8 @@ extension JunoStore {
         pendingEdits = offlineCopy?.archive.pending ?? []
         offlineDate = offlineCopy?.archive.savedAt
     }
-    func restoreShared() throws {
-        if let data = UserDefaults.standard.data(forKey:"sharedProfile") { let profile = try JSONDecoder().decode(SharedProfile.self,from:data); sharedProfile = profile; try activateShared(profile) }
+    func restoreShared() async throws {
+        if let data = UserDefaults.standard.data(forKey:"sharedProfile") { let profile = try JSONDecoder().decode(SharedProfile.self,from:data); sharedProfile = profile; try await activateShared(profile) }
     }
     func localRequest(_ path:String,method:String = "GET",body:[String:Any]? = nil) async throws -> Data {
         guard let localEndpoint else { throw APIProblem(message:"The local app is starting.",status:0) }
@@ -428,7 +428,7 @@ extension JunoStore {
     }
     func sharedRevoked() {
         offlineCopy?.clear(); items = []; messages = []; checkIn = nil; connected = false; offline = true; modelConfigured = false
-        if let profile = sharedProfile { try? SharedKeychain.forget(profile.address) }
+        if let profile = sharedProfile { Task { try? await credentialWork { try SharedKeychain.forget(profile.address) } } }
         token = ""
     }
     func reconnectShared() {
@@ -530,9 +530,9 @@ struct ComputersWorkspace: View {
                 let data = try await store.wire("/v1/pair",endpoint:address,token:"",session:session,method:"POST",body:["invitation":invitation.invitation,"label":Host.current().localizedName ?? "Juno laptop"])
                 let paired = try JSONDecoder().decode(PairResult.self,from:data)
                 if let old = store.sharedProfile, old.owner_id != paired.owner_id, !store.pendingEdits.isEmpty { throw APIProblem(message:"This invitation belongs to a different work history. Your existing queued edits have been retained; export them before switching.",status:409) }
-                try SharedKeychain.save(paired.token,origin:invitation.address)
+                try await credentialWork { try SharedKeychain.save(paired.token,origin:invitation.address) }
                 let profile = SharedProfile(address:invitation.address,certificate_sha256:invitation.certificate_sha256,owner_id:paired.owner_id,device_id:paired.device_id)
-                try store.activateShared(profile)
+                try await store.activateShared(profile)
                 UserDefaults.standard.set(try JSONEncoder().encode(profile),forKey:"sharedProfile")
                 store.items = []; store.messages = []; store.checkIn = nil; store.currentConversation = nil
                 try await store.syncOfflineCopy(); try await store.load(); await store.loadCompanion()
