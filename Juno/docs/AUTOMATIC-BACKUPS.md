@@ -4,7 +4,7 @@ Configured November 2, 2026 for the current Juno work-Mac workspace. This is a h
 
 ## Schedule and location
 
-- Destination: `/Volumes/personal_folder/Juno Backups/Work Mac` on the owner's mounted personal SMB share.
+- Destination: `/Volumes/personal_folder/Juno Backups/AHMX-danielmc-MacStudio` on the owner's mounted personal SMB share.
 - Runs hourly while the user is logged in and the Mac is awake, plus at job load/login. macOS may delay a run during sleep; this does not wake the Mac or log the user in.
 - A missing/unmounted share is an error. No substitute directory is created on the Mac. The destination marker must match; the next scheduled run retries. No share password, automatic remount or network/security setting was added.
 - Retention keeps the 48 newest successful snapshots, plus the newest available snapshot per day for 30 days and per month for the current and previous 11 calendar months. It cannot create historical coverage before backups started. Only this job's strictly named backup files are pruned, after a new backup succeeds; unrelated files and pre-migration backups remain untouched.
@@ -56,4 +56,4 @@ Extraction requires the correct key and refuses an existing output directory. It
 
 Verify manifest hashes and use PostgreSQL 17's `pg_restore` to restore `database.dump` into a **new isolated database**, checking schema and records against the manifest and expected work history. Have the matching Juno software/schema available. Review certificates, absolute paths, permissions and connection reauthorization. Restoring old authentication records can revive formerly revoked access: keep host listeners disabled, invalidate old enrollment/browser sessions and review/re-enroll paired devices before any production cutover. Do not replace a live data directory, restore private keys into a running host or enable another laptop host automatically. Preserve current data and a rollback backup until the recovered workspace is approved.
 
-The initial real backup passed an isolated database restore and remote authenticated readback. Synthetic tests cover encryption round-trip, changed ciphertext/wrong-key rejection, retention selection, missing-drive refusal and cold-cluster lifecycle. The first actual LaunchAgent run is checked separately in the implementation report. These checks do not establish recovery on a physically different replacement Mac.
+The initial real backup passed an isolated database restore and remote authenticated readback. Synthetic tests cover encryption round-trip, changed ciphertext/wrong-key rejection, retention selection, missing-drive refusal and cold-cluster lifecycle. Actual LaunchAgent execution passed on November 3 at 9:11 AM America/Chicago, with exit code 0, a new restore-tested snapshot and independent remote authenticated readback; earlier overnight runs also succeeded. These checks do not establish recovery on a physically different replacement Mac.

@@ -1,10 +1,10 @@
 # Build status
 
-Updated: November 2, 2026.
+Updated: November 3, 2026.
 
 ## Work-Mac automatic backups — November 2
 
-An encrypted Juno backup is saved at `/Volumes/personal_folder/Juno Backups/Work Mac` and passed isolated database restore plus remote authenticated readback/extraction checks. An hourly per-user LaunchAgent is installed with 48 recent, 30 daily and 12 monthly retention. The first background run is waiting on macOS network-volume access while the Mac is locked; scheduled execution is not yet verified. Recovery-key kit is local under `~/Downloads/Juno-Backup-Recovery`, separate from the encrypted share. App installer/version and other applications are unchanged. See [setup/recovery guide](AUTOMATIC-BACKUPS.md) and [actual evidence/open gate](reports/automatic-backups-2026-11-02.md).
+An encrypted Juno backup is saved at `/Volumes/personal_folder/Juno Backups/AHMX-danielmc-MacStudio` and passed isolated database restore plus remote authenticated readback/extraction checks. An hourly per-user LaunchAgent is installed with 48 recent, 30 daily and 12 monthly retention. Background execution is verified as of November 3: the actual LaunchAgent completed a retried backup at 9:11 AM America/Chicago with exit code 0, isolated database restore verification and independent remote checksum/authenticated-decryption checks. Earlier overnight scheduled runs also succeeded. Recovery-key kit is local under `~/Downloads/Juno-Backup-Recovery`, separate from the encrypted share. App installer/version and other applications are unchanged. See [setup/recovery guide](AUTOMATIC-BACKUPS.md) and [verification evidence](reports/automatic-backups-2026-11-02.md).
 
 ## Current installer — preview.15 TaskDock assignments and worker task search
 
