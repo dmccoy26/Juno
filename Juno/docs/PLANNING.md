@@ -2,6 +2,8 @@
 
 Preview 10 adds recurring schedules, possible repair windows, local-model ranges and reviewed planning holds. Start with [Schedules and repair planning](SCHEDULES-AND-REPAIR-PLANNING.md). The original preview 9 workflow and limitations below are historical where superseded.
 
+Mission 12 development candidates add reviewed diary carry-forward and persistent weekly Dean drafts; see [the new workflow](DAILY-CHECKIN-PLANNING.md). The preview 9/10 instructions below describe installed historical behavior where superseded.
+
 Open **Plan** in the native Juno app. TaskDock stays authoritative for tasks; Juno records planning context alongside its dated task copy.
 
 ## First use

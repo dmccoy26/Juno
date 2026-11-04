@@ -54,6 +54,8 @@ final class JunoStore: ObservableObject {
         else { proposedChatDraft = text }
     }
     @Published var planningTaskID: String?
+    @Published var planningDayKey: String?
+    @Published var planningWorkspaceID: String?
     @Published var memoryReviewText: String?
     @Published var memoryReviewOriginal: String?
     @Published var memoryReviewMessageID: String?

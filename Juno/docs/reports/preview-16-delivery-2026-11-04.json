@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-04",
+  "release": "0.1.0-preview.16",
+  "build": 16,
+  "work_host_updated": true,
+  "work_host_connected": true,
+  "version_header_verified": true,
+  "work_records_preserved": true,
+  "prior_paired_devices_preserved": true,
+  "worker_and_tls_configuration_preserved": true,
+  "pre_migration_backup_readable": true,
+  "standalone_root_owned_copy_updated": false,
+  "standalone_admin_authentication_required": true,
+  "standalone_data_preserved": true,
+  "backend_tests": 186,
+  "packaged_runtime_tests": 148,
+  "installer_verified": true,
+  "installer_sha256": "0abc51cf1d200b32c16349bbee22504cd117161c67c020fba62284be5a102ec3",
+  "laptop_acceptance": false
+}

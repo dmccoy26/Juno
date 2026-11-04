@@ -116,7 +116,7 @@ def stamp(value):
     return dt.astimezone(timezone.utc)
 
 
-def build_plan(session, owner, day):
+def build_plan(session, owner, day, *, horizon_days=7, reserve_override=None):
     if not 2000 <= day.year <= 2100:
         raise HTTPException(422, 'Choose a planning date between 2000 and 2100.')
     from .taskdock_api import active_snapshot
@@ -126,13 +126,13 @@ def build_plan(session, owner, day):
     schedule_state, effective, schedule_notices = schedule_intervals(session, owner, day)
     zone = ZoneInfo('America/Chicago')
     left = datetime.combine(day, datetime.min.time(), zone).astimezone(timezone.utc)
-    right = datetime.combine(day + timedelta(days=7), datetime.min.time(), zone).astimezone(timezone.utc)
+    right = datetime.combine(day + timedelta(days=horizon_days), datetime.min.time(), zone).astimezone(timezone.utc)
     left = max(left, now())
     windows = state['windows']
     def spans(kind, name=''):
         return merge((max(left, stamp(w['start'])), min(right, stamp(w['end'])))
                      for w in windows if w['kind'] == kind and (kind == 'work' or w['name'].casefold() == name.casefold()))
-    work = merge((a,b) for kind,name,a,b in effective if kind=='work')
+    work = intersect(merge((a,b) for kind,name,a,b in effective if kind=='work'), [(left,right)])
     busy = []; rooms = {}; staff = {}; notices = []
     if state.get('source_notice'): notices.append(state['source_notice'])
     calendar_uncertain = False
@@ -154,7 +154,8 @@ def build_plan(session, owner, day):
             elif item.get('busy') and item.get('status') != 'cancelled': busy.append((a,b))
     free = subtract(work, busy + [(a,b) for kind,name,a,b in effective if kind=='busy'])
     total = min(2400, int(sum((b-a).total_seconds()/60 for a,b in free)))
-    capacity = max(0, total - state['reserve_minutes'])
+    reserve = state['reserve_minutes'] if reserve_override is None else reserve_override
+    capacity = max(0, total - reserve)
     snapshot = active_snapshot(session, owner)
     tdstate = session.get(TaskDockState, owner)
     if snapshot is None: notices.append('No saved TaskDock tasks. Connect and refresh TaskDock first.')
@@ -183,7 +184,7 @@ def build_plan(session, owner, day):
         if room:
             from .schedules import availability
             slots = availability(session, owner, day, room, employee, suggested, f.get('supervision',False), (schedule_state,effective,schedule_notices), availability_budget)
-            available = [(stamp(w['start']),stamp(w['end'])) for w in slots['windows']]
+            available = intersect([(stamp(w['start']),stamp(w['end'])) for w in slots['windows']], [(left,right)])
             missing.extend(slots['warnings'])
         elif employee:
             missing.append('Confirm the task room before planning employee work.')
@@ -247,8 +248,8 @@ def build_plan(session, owner, day):
             'unknown_estimates':sum(not r['estimate_confirmed'] for r in assigned), 'blocked_tasks':sum(bool(r['blocker']) for r in assigned),
             'available_minutes':minutes if availability else None,'weekly_limit_minutes':profile.get('weekly_limit_minutes') if profile else None,
             'notice':'Only the assignments and scheduled availability you supplied; not a complete workload or a performance measure.'})
-    return {'day':str(day),'end':str(day+timedelta(days=7)),'generated_at':now(), 'revision':state['revision'],
-            'capacity_minutes':capacity,'free_minutes':total,'reserve_minutes':state['reserve_minutes'],
+    return {'day':str(day),'end':str(day+timedelta(days=horizon_days)),'generated_at':now(), 'revision':state['revision'],
+            'capacity_minutes':capacity,'free_minutes':total,'reserve_minutes':reserve,
             'staff_loads':loads,'question':question,'recommended_task_id':recommended,'tasks':rows[:500],'total_tasks':len(rows),'notices':notices,
             'notice':'Suggestions for one next task, not simultaneous assignments or a committed weekly schedule. Capacity capped at 40 hours before interruption reserve. Unknown or missing calendar events may reduce it. All TaskDock task changes remain in TaskDock.'}
 
@@ -265,8 +266,44 @@ def weekly_draft(session, owner, day):
         lines.append(t['title'] + (': waiting on '+t['blocker'] if t['blocker'] else ': completion not established'))
         if t['next_action']: lines.append('Next action: '+t['next_action'])
     lines.extend(['', 'Review dates, sensitive employee details and current status before sharing. This draft has not been sent.'])
-    return {'text':'\n'.join(lines),'diary_dates':[str(r.local_date) for r in rows], 'notices':plan['notices']}
+    from .planning_continuity import weekly_basis
+    basis=weekly_basis(session,owner,day)
+    missing=[str(day+timedelta(days=n)) for n in range(7) if str(day+timedelta(days=n)) not in {str(r.local_date) for r in rows}]
+    lines.extend(['',str(len(rows))+' confirmed diary day(s); '+str(len(missing))+' date(s) without a confirmed diary. Missing dates do not establish inactivity.'])
+    if basis['taskdock_uncertain']:lines.append('TaskDock context is missing, stale or its last read failed; current task status needs review.')
+    return {'basis':basis,'missing_diary_dates':missing,'text':'\n'.join(lines),'diary_dates':[str(r.local_date) for r in rows], 'notices':plan['notices']}
 
+
+
+def persist_planning(session, owner, value):
+    row = session.get(PlanningState, owner)
+    revision = row.revision if row else 0
+    current = state_view(session, owner)
+    if value.workspace_id != current['workspace_id']:
+        raise HTTPException(409, 'TaskDock workspace changed. Reload and review before saving planning facts.')
+    if value.expected_revision != revision:
+        raise HTTPException(409, 'Planning facts changed on another device. Reload before saving; your draft remains here.')
+    from .models import ScheduleState
+    from .schedules import room_key
+    recurring=session.get(ScheduleState,owner)
+    if recurring:
+        def groups(windows):
+            result={}
+            for w in windows:
+                kind='staff_available' if w['kind']=='staff' else w['kind']
+                name=room_key(w['name']) if kind=='room' else '' if kind=='work' else w['name'].casefold()
+                result.setdefault(kind+'|'+name,[]).append((stamp(w['start']),stamp(w['end'])))
+            return {k:merge(v) for k,v in result.items()}
+        before=groups(row.data['windows'] if row else [])
+        after=groups([w.model_dump(mode='json') for w in value.windows])
+        if any(before.get(k,[])!=after.get(k,[]) for k in recurring.data.get('managed',[])):
+            raise HTTPException(409,'These hours are managed by recurring schedules. Use Schedules to change them; task-detail edits can still be saved separately.')
+    from .companion import invalidate_context
+    invalidate_context(session, owner, 'planning:'+owner)
+    data = value.model_dump(mode='json', exclude={'expected_revision'})
+    if row is None:
+        row=PlanningState(owner_id=owner, data=data, revision=1, updated_at=now());session.add(row)
+    else: row.data=data;row.revision+=1;row.updated_at=now()
 
 def install(app, db, device, lock_owner):
     @app.get('/v1/planning')
@@ -276,34 +313,7 @@ def install(app, db, device, lock_owner):
     @app.put('/v1/planning')
     def save(value:PlanningInput, actor=Depends(device), session=Depends(db)):
         lock_owner(session, actor.owner_id)
-        row = session.get(PlanningState, actor.owner_id)
-        revision = row.revision if row else 0
-        current = state_view(session, actor.owner_id)
-        if value.workspace_id != current['workspace_id']:
-            raise HTTPException(409, 'TaskDock workspace changed. Reload and review before saving planning facts.')
-        if value.expected_revision != revision:
-            raise HTTPException(409, 'Planning facts changed on another device. Reload before saving; your draft remains here.')
-        from .models import ScheduleState
-        from .schedules import room_key
-        recurring=session.get(ScheduleState,actor.owner_id)
-        if recurring:
-            def groups(windows):
-                result={}
-                for w in windows:
-                    kind='staff_available' if w['kind']=='staff' else w['kind']
-                    name=room_key(w['name']) if kind=='room' else '' if kind=='work' else w['name'].casefold()
-                    result.setdefault(kind+'|'+name,[]).append((stamp(w['start']),stamp(w['end'])))
-                return {k:merge(v) for k,v in result.items()}
-            before=groups(row.data['windows'] if row else [])
-            after=groups([w.model_dump(mode='json') for w in value.windows])
-            if any(before.get(k,[])!=after.get(k,[]) for k in recurring.data.get('managed',[])):
-                raise HTTPException(409,'These hours are managed by recurring schedules. Use Schedules to change them; task-detail edits can still be saved separately.')
-        from .companion import invalidate_context
-        invalidate_context(session, actor.owner_id, 'planning:'+actor.owner_id)
-        data = value.model_dump(mode='json', exclude={'expected_revision'})
-        if row is None:
-            row=PlanningState(owner_id=actor.owner_id, data=data, revision=1, updated_at=now());session.add(row)
-        else: row.data=data;row.revision+=1;row.updated_at=now()
+        persist_planning(session, actor.owner_id, value)
         session.commit()
         return state_view(session, actor.owner_id)
 
@@ -327,6 +337,12 @@ def install(app, db, device, lock_owner):
             '\nWhat actually happened is yours to confirm. Unexpected work can displace the plan without blame.',
             'notices':plan['notices']}
 
+    @app.get('/v1/planning/daily-brief')
+    def daily_brief(day:date=Query(), actor=Depends(device), session=Depends(db)):
+        from .daily_brief import briefing
+        return briefing(session, actor.owner_id, day)
+
     @app.get('/v1/planning/weekly')
     def weekly(day:date=Query(), actor=Depends(device), session=Depends(db)):
+        lock_owner(session,actor.owner_id)
         return weekly_draft(session, actor.owner_id, day)

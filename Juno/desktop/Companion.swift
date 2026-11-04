@@ -196,7 +196,12 @@ struct RootView: View {
         VStack(spacing:0) {
             HStack(spacing:12) {
                 Button { showSidebar.toggle() } label: { Image(systemName:"sidebar.left") }.help("Show or hide navigation")
-                Text("Juno").font(.title2.bold()).foregroundStyle(.purple)
+                HStack(alignment:.firstTextBaseline,spacing:6) {
+                    Text("Juno").font(.title2.bold()).foregroundStyle(.purple)
+                    Text(Bundle.main.object(forInfoDictionaryKey:"JunoReleaseVersion") as? String ?? "Development")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                        .accessibilityLabel("Juno version " + (Bundle.main.object(forInfoDictionaryKey:"JunoReleaseVersion") as? String ?? "Development"))
+                }
                 Divider().frame(height:20)
                 Text(title(store.section)).font(.headline)
                 Spacer()
@@ -348,23 +353,73 @@ struct ModelWorkspace: View {
     }
 }
 
-struct CheckInStarter: Decodable { let text: String; let notices: [String] }
+struct CarryTaskChoice:Decodable,Identifiable { let task_id:String;let title:String;let reference:String;let context:String;var id:String{task_id} }
+struct CarrySource:Decodable {
+    let diary_id:String;let diary_revision:Int;let day:String;let text:String;let planning_revision:Int;let workspace_id:String;let snapshot_id:String;let taskdock_saved_at:String;let source_stale:Bool;let tasks:[CarryTaskChoice]
+}
+struct CarryReviewRow:Decodable,Identifiable {let key:String;let label:String;let before:String;let after:String;var id:String{key}}
+struct CarryPreview:Decodable {let rows:[CarryReviewRow];let notice:String}
+struct CarryReceipt:Decodable {let operation_id:String;let planning_revision:Int;let saved_at:String}
+
+struct DailyBriefItem: Decodable, Identifiable {
+    let task_id: String; let title: String
+    var next_action: String?; var blocker: String?
+    var id: String { task_id }
+}
+struct DailyBriefOption: Decodable, Identifiable {
+    let task_id: String; let title: String; let estimate_minutes: Int; let reason: String
+    let room: String; let employee: String; let resume: String; let slot_start: String; let slot_end: String
+    var id: String { task_id }
+}
+struct DailyBrief: Decodable {
+    let day: String; let workspace_id: String?; let taskdock_saved_at: String?; let source_stale: Bool
+    let diary_status: String; let review: [String]; let completed: [DailyBriefItem]; let completed_count: Int
+    let blockers: [DailyBriefItem]; let deferred_blocker_count: Int; let upcoming_blocker_count: Int
+    let guidance: [String:[String]]; let next_day: String; let has_scheduled_workday: Bool
+    let capacity_minutes: Int; let reserve_minutes: Int; let reserve_notice: String
+    let question: String?; let recommended_task_id: String?; let alternatives: [DailyBriefOption]
+    let continuity: String; let notices: [String]; let notice: String
+}
+func dailyBriefTime(_ value: String) -> String {
+    let parser = ISO8601DateFormatter(); parser.formatOptions = [.withInternetDateTime,.withFractionalSeconds]
+    guard let date = parser.date(from:value) ?? ISO8601DateFormatter().date(from:value) else { return "Time unavailable" }
+    let formatter = DateFormatter(); formatter.locale = Locale(identifier:"en_US"); formatter.timeZone = TimeZone(identifier:"America/Chicago"); formatter.dateFormat = "h:mm a"
+    return formatter.string(from:date)
+}
 
 struct CheckInWorkspace: View {
     @ObservedObject var store: JunoStore
     @State private var day = Date()
-    @State private var starter: CheckInStarter?
+    @State private var brief: DailyBrief?
+    @State private var briefIssue: String?
+    @State private var briefRefresh = UUID()
+    @State private var showCarry = false
     var dayKey: String { let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.timeZone = TimeZone(identifier:"America/Chicago"); return formatter.string(from: day) }
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        ScrollView { VStack(alignment: .leading, spacing: 16) {
             HStack { Text("Your daily check-in").font(.title2.bold()); Spacer(); DatePicker("Day", selection: $day, displayedComponents: .date).fixedSize().disabled(store.checkBusy) }
             Text("About 15 minutes · answers save as you continue · no model required").font(.subheadline).foregroundStyle(.secondary)
-            if let starter { DisclosureGroup("From your saved work context — review before answering") { ScrollView { Text(starter.text).textSelection(.enabled); ForEach(starter.notices, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) } }.frame(maxHeight: 140) } }
+            if let brief {
+                GroupBox("A moment to look back") {
+                    VStack(alignment:.leading,spacing:8) {
+                        Text(brief.source_stale ? "TaskDock context needs a refresh before planning." : "From your dated saved work; please confirm what happened.").foregroundStyle(brief.source_stale ? .orange : .secondary)
+                        ForEach(brief.review,id:\.self) { Text($0).font(.callout) }
+                        Text("\(brief.deferred_blocker_count) blocker checks are deferred; \(brief.upcoming_blocker_count) fall before the next workday.").font(.caption).foregroundStyle(.secondary)
+                        DisclosureGroup("Evidence & freshness") {
+                            ForEach(brief.completed) { Text("Completion timestamp: " + $0.title).font(.caption) }
+                            ForEach(brief.notices,id:\.self) { Text($0).font(.caption) }
+                        }
+                    }.frame(maxWidth:.infinity,alignment:.leading)
+                }
+            }
+            if let briefIssue { Text(briefIssue).font(.callout).foregroundStyle(.orange) }
+
             if let row = store.checkIn, row.local_date == dayKey {
                 Text(row.source_notice).font(.callout).foregroundStyle(.secondary)
                 if let key = row.next_key, let question = row.questions.first(where: { $0.key == key }) {
                     Text("Question \(row.answers.count + 1) of \(row.questions.count)").font(.caption).foregroundStyle(.secondary)
                     Text(question.text).font(.title3)
+                    if let hints = brief?.guidance[key] { ForEach(hints,id:\.self) { Text($0).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) } }
                     TextEditor(text: $store.checkAnswer).frame(minHeight: 160).padding(8).overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary)).accessibilityLabel("Check-in answer")
                         .onChange(of: store.checkAnswer) { value in UserDefaults.standard.set(value, forKey: "answerDraft." + store.checkDay) }
                     HStack { Button("Skip for now") { store.saveAnswer(skip: true) }; Spacer(); Button("Save and continue") { store.saveAnswer() }.disabled(store.checkAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.checkAnswer.count > 10000) }.disabled(store.checkBusy)
@@ -372,21 +427,61 @@ struct CheckInWorkspace: View {
                     Label(row.status == "confirmed" ? "Diary confirmed" : "Review your diary draft", systemImage: row.status == "confirmed" ? "checkmark.circle" : "pencil").font(.headline)
                     TextEditor(text: $store.diaryDraft).frame(minHeight: 220).padding(8).overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary)).accessibilityLabel("Diary draft")
                         .onChange(of: store.diaryDraft) { value in UserDefaults.standard.set(value, forKey: "diaryDraft." + store.checkDay) }
+                    HStack { Button("Carry a reviewed detail into Plan…") { showCarry = true }.disabled(row.status != "confirmed" || store.diaryDraft != row.diary_text || store.offline || store.unsavedSections.contains("Plan"));Text(row.status == "confirmed" ? "Uses the saved confirmed diary." : "Confirm the diary first to carry a detail forward.").font(.caption).foregroundStyle(.secondary) }
                     HStack { Button("Save draft") { store.saveDiary(confirm: false) }; Spacer(); Button(row.status == "confirmed" ? "Save confirmed changes" : "Confirm diary") { store.saveDiary(confirm: true) } }.disabled(store.checkBusy || store.diaryDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.diaryDraft.count > 60000)
                 }
             } else if store.checkBusy { ProgressView("Loading check-in…") }
+            if let brief, let row = store.checkIn, row.local_date == dayKey, row.next_key == nil {
+                GroupBox("Next workday · " + brief.next_day) {
+                    VStack(alignment:.leading,spacing:10) {
+                        Text(row.status == "confirmed" ? "Your diary is confirmed. Review one next step below." : "Confirm your diary when it is ready. These are proposals from saved planning facts.")
+                        if !brief.continuity.isEmpty { Text("Your carry-forward note: " + brief.continuity).textSelection(.enabled) }
+                        if let question = brief.question { Text(question).font(.headline) }
+                        Text("\(brief.capacity_minutes) minutes of possible capacity after a \(brief.reserve_minutes)-minute interruption reserve.").font(.callout)
+                        Text(brief.reserve_notice).font(.caption).foregroundStyle(.secondary)
+                        ForEach(brief.alternatives) { task in
+                            VStack(alignment:.leading,spacing:6) {
+                                Text(task.title).font(.headline)
+                                Text((task.id == brief.recommended_task_id ? "Suggested first · " : "Alternative · ") + task.reason)
+                                Text("\(task.estimate_minutes) minutes · \(dailyBriefTime(task.slot_start))–\(dailyBriefTime(task.slot_end))" + (task.room.isEmpty ? "" : " · " + task.room) + (task.employee.isEmpty ? "" : " · " + task.employee))
+                                if !task.resume.isEmpty { Text("Resume: " + task.resume) }
+                                Button("Review this issue in Plan") { openPlan(brief,task.id) }.disabled(store.offline || store.checkBusy || store.unsavedSections.contains("Plan"))
+                            }.padding(.vertical,6)
+                        }
+                        if brief.alternatives.isEmpty { Text("No ready task is established for this workday. Clarify the missing information in Plan.").foregroundStyle(.secondary) }
+                        Button("Open Plan for this day") { openPlan(brief,nil) }.disabled(store.offline || store.checkBusy || store.unsavedSections.contains("Plan"))
+                        if store.unsavedSections.contains("Plan") { Text("Save or discard your existing Plan draft before opening a different day or issue.").foregroundStyle(.orange) }
+                        Text(brief.notice).font(.caption).foregroundStyle(.secondary)
+                    }.frame(maxWidth:.infinity,alignment:.leading)
+                }
+            }
             if let issue = store.checkIssue { Text(issue).foregroundStyle(.orange).textSelection(.enabled) }
-            Button("Reload saved check-in") { store.loadCheckIn(day: dayKey) }.disabled(!store.connected || store.checkBusy)
+            Button("Reload saved check-in") { briefRefresh = UUID();store.loadCheckIn(day: dayKey) }.disabled(!store.connected || store.checkBusy)
             Spacer(minLength: 0)
-        }.padding(28).disabled(!store.connected)
-        .task(id: dayKey) {
-            starter = nil
-            if store.connected && !store.offline { starter = try? await store.decode(CheckInStarter.self, "/v1/planning/check-in?day=" + dayKey) }
+        }.padding(28) }.disabled(!store.connected)
+        .task(id: dayKey + ":" + String(store.connected) + ":" + String(store.offline) + ":" + String(store.checkIn?.revision ?? 0) + ":" + store.section + ":" + briefRefresh.uuidString) {
+            brief = nil; briefIssue = nil
+            guard store.section == "Check-in" else { return }
+            guard store.connected, !store.offline else { briefIssue = "Connect to your work Mac for a fresh daily review and next-workday preview. Diary answers can still save offline."; return }
+            do {
+                let value = try await store.decode(DailyBrief.self,"/v1/planning/daily-brief?day=" + dayKey)
+                guard !Task.isCancelled, value.day == dayKey, !store.offline else { return }
+                brief = value
+            } catch { if !Task.isCancelled { briefIssue = "Your interview is still available. Saved work context could not refresh; reconnect and reload to preview the next workday." } }
         }
+        .sheet(isPresented:$showCarry,onDismiss:{briefRefresh=UUID()}) { CarryForwardEditor(store:store,dayKey:dayKey,planDay:brief?.next_day ?? dayKey) }
         .onAppear { if store.connected { store.loadCheckIn(day: dayKey) } }
         .onChange(of: store.connected) { value in if value { store.loadCheckIn(day: dayKey) } }
         .onChange(of: day) { _ in store.loadCheckIn(day: dayKey) }
     }
+    private func openPlan(_ brief: DailyBrief,_ taskID: String?) {
+        guard !store.unsavedSections.contains("Plan"), !store.offline else { return }
+        store.planningDayKey = brief.next_day
+        store.planningWorkspaceID = brief.workspace_id
+        store.planningTaskID = taskID
+        store.section = "Plan"
+    }
+
 }
 
 func taskIsUnfinished(_ task: TaskDockTask) -> Bool {
@@ -542,5 +637,112 @@ struct JunoHelpView: View {
             GroupBox("Away from work") { Text("A paired laptop keeps a dated offline copy and queues memory and diary edits. AI replies need the work Mac awake and reachable. Review sync conflicts in Settings → Computers & sync.").frame(maxWidth:.infinity,alignment:.leading) }
             Text("Command-comma opens Settings. Command-F focuses the current workspace’s search when available. Escape cancels an open editor. Close Window keeps Juno running; Quit stops this app’s local service.").font(.callout).foregroundStyle(.secondary)
         }.padding(24).textSelection(.enabled) }.frame(minWidth:560,minHeight:440)
+    }
+}
+
+struct CarryForwardEditor:View {
+    @ObservedObject var store:JunoStore
+    let dayKey:String
+    let planDay:String
+    @Environment(\.dismiss) private var dismiss
+    @State private var source:CarrySource?
+    @State private var query=""
+    @State private var taskID=""
+    @State private var quote=""
+    @State private var selectedFields=Set<String>()
+    @State private var resume=""
+    @State private var blocker=""
+    @State private var waiting=""
+    @State private var next=""
+    @State private var check=""
+    @State private var minutes=""
+    @State private var preview:CarryPreview?
+    @State private var previewPayload:[String:Any]?
+    @State private var pending:[String:Any]?
+    @State private var pendingKey:String?
+    @State private var receipt:CarryReceipt?
+    @State private var busy=false
+    @State private var notice=""
+    var intentKey:String { ([taskID,quote,resume,blocker,waiting,next,check,minutes]+selectedFields.sorted()).joined(separator:"\u{001f}") }
+    private func toggle(_ key:String)->Binding<Bool> { Binding(get:{selectedFields.contains(key)},set:{if $0{selectedFields.insert(key)}else{selectedFields.remove(key)}}) }
+    private func load() {
+        busy=true;Task { defer{busy=false};do {
+            let current=try await store.decode(CarrySource.self,"/v1/planning/carry-forward?day="+dayKey)
+            source=current;preview=nil;previewPayload=nil
+            pendingKey="carryPending."+current.diary_id
+            if let key=pendingKey,let data=UserDefaults.standard.data(forKey:key),let recovered=try JSONSerialization.jsonObject(with:data) as? [String:Any] { pending=recovered;notice="Recovered an unconfirmed save. Retry the same save to recover its receipt." }
+            if quote.isEmpty { quote=String(current.text.prefix(3000)) }
+            if pending == nil { notice="Read the saved diary, choose the exact task, and select only the fields you want to change." }
+        } catch { notice=(error as? APIProblem)?.message ?? "Could not read the confirmed diary and planning context." } }
+    }
+    private func bodyValues() throws -> [String:Any] {
+        guard let source else{throw APIProblem(message:"Reload the saved diary first.",status:0)}
+        if selectedFields.contains("minutes") || selectedFields.contains("next_check") {
+            if let problem=planningInputIssue(estimate:selectedFields.contains("minutes") ? minutes : "",actual:"",check:selectedFields.contains("next_check") ? check : "") { throw APIProblem(message:problem,status:422) }
+        }
+        var changes:[String:Any]=[:]
+        for (key,value) in [("resume",resume),("blocker",blocker),("waiting_on",waiting),("next_action",next)] where selectedFields.contains(key) { changes[key]=value }
+        if selectedFields.contains("minutes"){changes["minutes"]=Int(minutes.trimmingCharacters(in:.whitespacesAndNewlines)).map{$0 as Any} ?? NSNull()}
+        if selectedFields.contains("next_check"){changes["next_check"]=check.isEmpty ? NSNull() : check as Any}
+        return ["diary_id":source.diary_id,"diary_revision":source.diary_revision,"planning_revision":source.planning_revision,"workspace_id":source.workspace_id,"snapshot_id":source.snapshot_id,"task_id":taskID,"source_quote":quote,"changes":changes]
+    }
+    private func review() {
+        do { let payload=try bodyValues();busy=true
+            Task { defer{busy=false};do { preview=try await store.decode(CarryPreview.self,"/v1/planning/carry-forward/preview",method:"POST",body:payload);previewPayload=payload;notice="Review every before-and-after value. An empty selected field explicitly clears that value." } catch { notice=(error as? APIProblem)?.message ?? "Could not prepare this review. Your text remains here." } }
+        } catch {notice=(error as? APIProblem)?.message ?? "Check the selected fields."}
+    }
+    private func save() {
+        guard var payload=previewPayload,let key=pendingKey else{return};payload["operation_id"]=UUID().uuidString
+        do { let data=try JSONSerialization.data(withJSONObject:payload);UserDefaults.standard.set(data,forKey:key);pending=payload;retry() }
+        catch { notice="Could not preserve this save for retry. Your reviewed text remains here; nothing was sent." }
+    }
+    private func retry() {
+        guard let operation=pending,!busy else{return};busy=true
+        Task { defer{busy=false};do {
+            receipt=try await store.decode(CarryReceipt.self,"/v1/planning/carry-forward/save",method:"POST",body:operation);pending=nil;if let key=pendingKey{UserDefaults.standard.removeObject(forKey:key)};notice="Saved to Juno planning with its diary source and review history. TaskDock has not been edited."
+        } catch {
+            if let failure=error as? APIProblem,(400..<500).contains(failure.status){pending=nil;if let key=pendingKey{UserDefaults.standard.removeObject(forKey:key)};preview=nil;previewPayload=nil;notice=failure.message+" Reload source and compare before reviewing again."}
+            else {notice="No save receipt was received. Keep this window open and retry the same save."}
+        } }
+    }
+    var body:some View {
+        VStack(alignment:.leading,spacing:14) {
+            Text("Carry a reviewed detail into Plan").font(.title2.bold())
+            Text("Confirmed diary · "+dayKey).foregroundStyle(.secondary)
+            if !notice.isEmpty { Text(notice).foregroundStyle(.orange).textSelection(.enabled) }
+            ScrollView { VStack(alignment:.leading,spacing:12) {
+                if let source {
+                    Text(source.source_stale ? "TaskDock context needs a refresh; the task may have changed." : "Choose the task from your saved TaskDock copy.").foregroundStyle(source.source_stale ? .orange : .secondary)
+                    DisclosureGroup("Read the saved diary — revision \(source.diary_revision)") { Text(source.text).textSelection(.enabled) }
+                    Text("Diary excerpt supporting this detail").font(.headline)
+                    TextEditor(text:$quote).frame(height:100).accessibilityLabel("Carry-forward diary excerpt").overlay(RoundedRectangle(cornerRadius:8).stroke(.quaternary))
+                    TextField("Find task by title or reference",text:$query).textFieldStyle(.roundedBorder)
+                    Picker("Task to update",selection:$taskID) { Text("Choose a task").tag("");ForEach(source.tasks.filter {query.isEmpty || ($0.title+" "+$0.context+" "+$0.reference).localizedCaseInsensitiveContains(query)}) { task in Text(task.title+(task.context.isEmpty ? "" : " · "+task.context)+" · "+task.reference).tag(task.id) } }
+                    Text("Only checked fields change. Unchecked fields keep their saved values.").font(.callout)
+                    Toggle("Where to resume",isOn:toggle("resume"));if selectedFields.contains("resume") {TextField("Reviewed resumption note",text:$resume).textFieldStyle(.roundedBorder);Button("Use diary excerpt as resumption note"){resume=quote}}
+                    Toggle("Blocker",isOn:toggle("blocker"));if selectedFields.contains("blocker"){TextField("Reviewed blocker — blank explicitly clears",text:$blocker).textFieldStyle(.roundedBorder)}
+                    Toggle("Waiting on",isOn:toggle("waiting_on"));if selectedFields.contains("waiting_on"){TextField("Reviewed dependency",text:$waiting).textFieldStyle(.roundedBorder)}
+                    Toggle("Next action",isOn:toggle("next_action"));if selectedFields.contains("next_action"){TextField("Reviewed next action",text:$next).textFieldStyle(.roundedBorder)}
+                    Toggle("Next check date",isOn:toggle("next_check"));if selectedFields.contains("next_check"){TextField("YYYY-MM-DD — blank explicitly clears",text:$check).textFieldStyle(.roundedBorder)}
+                    Toggle("Estimated minutes",isOn:toggle("minutes"));if selectedFields.contains("minutes"){TextField("Reviewed estimate — blank explicitly clears",text:$minutes).textFieldStyle(.roundedBorder)}
+                }
+                if let preview {
+                    GroupBox("Review selected changes") { VStack(alignment:.leading,spacing:10) {ForEach(preview.rows){row in Text(row.label).bold();Text("Before: "+row.before);Text("After: "+row.after)};Text(preview.notice).font(.caption)}.frame(maxWidth:.infinity,alignment:.leading) }
+                }
+            }.padding(4).disabled(busy || pending != nil || receipt != nil) }
+            HStack {
+                Button(receipt == nil ? "Cancel" : "Close") { dismiss() }.disabled(busy || pending != nil).keyboardShortcut(.cancelAction)
+                Button("Reload source & compare",action:load).disabled(busy || pending != nil || receipt != nil)
+                if pending != nil {Button("Retry same save",action:retry).disabled(busy || store.offline);Button("Keep pending save & close"){dismiss()}.disabled(busy)}
+                Spacer()
+                Button("Review changes",action:review).disabled(busy || taskID.isEmpty || quote.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || selectedFields.isEmpty || pending != nil || receipt != nil)
+                Button("Save reviewed planning detail",action:save).disabled(busy || previewPayload == nil || pending != nil || receipt != nil || store.offline)
+            }
+        }.padding(22).frame(width:780,height:720)
+        .onAppear(perform:load)
+        .onChange(of:intentKey){_ in preview=nil;previewPayload=nil}
+        .onChange(of:busy){value in if value || pending != nil {store.unsavedSections.insert("Planning carry-forward")}else{store.unsavedSections.remove("Planning carry-forward")}}
+        .onDisappear{store.unsavedSections.remove("Planning carry-forward")}
+        .interactiveDismissDisabled(busy || pending != nil)
     }
 }

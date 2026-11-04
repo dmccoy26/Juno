@@ -49,7 +49,18 @@ struct PlanningResult: Decodable {
     var capacity_minutes: Int; var free_minutes: Int; var reserve_minutes: Int
     var question: String?; var recommended_task_id: String?; var tasks: [PlanningTask]; var notices: [String]; var notice: String
 }
-struct WeeklyPlanningDraft: Decodable { var text: String; var notices: [String] }
+struct WeeklyDiaryBasis: Codable, Equatable { var id:String; var revision:Int; var day:String }
+struct WeeklyBasis: Codable, Equatable {
+    var diaries:[WeeklyDiaryBasis]; var snapshot_id:String?; var workspace_id:String?; var taskdock_saved_at:String?; var planning_revision:Int;var taskdock_uncertain:Bool
+    enum CodingKeys:String,CodingKey { case diaries,snapshot_id,workspace_id,taskdock_saved_at,planning_revision,taskdock_uncertain }
+    func encode(to encoder:Encoder) throws { var c=encoder.container(keyedBy:CodingKeys.self);try c.encode(diaries,forKey:.diaries);try c.encode(snapshot_id,forKey:.snapshot_id);try c.encode(workspace_id,forKey:.workspace_id);try c.encode(taskdock_saved_at,forKey:.taskdock_saved_at);try c.encode(planning_revision,forKey:.planning_revision);try c.encode(taskdock_uncertain,forKey:.taskdock_uncertain) }
+}
+struct WeeklyPlanningDraft: Decodable { var text:String; var notices:[String]; var basis:WeeklyBasis; var missing_diary_dates:[String] }
+struct SavedDeanDraft: Decodable {
+    var owner_id:String;var week_start:String;var exists:Bool;var id:String?;var text:String;var revision:Int;var basis:WeeklyBasis;var sources_changed:Bool;var updated_at:String?;var notice:String
+}
+struct DeanSaveReceipt: Decodable { var id:String;var revision:Int;var saved_at:String }
+
 
 func planningInputIssue(estimate: String,actual: String,check: String) -> String? {
     let e = estimate.trimmingCharacters(in:.whitespacesAndNewlines),a = actual.trimmingCharacters(in:.whitespacesAndNewlines)
@@ -62,8 +73,15 @@ func planningInputIssue(estimate: String,actual: String,check: String) -> String
     return nil
 }
 
+struct PlanningSourceChange:Decodable,Identifiable {let key:String;let label:String;let before:String;let after:String;var id:String{key}}
+struct PlanningDiarySource:Decodable,Identifiable {let operation_id:String;let diary_day:String;let diary_revision:Int;let source_quote:String;let source_changed:Bool;let rows:[PlanningSourceChange];var id:String{operation_id}}
+struct PlanningDiarySources:Decodable {let items:[PlanningDiarySource]}
+
 struct PlanningWorkspace: View {
     @ObservedObject var store: JunoStore
+    @State private var loadIdentity = UUID()
+    @State private var planningSources:PlanningDiarySources?
+    @State private var sourceIssue:String?
     @State private var record: PlanningRecord?
     @State private var plan: PlanningResult?
     @State private var issue: String?
@@ -79,7 +97,7 @@ struct PlanningWorkspace: View {
     @State private var estimate = ""
     @State private var actual = ""
     @State private var checkDate = ""
-    @State private var weekly = ""
+    @State private var showDeanDraft = false
     @State private var estimateSuggestion: TaskEstimate?
     @State private var taskSearch = ""
     @FocusState private var searchFocused:Bool
@@ -96,20 +114,35 @@ struct PlanningWorkspace: View {
     private func object<T: Encodable>(_ value: T) throws -> [String: Any] {
         try JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as! [String: Any]
     }
-    private func load() async {
+    private func load(discard: Bool = false) async {
+        guard (!dirty || discard), selected == nil else { return }
+        if let key = store.planningDayKey {
+            let formatter = DateFormatter(); formatter.locale = Locale(identifier:"en_US_POSIX"); formatter.timeZone = TimeZone(identifier:"America/Chicago"); formatter.dateFormat = "yyyy-MM-dd"; formatter.isLenient = false
+            if let requested = formatter.date(from:key), formatter.string(from:requested) == key { day = requested }
+            store.planningDayKey = nil
+        }
+        let identity = UUID(); loadIdentity = identity
+        let requestedDay = dateString(day)
         plan = nil
-        busy = true; defer { busy = false }
+        busy = true
+        defer { if loadIdentity == identity { busy = false } }
         do {
             let fresh = try await store.decode(PlanningRecord.self, "/v1/planning")
-            record = fresh; dirty = false; selected = nil
-            if store.offline { plan = nil; issue = "Saved planning facts are available offline. Reconnect to calculate recommendations or save planning changes. Diary and memory edits still work offline."; return }
-            plan = try await store.decode(PlanningResult.self, "/v1/planning/next?day=" + dateString(day)); issue = nil
+            let result = store.offline ? nil : try await store.decode(PlanningResult.self, "/v1/planning/next?day=" + requestedDay)
+            guard loadIdentity == identity else { return }
+            record = fresh; plan = result; dirty = false
+            issue = store.offline ? "Saved planning facts are available offline. Reconnect to calculate recommendations or save planning changes." : nil
+            if let workspace = store.planningWorkspaceID, workspace != fresh.workspace_id {
+                issue = "TaskDock workspace changed since your check-in preview. Review the current workspace before choosing an issue."
+                store.planningTaskID = nil; store.planningWorkspaceID = nil; return
+            }
+            store.planningWorkspaceID = nil
             if let wanted = store.planningTaskID {
-                if let task = plan?.tasks.first(where:{$0.id == wanted}) { inspected = task.id;choose(task) }
+                if let task = plan?.tasks.first(where:{$0.id == wanted}) { inspected = task.id; choose(task) }
                 else { issue = "This issue is completed or outside the current planning candidate set. Review the source details in TaskDock." }
                 store.planningTaskID = nil
             }
-        } catch { issue = (error as? APIProblem)?.message ?? "Could not load planning. Your changes remain here." }
+        } catch { if loadIdentity == identity { issue = (error as? APIProblem)?.message ?? "Could not load planning. Your changes remain here." } }
     }
     private func save() async {
         guard let record else { return }
@@ -152,7 +185,7 @@ struct PlanningWorkspace: View {
                     Button("Save planning") { Task { await save() } }.disabled(busy || !dirty || store.offline)
                     if busy { ProgressView().controlSize(.small) }
                 }
-                if dirty { HStack { Text("Unsaved planning changes").foregroundStyle(.orange); Button("Discard draft and reload") { Task { await load() } } } }
+                if dirty { HStack { Text("Unsaved planning changes").foregroundStyle(.orange); Button("Discard draft and reload") { Task { await load(discard: true) } } } }
                 if let issue { Text(issue).foregroundStyle(.orange).textSelection(.enabled) }
                 DisclosureGroup("Find a room and person’s work window") { RepairWindowsView(store: store, tasks: plan?.tasks ?? [], workspace: record?.workspace_id) }
                 if let record {
@@ -223,6 +256,20 @@ struct PlanningWorkspace: View {
                                 if !task.next_action.isEmpty { Text("Unblock: " + task.next_action) }
                                 if let check = task.next_check { Text("Next blocker check: " + check).font(.caption) }
                                 if !task.resume.isEmpty { Text("Resume: " + task.resume) }
+                                DisclosureGroup("Reviewed check-in sources") {
+                                    if let sourceIssue { Text(sourceIssue).font(.caption) }
+                                    else if let planningSources {
+                                        if planningSources.items.isEmpty { Text("No diary carry-forward history recorded for this task.").font(.caption) }
+                                        ForEach(planningSources.items) { source in
+                                            Text("Diary \(source.diary_day) · revision \(source.diary_revision)").font(.headline)
+                                            Text(source.source_quote).textSelection(.enabled)
+                                            if source.source_changed { Text("The diary has changed since this review. Compare the current source before reusing this evidence.").foregroundStyle(.orange) }
+                                            ForEach(source.rows) { change in Text(change.label+": "+change.before+" → "+change.after).font(.caption) }
+                                        }
+                                        Text("Historical reviewed changes; later planning edits can supersede these values.").font(.caption).foregroundStyle(.secondary)
+                                    } else { Text("Loading source history…").font(.caption) }
+                                }
+
                                 }
                             }.frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -244,24 +291,26 @@ struct PlanningWorkspace: View {
                 Text("End-of-day continuity").font(.headline)
                 Text("Use Daily check-in for the five-question interview: accomplishments, interruptions, blockers, employee contributions and tomorrow. Aim for about 15 minutes; drafts survive interruptions.")
                 Button("Open daily check-in") { store.section = "Check-in" }
-                HStack {
-                    Text("Dean update for the selected seven-day period").font(.headline)
-                    Button("Prepare draft") {
-                        Task {
-                            busy = true; defer { busy = false }
-                            do { let draft = try await store.decode(WeeklyPlanningDraft.self, "/v1/planning/weekly?day=" + dateString(day)); weekly = draft.text }
-                            catch { issue = (error as? APIProblem)?.message ?? "Reconnect to prepare a weekly draft." }
-                        }
-                    }.disabled(busy || store.offline)
+                GroupBox("Weekly Dean update") {
+                    VStack(alignment:.leading,spacing:8) {
+                        Text("Prepare, edit and save a draft for a seven-day period. Saved writing reopens across sessions and devices.")
+                        Button("Open weekly Dean drafts…") { showDeanDraft = true }
+                    }.frame(maxWidth:.infinity,alignment:.leading)
                 }
-                if !weekly.isEmpty {
-                    TextEditor(text: $weekly).frame(minHeight: 220)
-                    Text("Editable session draft. Copy it before leaving this screen; Juno does not send it.").font(.caption)
-                    Button("Copy reviewed draft") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(weekly, forType: .string) }
-                }
+
             }.padding(24).disabled(busy)
         }.environment(\.locale,Locale(identifier:"en_US"))
-        .task { day = Date(); await load() }
+        .task(id:(inspected ?? "")+":"+(record?.workspace_id ?? "")+":"+String(record?.revision ?? 0)) {
+            planningSources=nil;sourceIssue=nil
+            guard let id=inspected,let workspace=record?.workspace_id else{return}
+            if store.offline {sourceIssue="Reconnect to read reviewed diary sources.";return}
+            let task=id.addingPercentEncoding(withAllowedCharacters:.alphanumerics) ?? ""
+            let scope=workspace.addingPercentEncoding(withAllowedCharacters:.alphanumerics) ?? ""
+            do { let result=try await store.decode(PlanningDiarySources.self,"/v1/planning/carry-forward/history?task_id="+task+"&workspace_id="+scope);if !Task.isCancelled {planningSources=result} }
+            catch {if !Task.isCancelled {sourceIssue="Source history unavailable; reconnect to read it."}}
+        }
+        .task { await load() }
+        .sheet(isPresented:$showDeanDraft) { WeeklyDeanEditor(store:store,initialDay:day) }
         .sheet(isPresented: Binding(get:{ selected != nil },set:{ if !$0 { selected = nil } }),onDismiss:{ estimateTask?.cancel();estimating = false }) {
             VStack(alignment:.leading,spacing:0) {
                 HStack { VStack(alignment:.leading) { Text("Task planning details").font(.title2.bold());Text(plan?.tasks.first { $0.id == selected }?.title ?? "Review your task context").foregroundStyle(.secondary).lineLimit(2) };Spacer() }.padding(20)
@@ -282,7 +331,7 @@ struct PlanningWorkspace: View {
         .onChange(of:dirty) { value in if value { store.unsavedSections.insert("Plan") } else { store.unsavedSections.remove("Plan") } }
         .onChange(of:store.section) { key in if key == "Plan",!dirty,selected == nil { Task { await load() } } }
         .onChange(of:store.planningTaskID) { wanted in
-            if let task = plan?.tasks.first(where:{$0.id == wanted}) { inspected = task.id;choose(task);store.planningTaskID = nil }
+            if store.section == "Plan", !dirty, selected == nil, !busy, store.planningDayKey == nil, store.planningWorkspaceID == nil, let task = plan?.tasks.first(where:{$0.id == wanted}) { inspected = task.id;choose(task);store.planningTaskID = nil }
         }
         .onChange(of: day) { _ in if !dirty { Task { await load() } } }
     }
@@ -425,4 +474,110 @@ struct PlanningRequestOverview: View {
     }
     private var location: some View { Text("Room: " + task.roomSummary).frame(maxWidth:.infinity,alignment:.leading) }
     private var priority: some View { VStack(alignment:.leading,spacing:4) { Text("Priority: " + (task.priority_label ?? "Unknown"));Text("Due: " + due(task.due_date)) }.frame(maxWidth:.infinity,alignment:.leading) }
+}
+
+struct WeeklyDeanEditor: View {
+    @ObservedObject var store:JunoStore
+    let initialDay:Date
+    @Environment(\.dismiss) private var dismiss
+    @State private var day=Date()
+    @State private var saved:SavedDeanDraft?
+    @State private var basis:WeeklyBasis?
+    @State private var text=""
+    @State private var dirty=false
+    @State private var busy=false
+    @State private var notice=""
+    @State private var prepared:WeeklyPlanningDraft?
+    @State private var comparison:SavedDeanDraft?
+    @State private var pending:[String:Any]?
+    @State private var baseRevision=0
+    @State private var confirmClose=false
+    var dayKey:String { let f=DateFormatter();f.locale=Locale(identifier:"en_US_POSIX");f.timeZone=TimeZone(identifier:"America/Chicago");f.dateFormat="yyyy-MM-dd";return f.string(from:day) }
+    var recoveryKey:String? { saved.map { "deanDraft."+$0.owner_id+":"+dayKey } }
+    private func object<T:Encodable>(_ value:T) throws -> [String:Any] { try JSONSerialization.jsonObject(with:JSONEncoder().encode(value)) as! [String:Any] }
+    private func recoverable() {
+        guard let key=recoveryKey, let basis else { return }
+        if !dirty && pending == nil { UserDefaults.standard.removeObject(forKey:key);return }
+        var value:[String:Any] = ["text":text,"revision":baseRevision,"basis":(try? object(basis)) ?? [:]]
+        if let pending { value["pending"]=pending }
+        if let data=try? JSONSerialization.data(withJSONObject:value) { UserDefaults.standard.set(data,forKey:key) }
+    }
+    private func load() async {
+        guard !busy else { return };busy=true;defer{busy=false}
+        do {
+            let result=try await store.decode(SavedDeanDraft.self,"/v1/planning/weekly-draft/"+dayKey)
+            saved=result;basis=result.basis;baseRevision=result.revision;text=result.text;dirty=false;prepared=nil;comparison=nil;notice=""
+            if let key=recoveryKey,let data=UserDefaults.standard.data(forKey:key),let local=try JSONSerialization.jsonObject(with:data) as? [String:Any],let recovered=local["text"] as? String,let revision=local["revision"] as? Int,let raw=local["basis"] {
+                text=recovered;baseRevision=revision;basis=try JSONDecoder().decode(WeeklyBasis.self,from:JSONSerialization.data(withJSONObject:raw));pending=local["pending"] as? [String:Any];dirty=true
+                notice="Recovered local writing. Compare it with the saved draft before replacing either version."
+            }
+        } catch { notice=(error as? APIProblem)?.message ?? "Could not open the saved draft. Reconnect to your work Mac." }
+    }
+    private func prepare() {
+        guard !busy, pending == nil else { return };busy=true
+        Task { defer{busy=false};do {
+            let value=try await store.decode(WeeklyPlanningDraft.self,"/v1/planning/weekly?day="+dayKey)
+            prepared=value
+            if saved?.exists == false && !dirty { text=value.text;basis=value.basis;dirty=true;recoverable();notice="Prepared for your review. Save draft keeps your edited writing on the work Mac." }
+            else { notice="A fresh comparison is shown below. Your writing has been kept intact." }
+        } catch { notice=(error as? APIProblem)?.message ?? "Could not prepare the draft. Your writing is still here." } }
+    }
+    private func save() {
+        guard let basis,!busy,pending == nil else{return}
+        do { pending=["operation_id":UUID().uuidString,"expected_revision":baseRevision,"text":text,"basis":try object(basis)];recoverable();retry() }
+        catch { notice="Could not prepare this save. Your writing is still here." }
+    }
+    private func retry() {
+        guard let operation=pending,!busy else{return};busy=true
+        Task { defer{busy=false};do {
+            let receipt=try await store.decode(DeanSaveReceipt.self,"/v1/planning/weekly-draft/"+dayKey,method:"PUT",body:operation)
+            pending=nil;dirty=false;baseRevision=receipt.revision;recoverable();notice="Saved on your work Mac. Nothing has been sent."
+            do { saved=try await store.decode(SavedDeanDraft.self,"/v1/planning/weekly-draft/"+dayKey) } catch { notice="Saved on your work Mac, but the view could not refresh. Your text remains here." }
+        } catch {
+            if let problem=error as? APIProblem,(400..<500).contains(problem.status){pending=nil;notice=problem.message+" Use Compare saved copy; your writing remains here."}
+            else { notice="Save receipt unavailable. Your writing and save identity are retained; retry this same save." }
+            recoverable()
+        } }
+    }
+    private func compare() {
+        busy=true;Task { defer{busy=false};do { comparison=try await store.decode(SavedDeanDraft.self,"/v1/planning/weekly-draft/"+dayKey) } catch { notice=(error as? APIProblem)?.message ?? "Could not read the saved copy." } }
+    }
+    var body:some View {
+        VStack(alignment:.leading,spacing:14) {
+            Text("Weekly Dean draft").font(.title2.bold())
+            DatePicker("Seven days starting",selection:$day,displayedComponents:.date).disabled(dirty || busy || pending != nil)
+            Text("Confirmed diaries plus dated saved task context. Review sensitive details before copying. Juno does not send this draft.").foregroundStyle(.secondary)
+            ScrollView { VStack(alignment:.leading,spacing:12) {
+            if !notice.isEmpty { Text(notice).foregroundStyle(.orange).textSelection(.enabled) }
+            if let saved {
+                Text(saved.exists ? "Saved revision \(saved.revision)" : "No saved draft for this period")
+                if saved.sources_changed { Text("Evidence has changed since this draft's original preparation. Saved writing is preserved; prepare a fresh comparison if useful.").foregroundStyle(.orange) }
+                HStack { Button(saved.exists || dirty ? "Prepare fresh comparison" : "Prepare draft",action:prepare).disabled(busy || store.offline || pending != nil);Button("Compare saved copy",action:compare).disabled(busy || store.offline || pending != nil) }
+                if let basis { if basis.taskdock_uncertain { Text("TaskDock freshness needs review for this preparation; check current task status.").foregroundStyle(.orange) };Text("Original preparation: \(basis.diaries.count) confirmed diary day(s); \(7-basis.diaries.count) day(s) without a confirmed diary.").font(.caption) }
+                TextEditor(text:Binding(get:{text},set:{text=$0;dirty=true;recoverable()})).frame(minHeight:220).accessibilityLabel("Weekly Dean draft text").overlay(RoundedRectangle(cornerRadius:8).stroke(.quaternary)).disabled(busy || pending != nil)
+                if let prepared, saved.exists || prepared.text != text { DisclosureGroup("Fresh prepared comparison") { ScrollView { Text(prepared.text).textSelection(.enabled) }.frame(maxHeight:180) } }
+                if let comparison {
+                    GroupBox("Saved copy — revision \(comparison.revision)") {
+                        VStack(alignment:.leading) { ScrollView { Text(comparison.text.isEmpty ? "No saved text" : comparison.text).textSelection(.enabled) }.frame(maxHeight:150)
+                            HStack { Button("Keep my writing against this revision") { self.saved=comparison;baseRevision=comparison.revision;basis=comparison.basis;self.comparison=nil;dirty=true;recoverable();notice="Compare complete. Review your writing, then Save draft." };Button("Use saved text") { self.saved=comparison;baseRevision=comparison.revision;basis=comparison.basis;text=comparison.text;dirty=false;self.comparison=nil;recoverable();notice="Loaded the saved text. Local recovery has been cleared." } }
+                        }
+                    }
+                }
+            }
+            } }
+            HStack {
+                Button("Close") { if dirty || pending != nil { confirmClose=true } else { dismiss() } }.keyboardShortcut(.cancelAction)
+                if pending != nil { Button("Retry same save",action:retry).disabled(busy || store.offline) }
+                Spacer()
+                Button("Copy reviewed draft") { NSPasteboard.general.clearContents();NSPasteboard.general.setString(text,forType:.string) }.disabled(text.isEmpty || busy)
+                Button("Save draft",action:save).disabled(!dirty || busy || store.offline || pending != nil || text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || text.count>60000)
+            }
+        }.padding(24).frame(width:780,height:760).environment(\.locale,Locale(identifier:"en_US"))
+        .task { day=initialDay;await load() }
+        .onChange(of:day) { _ in if !dirty && !busy { Task { await load() } } }
+        .onChange(of:dirty) { value in if value { store.unsavedSections.insert("Dean draft") } else { store.unsavedSections.remove("Dean draft") } }
+        .onDisappear { recoverable();store.unsavedSections.remove("Dean draft") }
+        .interactiveDismissDisabled(dirty || pending != nil)
+        .alert("Keep this unsaved writing for later?",isPresented:$confirmClose) { Button("Keep local recovery and close") { recoverable();dismiss() };Button("Return to draft",role:.cancel){} } message:{Text("Your work-Mac draft changes only after Save succeeds. A local recovery copy keeps this writing for the next time you open this period.")}
+    }
 }

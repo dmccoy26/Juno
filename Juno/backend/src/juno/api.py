@@ -184,6 +184,8 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
     taskdock_evidence_api.install(app, db, device, lock_owner, taskdock_factory)
     from . import planning, schedules, estimates
     planning.install(app, db, device, lock_owner)
+    from . import planning_continuity
+    planning_continuity.install(app, db, device, lock_owner)
     from . import workers
     workers.install(app, db, device, lock_owner, worker_manager)
     schedules.install(app, db, device, lock_owner)

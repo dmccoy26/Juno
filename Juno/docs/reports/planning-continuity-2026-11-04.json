@@ -1,0 +1,18 @@
+{
+  "date": "2026-11-04",
+  "mission": 12,
+  "reviewed_carry_forward": true,
+  "saved_weekly_dean_drafts": true,
+  "schema": "0012_daily_planning",
+  "backend_tests_passed": 186,
+  "backend_skips": 0,
+  "native_wire_and_null_basis_roundtrip": true,
+  "native_offline_regressions": true,
+  "native_fictional_carry_provenance_and_weekly_reopen": true,
+  "source_dependent_candidate": ".local/continuity-final/Juno.app",
+  "installed_app_updated": false,
+  "portable_installer_built": false,
+  "production_database_migrated": false,
+  "taskdock_changed": false,
+  "timed_fifteen_minute_acceptance": false
+}

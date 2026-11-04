@@ -253,3 +253,41 @@ class WorkerReport(Base):
     applied: Mapped[dict] = mapped_column(JSONB, default=dict)
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     __table_args__ = (UniqueConstraint('worker_id', 'request_key', name='uq_worker_report_request'),Index('ix_worker_reports_owner_submitted','owner_id','submitted_at'))
+
+
+class PlanningCarry(Base):
+    __tablename__ = 'planning_carry'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    operation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    diary_id: Mapped[str | None] = mapped_column(ForeignKey('check_ins.id', ondelete='SET NULL'), nullable=True)
+    diary_revision: Mapped[int] = mapped_column(Integer)
+    diary_day: Mapped[date] = mapped_column(Date)
+    workspace_id: Mapped[str] = mapped_column(String(500))
+    task_id: Mapped[str] = mapped_column(String(500))
+    source_quote: Mapped[str] = mapped_column(Text)
+    before: Mapped[dict] = mapped_column(JSONB)
+    after: Mapped[dict] = mapped_column(JSONB)
+    planning_revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class DeanDraft(Base):
+    __tablename__ = 'dean_drafts'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), index=True)
+    week_start: Mapped[date] = mapped_column(Date)
+    text: Mapped[str] = mapped_column(Text)
+    basis: Mapped[dict] = mapped_column(JSONB)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    __table_args__ = (UniqueConstraint('owner_id','week_start',name='uq_dean_draft_owner_week'),)
+
+
+class DeanDraftOperation(Base):
+    __tablename__ = 'dean_draft_operations'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    operation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    receipt: Mapped[dict] = mapped_column(JSONB)

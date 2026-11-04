@@ -60,8 +60,11 @@ class LANBoundary:
             path == '/v1/schedules/reservations' and method == 'POST' or
             path.startswith('/v1/schedules/reservations/') and method == 'DELETE' or
             path == '/v1/planning/estimate' and method == 'POST' or
+            path.startswith('/v1/planning/weekly-draft/') and method in {'GET','PUT'} or
+            path in {'/v1/planning/carry-forward','/v1/planning/carry-forward/history'} and method == 'GET' or
+            path in {'/v1/planning/carry-forward/preview','/v1/planning/carry-forward/save'} and method == 'POST' or
             path == '/v1/planning' and method in {'GET','PUT'} or
-            path in {'/v1/planning/next','/v1/planning/weekly','/v1/planning/check-in'} and method == 'GET' or
+            path in {'/v1/planning/next','/v1/planning/weekly','/v1/planning/check-in','/v1/planning/daily-brief'} and method == 'GET' or
             path == '/v1/model' and method == 'GET')
         if not allowed or not permitted:
             from starlette.responses import JSONResponse

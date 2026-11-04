@@ -1,6 +1,24 @@
 # Build status
 
-Updated: November 3, 2026.
+Updated: November 4, 2026.
+
+## Current release — preview.16 daily planning and saved Dean drafts
+
+The active work-host app at `~/Applications/Juno.app` is updated, connected and shows `0.1.0-preview.16` beside Juno's name. Includes the dated check-in/next-workday bridge, reviewed selective carry-forward with provenance, and saved weekly Dean drafts with comparison/recovery. Schema 0012 was applied through normal startup with a readable pre-migration backup. Private before/after checks preserve work records, owner, paired devices, worker configuration and TLS keys.
+
+186 backend tests and 148 relocated bundled-runtime fixtures pass with zero skips; installer extraction, resource seals, 239 dependency checks, restart/offline/pairing and schema upgrade checks pass. Verified package: `dist/Juno-0.1.0-preview.16-macOS-arm64.pkg`; copy/checksum/guide in `~/Downloads/Juno-0.1.0-preview.16`. The older root-owned `/Applications/Juno.app` still requires administrator installation and its independent data folder is unchanged. Physical laptop acceptance remains open. See [setup](PREVIEW-16-SETUP.md), [delivery/preservation](reports/preview-16-delivery-2026-11-04.md) and [installer report](reports/installer-preview-16.json).
+
+## Mission 12 next phases — November 4 development candidate
+
+Reviewed carry-forward and saved weekly Dean drafts are implemented. A confirmed diary excerpt can update only selected Juno planning fields after before/after review; revisions, snapshot/workspace identity, atomic provenance and operation receipts protect the save. Native Plan exposes source history. Weekly drafts persist by owner and period, reopen across restart/devices, preserve edited writing during fresh preparation, show source changes and compare concurrent/local recovery copies explicitly. Nothing is sent or written to TaskDock.
+
+186 backend/PostgreSQL tests pass without skips, including additive 0011→0012 preservation, rollback, concurrent edits, owner/cache isolation and replay safety. Native wire/null-basis, offline/editor and actual fictional carry/reopen/comparison/recovery checks pass. Optimized candidate: `.local/continuity-final/Juno.app`, source-dependent and uninstalled. See [workflow](DAILY-CHECKIN-PLANNING.md), [mission](missions/2026-11-03-12-daily-planning.md) and [evidence](reports/planning-continuity-2026-11-04.md). Preview.15 remains the latest installer; production host migration/app replacement, laptop verification and timed acceptance were not performed.
+
+## Mission 12 — daily check-in to next-workday preview (development candidate)
+
+The mission is created and its first increment implemented: dated daily review, question-specific saved guidance, next scheduled workday, constrained daily alternatives and a draft-safe date/task handoff to Plan. Manual diary corrections prevent original interview notes from being resurrected as current carry-forward evidence. The briefing refreshes after Plan changes and clears when unavailable/offline. No automatic task-fact write, booking, assignment or model call is introduced.
+
+159 backend/PostgreSQL tests pass without skips; native wire/time, existing planning/offline/editor checks pass; optimized SwiftUI candidate and an actual fictional native interview→Plan→updated-preview walkthrough pass. See [mission](missions/2026-11-03-12-daily-planning.md), [workflow](DAILY-CHECKIN-PLANNING.md) and [verification](reports/daily-planning-2026-11-03.md). Candidate: `.local/daily-planning-final/Juno.app`, source-dependent and uninstalled. Preview.15 remains the latest installer. Real host, pairing, worker reports and backups are unchanged. Reviewed carry-forward, persisted weekly Dean drafts and timed acceptance remain next phases.
 
 ## Work-Mac automatic backups — November 2
 

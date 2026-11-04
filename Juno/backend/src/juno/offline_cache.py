@@ -67,6 +67,10 @@ def install(app,db,device,lock_owner):
         add('/v1/schedules',schedules_view(session,actor.owner_id))
         from .planning import state_view
         add('/v1/planning',state_view(session,actor.owner_id))
+        from .models import DeanDraft
+        from .planning_continuity import dean_view
+        for draft in bounded(select(DeanDraft).where(DeanDraft.owner_id==actor.owner_id),1000):
+            add('/v1/planning/weekly-draft/'+str(draft.week_start),dean_view(session,actor.owner_id,draft.week_start))
         state=session.get(TaskDockState,actor.owner_id);snapshot=active_snapshot(session,actor.owner_id)
         add('/v1/taskdock',{'snapshot':snapshot_view(snapshot,state.error) if snapshot else None,'error':state.error if state else None})
         if snapshot:

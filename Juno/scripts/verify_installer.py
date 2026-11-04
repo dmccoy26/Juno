@@ -121,6 +121,8 @@ def isolated_connect(sock,address):
 socket.socket.connect=isolated_connect
 from test_providers import ProviderReaderTests,OAuthTests,ProviderAPITests
 from test_planning import PlanningTests
+from test_daily_brief import DailyBriefTests
+from test_planning_continuity import ContinuityTests
 from test_schedules import ScheduleTests
 from test_memory_api import MemoryTests
 from test_taskdock import TaskDockTests
@@ -131,7 +133,7 @@ from test_worker_host import WorkerHostTests
 from test_local_model_output import LocalModelOutputTests
 import juno.planning
 assert Path(juno.planning.__file__).resolve().is_relative_to(Path(sys.argv[2]).resolve())
-suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (ProviderReaderTests,OAuthTests,ProviderAPITests,PlanningTests,ScheduleTests,MemoryTests,TaskDockTests,TaskDockAPITests,SharingTests,WorkerTests,WorkerHostTests,LocalModelOutputTests)])
+suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (ProviderReaderTests,OAuthTests,ProviderAPITests,PlanningTests,DailyBriefTests,ContinuityTests,ScheduleTests,MemoryTests,TaskDockTests,TaskDockAPITests,SharingTests,WorkerTests,WorkerHostTests,LocalModelOutputTests)])
 result=unittest.TextTestRunner(verbosity=0).run(suite)
 sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
 """
@@ -139,7 +141,7 @@ sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
     with tempfile.TemporaryDirectory(prefix='juno-provider-payload-') as folder:
         env=local_environment(app,state);env['PYTHONPATH']=str(app/'Contents/Resources/app/backend/src')
         env['JUNO_TEST_ADMIN_URL']=subprocess.check_output([str(app/'Contents/Resources/runtime/python/bin/python3'),str(app/'Contents/Resources/app/scripts/dev_database.py'),'url'],env=env,cwd=folder,text=True).strip()
-        subprocess.run([str(app/'Contents/Resources/runtime/python/bin/python3'),'-c',code,str(Path(__file__).resolve().parents[1]/'backend/tests'),str(app/'Contents/Resources/app')],env=env,cwd=folder,check=True,timeout=45)
+        subprocess.run([str(app/'Contents/Resources/runtime/python/bin/python3'),'-c',code,str(Path(__file__).resolve().parents[1]/'backend/tests'),str(app/'Contents/Resources/app')],env=env,cwd=folder,check=True,timeout=90)
 
 
 def verify_taskdock_cache(url, token):
