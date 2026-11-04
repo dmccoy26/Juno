@@ -12,6 +12,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from helper_http import loopback_request, open_loopback
 
 
 def run(*args):
@@ -52,12 +53,13 @@ def api(url, token, path, *, method='GET', body=None, expected=200):
     headers={'Authorization':'Bearer '+token} if token else {}
     data = json.dumps(body).encode() if body is not None else None
     if data: headers['Content-Type']='application/json'
-    req=urllib.request.Request(url+path,headers=headers,data=data,method=method)
+    req=loopback_request(url,path,headers=headers,data=data,method=method)
     try:
-        with urllib.request.urlopen(req, timeout=3) as response:
+        with open_loopback(req, timeout=3) as response:
             status=response.status; raw=response.read()
     except urllib.error.HTTPError as error:
-        status=error.code; raw=error.read()
+        with error:
+            status=error.code; raw=error.read()
     assert status==expected, f'{method} {path.split("?")[0]} returned {status}, expected {expected}'
     return json.loads(raw) if raw else None
 

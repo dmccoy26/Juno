@@ -1,0 +1,70 @@
+{
+  "date": "2026-11-04",
+  "scope": "Build and disposable verification helper hardening; no deployment or credential changes",
+  "original_guardian_findings": [
+    "ab567d572d9ec54d",
+    "6f6538e288c8c0a4",
+    "c0a2b930a3936b08",
+    "934516e20b8d3ca9"
+  ],
+  "source_sha256": {
+    "scripts/helper_http.py": "26cc2cbacf3e6aa5654e05e50a1a15cffae18c59114c04a0c8a7be6a3d15728c",
+    "scripts/fetch_runtimes.py": "af2169e1b1fdb487b378e4b103bc8a7e76588eef8546c7029d4686278b9d09e1",
+    "scripts/verify_installer.py": "cbb01135744ec92254db332a58974e886c9191e378fd24588c5102020acb1a18",
+    "scripts/verify_connections_bridge.py": "2b8e8d1f46c335f9b5263cf78395bff880cfdbeee3373fe6eae1d4170288b212",
+    "backend/tests/test_helper_security.py": "7dbddcb631d625edce3f4bf14af57196c035c966dd96b824385c3878869a1751",
+    "backend/src/juno/shared_host.py": "b5096465833d3397cb8649a7f441783ad5c50f019273c1b7b2adfb3dab862c57",
+    "backend/requirements.lock": "93b6b73899b3926cfce4a4091dec92d8038c88b6a5083048aafbca0ae2b9ea93",
+    "scripts/backup-requirements.lock": "9e7f59bebd083346646a899db86851c87c66d296a4d59818c24698027eef69d6"
+  },
+  "backend_tests": {
+    "run": 190,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "new_helper_tests": 4
+  },
+  "semgrep": {
+    "version": "1.183.0",
+    "config": "p/security-audit",
+    "scope": [
+      "scripts/helper_http.py",
+      "scripts/fetch_runtimes.py",
+      "scripts/verify_installer.py",
+      "scripts/verify_connections_bridge.py",
+      "backend/src/juno/shared_host.py"
+    ],
+    "errors": 0,
+    "findings": [
+      {
+        "rule": "python.lang.security.audit.network.bind.avoid-bind-to-all-interfaces",
+        "file": "Juno/backend/src/juno/shared_host.py",
+        "line": 114
+      }
+    ]
+  },
+  "trivy": {
+    "version": "0.76.1",
+    "scope": "Unmodified requirements.lock copies renamed requirements.txt for recognition; not full packaged runtime scan",
+    "results": [
+      {
+        "target": "backend/requirements.txt",
+        "packages": 29,
+        "vulnerabilities": 0
+      },
+      {
+        "target": "backup/requirements.txt",
+        "packages": 3,
+        "vulnerabilities": 0
+      }
+    ]
+  },
+  "limits": [
+    "No Git history/secret scan",
+    "No full installer rebuild or installed-app update",
+    "No full binary/runtime OS vulnerability scan",
+    "No live institutional endpoint tests",
+    "No complete independent app security certification"
+  ],
+  "original_reports_modified": false
+}

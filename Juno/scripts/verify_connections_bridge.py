@@ -1,5 +1,6 @@
 """Actual TaskDock/Juno bridge with disposable records and loopback HTTP; no installed app data."""
 import argparse,json,os,socket,subprocess,sys,tempfile,time
+from helper_http import loopback_request, open_loopback
 from datetime import datetime
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -39,7 +40,6 @@ def main():
             case=None
             try:
                 base='http://127.0.0.1:'+str(port)
-                from urllib.request import Request,urlopen
                 deadline=time.monotonic()+30;token=None
                 while time.monotonic()<deadline:
                     if child.poll() is not None:raise RuntimeError('Disposable TaskDock failed: '+(folder/'server.log').read_text()[-4000:])
@@ -52,8 +52,8 @@ def main():
                 try:reader.evidence(['notes']);raise AssertionError('Old task-only credential gained note access')
                 except TaskDockError as error:assert error.status==403
                 def grants(kinds):
-                    req=Request(base+'/workspace/integrations/juno',data=json.dumps({'enabled':True,'grants':kinds}).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer synthetic-bridge-admin'},method='PUT')
-                    with urlopen(req) as response:assert response.status==200
+                    req=loopback_request(base,'/workspace/integrations/juno',data=json.dumps({'enabled':True,'grants':kinds}).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer synthetic-bridge-admin'},method='PUT')
+                    with open_loopback(req) as response:assert response.status==200
                 grants(['notes']);data=reader.evidence(['notes']);assert len(data['items'])==501
                 assert all(x['id']!='note:archived' for x in data['items'])
                 MemoryTests.setUpClass();case=MemoryTests();case.setUp()
