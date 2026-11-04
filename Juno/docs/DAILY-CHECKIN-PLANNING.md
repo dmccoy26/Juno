@@ -37,3 +37,13 @@ Implementation status: both November 4 features are built and verified in an iso
 ## Preview 16 delivery
 
 November 4: these features are now installed in the active work-host app (`~/Applications/Juno.app`), with the release version beside Juno's name. The portable preview.16 installer is verified. The root-owned standalone copy and physical laptop installation remain separate administrator/user actions; see [setup and exact delivery status](PREVIEW-16-SETUP.md). Earlier development-only status above describes the pre-delivery increment.
+
+## Preview.17 — question-first daily interview
+
+Daily check-in displays one prominent “Juno asks” question above the answer area. Enter your answer there and choose **Save answer and continue**; **Skip for now** records unknown and advances. The saved-answer count updates after a successful save. Saved work context and freshness are available in a collapsed disclosure below, instead of preceding the interview. After five responses, review the diary before confirming. This is the Daily check-in workspace, not Chat. Existing daily records resume at their next unanswered question; completed interviews keep their diary review rather than starting over.
+
+The implementation and isolated checks pass; preview.17 installation and another real-user walkthrough remain pending.
+
+## Current delivery — preview.19
+
+The question-first interview is installed in `/Applications/Juno.app` as part of preview.19, alongside the approved Juno logo/icon, clear TaskDock connection fields and Today refresh-on-return. Backend, isolated native and extracted-package checks pass; see [build status](BUILD-STATUS.md). Earlier development/install-pending notes are historical. The timed real-user check-in remains open following the original prompt-placement confusion; no completion time or user acceptance is inferred from synthetic checks.

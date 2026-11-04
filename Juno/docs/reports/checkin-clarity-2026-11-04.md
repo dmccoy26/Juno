@@ -1,0 +1,13 @@
+# Daily check-in clarity — November 4, 2026
+
+Dan requested a one-question-at-a-time interview after the walkthrough exposed confusion between Chat and Daily check-in and uncertainty about where the prompts appear. The earlier conversational acknowledgments are not sufficient native acceptance evidence. The approximately 15-minute timed walkthrough is not passed.
+
+Source inspection and read-only navigation in installed preview.16 confirmed the existing five-question API and interview. The old presentation placed work-context evidence and a long source notice before the prompt. The revised native view puts an accessible question heading first, labels the answer area, exposes saved progress and uses “Save answer and continue.” Context/freshness is collapsed below. Existing stable question keys, saved answers, skip behavior, revision checks and explicit diary confirmation are preserved. Question wording follows Dan's requested accomplishments, interruptions/time, blockers, known employee work and tomorrow priorities.
+
+190 backend tests passed with zero skips using a separate PostgreSQL cluster. The strengthened check-in test reopens through a new authenticated client after each answer, checks the saved text and next question, verifies no model calls, and retains confirmation/context/conflict checks. The test cluster was stopped. Optimized SwiftUI compilation passed.
+
+In an isolated native lab with separate data/preferences/credentials, observed Question 1 through Question 5 and the exact prompts. Entered a fictional accomplishment, saved/advanced, observed saved progress; skipped the remaining four and observed diary draft review with the fictional text plus Not provided for skips. No automatic confirmation or planning save occurred. The lab app was quit and its private database stopped. No real work answers were entered or overwritten during testing.
+
+Preview.17 is the new release identifier. Installation is pending administrator authentication for the root-owned `/Applications/Juno.app`; do not describe the running preview.16 as updated. A subsequent real-user walkthrough is still needed, as are physical laptop acceptance and any broader usability signoff.
+
+The actual preview.17 package passed the extracted/relocated installer verifier: 148 bundled-runtime fixtures and 14 installer check groups, including bundle seals/dependencies, startup, restart, pairing/offline behavior and legacy-schema upgrade with readable backup. SHA-256: `9d5c0a954f1286973c5586a5089cc236200361ade4a51990212cafd072590f56`. Verified installer report: `installer-preview-17.json`. Package/checksum/install guide copied to `~/Downloads/Juno-0.1.0-preview.17/`. This verifies the package, not installation into `/Applications`.

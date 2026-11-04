@@ -13,9 +13,9 @@ from .local_model import LocalModel, ModelError, validate_origin
 QUESTIONS = [
     ('completed', 'What did you accomplish today?'),
     ('interruptions', 'What unexpected work came up, and roughly how much time did it take?'),
-    ('blockers', 'What is blocked, who or what are you waiting on, and what could help move it forward?'),
-    ('employee_work', 'What did your employees complete or learn today? Only include what you actually know.'),
-    ('tomorrow', 'What needs your attention tomorrow, and are there competing priorities we should clarify?'),
+    ('blockers', 'What tasks are blocked? What are you waiting on, and what could move them forward?'),
+    ('employee_work', 'What did your employees work on or complete today? Only include what you know; “I don’t know yet” is a valid answer.'),
+    ('tomorrow', 'What needs your attention tomorrow? Include deadlines, Dean requests, classroom issues, or competing priorities we should clarify.'),
 ]
 LABELS = dict(completed='Accomplishments', interruptions='Unexpected work', blockers='Blockers and next steps',
               employee_work='Employee contributions', tomorrow='Tomorrow')

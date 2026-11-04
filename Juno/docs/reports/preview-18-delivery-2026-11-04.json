@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-04",
+  "version": "0.1.0-preview.18",
+  "build": "18",
+  "installed_path": "/Applications/Juno.app",
+  "installed": true,
+  "deep_strict_codesign_verified": true,
+  "native_header_icon_visually_verified": true,
+  "native_taskdock_labeled_form_verified": true,
+  "native_today_return_reload_verified": true,
+  "saved_taskdock_snapshot_total": 80,
+  "unfinished_tasks": 52,
+  "previous_configuration_hashes_unchanged": false,
+  "package_sha256": "62a1cafbc694efa7ec3f2f9956d311f9baa6af80b78081ddd4677a55e7769863",
+  "package_checks": 14,
+  "bundled_fixture_tests": 148,
+  "notes": [
+    "No new schema migration",
+    "Real task records were not used for mutation tests",
+    "Preview.18 source and documentation have not been pushed in this turn",
+    "Physical laptop acceptance remains separate",
+    "desktop-owner.json changed only through verified same-owner local-device rotation; previous device is revoked and current local device valid"
+  ],
+  "stable_configuration_hashes_unchanged_except_local_identity": true,
+  "owner_preserved": true,
+  "local_credential_rotation_verified": true
+}

@@ -34,6 +34,7 @@ def main():
                         str(ROOT/'desktop/Juno.swift'),str(ROOT/'desktop/Companion.swift'),str(ROOT/'desktop/TaskDock.swift'),str(ROOT/'desktop/Shared.swift'),str(ROOT/'desktop/Integrations.swift'),str(ROOT/'desktop/Connections.swift'),str(ROOT/'desktop/Planning.swift'),str(ROOT/'desktop/Schedules.swift'),str(ROOT/'desktop/Workers.swift'),'-o',str(contents/'MacOS/Juno')], check=True)
         resources = contents/'Resources'
         resources.mkdir()
+        shutil.copy2(ROOT/'desktop/branding/juno-logo.png', resources/'JunoLogo.png')
         iconset = Path(temp)/'Juno.iconset'
         iconset.mkdir()
         master = Path(temp)/'icon.png'

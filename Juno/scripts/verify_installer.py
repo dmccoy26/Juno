@@ -24,6 +24,8 @@ def check_payload(app):
     assert info.get('JunoPackaged') is True
     assert 'JunoProjectRoot' not in info
     resources = app/'Contents/Resources'
+    for asset in ('Juno.icns', 'JunoLogo.png'):
+        assert (resources/asset).is_file(), 'Missing bundled brand asset: ' + asset
     for asset in ('index.html','app.js','style.css'):
         assert (resources/'app/backend/src/juno/worker_web'/asset).is_file(), 'Missing bundled worker portal asset'
     reference = resources/'runtime/postgres/share/proj/proj.db'

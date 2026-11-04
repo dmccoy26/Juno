@@ -220,10 +220,24 @@ class CompanionTests(memory_tests.MemoryTests):
         row=self.client.post('/v1/check-ins',json=day).json()
         self.assertEqual(row['next_key'],'completed')
         path='/v1/check-ins/'+row['id']
+        prompts = {q['key']: q['text'] for q in row['questions']}
+        self.assertEqual(len(prompts), 5)
+        self.assertIn('roughly how much time', prompts['interruptions'])
+        self.assertIn('I don’t know yet', prompts['employee_work'])
+        self.assertIn('Dean requests', prompts['tomorrow'])
         for key,text in [('completed','Synthetic repair finished.'),('interruptions',''),('blockers','Waiting for a fictional part.'),('employee_work','Unknown.'),('tomorrow','Investigate the sample issue.')]:
+            self.assertEqual(row['next_key'], key)
             old=row['revision']
             row=self.client.put(path+'/answer',json={'key':key,'text':text,'expected_revision':old}).json()
             self.assertEqual(row['revision'],old+1)
+            self.assertEqual(row['answers'][key],text)
+            # A fresh app/client must resume the same pending question after each answer.
+            with TestClient(create_app(self.engine, model_factory=FakeModel)) as reopened:
+                reopened.headers['Authorization']='Bearer '+self.second_token
+                restored=reopened.post('/v1/check-ins',json=day).json()
+                self.assertEqual(restored['answers'],row['answers'])
+                self.assertEqual(restored['next_key'],row['next_key'])
+        self.assertEqual(FakeModel.calls, [])
         resumed=self.client.post('/v1/check-ins',json=day).json()
         self.assertEqual(resumed['id'],row['id']);self.assertIsNone(row['next_key'])
         self.assertEqual(resumed['status'],'draft')

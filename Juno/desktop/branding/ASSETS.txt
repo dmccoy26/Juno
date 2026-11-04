@@ -1,0 +1,16 @@
+Juno identity — approved November 4, 2026
+
+The owner approved concepts/juno-identity-01.png and authorized the matching app icon and header logo.
+Production assets were extracted with the built-in image_gen tool. They are bundled locally; no runtime image generation or remote image request is used. The header displays the full-color lockup on a light badge in both appearances for consistent wordmark contrast. Its accessible label is Juno; version text remains separate and readable.
+
+juno-logo.png (1920 × 819, RGBA):
+Reference: concepts/juno-identity-01.png
+Prompt:
+Precise asset extraction from the approved reference identity. Produce ONLY the horizontal Juno logo lockup shown on the LEFT of the reference: the identical apricot upper curved ribbon and violet lower curved ribbon emblem, followed by the exact identical dark-plum 'Juno' wordmark. Preserve the symbol shape, color, proportions and letterforms precisely. A clean production logo asset, on a genuinely transparent background. Remove the right-hand app icon and the warm-white presentation canvas entirely. No other elements. Tight but comfortable transparent bounds around the complete horizontal logo, centered vertically, emblem and wordmark large and crisp, no shadow, no added border or extra text. This is the light-mode header logo, so the wordmark stays deep plum. Do not redesign.
+
+juno-app-icon.png (1254 × 1254, RGBA):
+Reference: concepts/juno-identity-01.png
+Prompt:
+Production app icon asset extracted from the RIGHT SIDE of the approved Juno identity reference. Preserve the deep-plum rounded-square tile and the identical two curved interlocking apricot and violet ribbon/petal forms, same orientation, same proportions, same clean continuous edges. No letters or words. Output a SQUARE 1024x1024 composition with the tile occupying 88% of the canvas, centered with equal transparent margins on all sides. Transparent pixels OUTSIDE the tile only; the tile itself is opaque solid deep plum. No presentation board, no left logo, no mockup, no floor shadow. Clean polished vector-style silhouette. Do not redesign; no new highlights, texture, speckles, sparkles or outlines.
+
+The generator returned a 1254-pixel square master; native builds resize it into the standard 16/32/128/256/512 point iconset at 1x and 2x. Rejected dark-mode exports with residual pixels are not bundled. Both generated masters above remain unchanged in source.

@@ -177,11 +177,23 @@ struct TaskDockWorkspace: View {
             if store.sharedProfile == nil {
             HStack { Button("Refresh from TaskDock") { reviewing = nil;refresh() }.disabled(busy || !store.connected); if busy { ProgressView().controlSize(.small) } }
             DisclosureGroup("TaskDock connection settings",isExpanded:$settingsExpanded) {
-            Text("Enable Juno access in TaskDock Settings → Connections. Use the dedicated token; it stays in this Mac’s Keychain.").font(.caption).foregroundStyle(.secondary)
-            HStack {
-                TextField("Local TaskDock API address", text: $origin).textFieldStyle(.roundedBorder)
-                SecureField("Dedicated Juno token (leave blank to use Keychain)", text: $token).textFieldStyle(.roundedBorder)
-            }.disabled(busy)
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Connect Juno to TaskDock").font(.headline)
+                Text("In TaskDock, open Settings → Juno. Copy the API address and dedicated Juno token into the fields below.")
+                    .font(.callout).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("1. TaskDock API address").font(.headline)
+                    TextField("http://127.0.0.1:8100", text: $origin)
+                        .textFieldStyle(.roundedBorder).accessibilityLabel("TaskDock API address")
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("2. Paste your Juno token", systemImage: "key.fill").font(.headline)
+                    SecureField("Paste token here", text: $token)
+                        .textFieldStyle(.roundedBorder).accessibilityLabel("Paste your dedicated Juno token here")
+                    Text("Copied from TaskDock → Settings → Juno → Copy token. Juno stores it securely in this Mac’s Keychain. After connecting, this field clears; leave it empty to reuse the saved token.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }.frame(maxWidth: 620, alignment: .leading).padding(.vertical, 12).disabled(busy)
             HStack {
                 Button("Connect / refresh snapshot") { reviewing = nil; refresh() }.disabled(busy || !store.connected)
                 Button("Forget saved token…",role:.destructive) { forgetting = true }.disabled(busy)
