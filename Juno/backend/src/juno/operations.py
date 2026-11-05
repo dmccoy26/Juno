@@ -77,7 +77,8 @@ def briefing(session,owner):
                 observation_uncertain |= now()-observed>timedelta(hours=24) or observed>now()+timedelta(minutes=5)
             except (ValueError,TypeError,AttributeError):observation_uncertain=True
         links=[r for r in data['links'] if r['alert_id']==aid]
-        matching=[r for r in links if r['workspace_id']==workspace and r['task_id'] in tasks and r.get('beacon_origin')==beacon.origin and r.get('beacon_instance')==beacon.details.get('instance_id')]
+        matching=[r for r in links if r['workspace_id']==workspace and r['task_id'] in tasks and r.get('beacon_origin')==beacon.origin and r.get('beacon_instance')==beacon.details.get('instance_id')
+                  and all(not r.get(k) or r[k]==alert.get(k) for k in ('asset_id','issue_id'))]
         conflicts=[];claims=[{'kind':'observation','text':alert.get('problem') or 'Observation details unavailable.','evidence_ids':[eid]}]
         if len(matching)>1:conflicts.append('More than one reviewed relationship exists; choose the intended work record.')
         linked=[]
@@ -190,7 +191,8 @@ def install(app,db,device,lock_owner):
         _,data=saved(session,actor.owner_id)
         existing=[r for r in data['links'] if r['alert_id']!=value.alert_id]
         if len(existing)>=500:raise HTTPException(422,'Review existing relationships before adding more.')
-        existing.append({'alert_id':value.alert_id,'workspace_id':td.info['workspace_id'],'task_id':value.task_id,'actor_id':actor.id,'reviewed_at':now().isoformat(),'rationale':value.rationale,'beacon_origin':beacon.origin,'beacon_instance':beacon.details.get('instance_id')})
+        alert=next(r for r in beacon.items if r['id']==value.alert_id)
+        existing.append({'asset_id':alert.get('asset_id'),'issue_id':alert.get('issue_id'),'alert_id':value.alert_id,'workspace_id':td.info['workspace_id'],'task_id':value.task_id,'actor_id':actor.id,'reviewed_at':now().isoformat(),'rationale':value.rationale,'beacon_origin':beacon.origin,'beacon_instance':beacon.details.get('instance_id')})
         data['links']=existing
         write_state(session,actor,data,value.expected_revision)
         return briefing(session,actor.owner_id)

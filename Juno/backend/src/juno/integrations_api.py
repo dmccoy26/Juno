@@ -25,6 +25,7 @@ class BeaconInput(BaseModel):
     model_config=ConfigDict(extra='forbid')
     base_url: str=Field(max_length=500)
     token: SecretStr
+    retained_issue_token: SecretStr | None=None
     expected_id: str | None=Field(default=None,max_length=36)
 
 
@@ -62,9 +63,13 @@ def install(app,db,device,lock_owner,beacon_factory=BeaconReader):
     def owned(session,owner,kind):return session.scalar(select(IntegrationSnapshot).where(IntegrationSnapshot.owner_id==owner,IntegrationSnapshot.kind==kind).execution_options(populate_existing=True))
     def check(row,expected):
         if (row.id if row else None)!=expected:raise HTTPException(409,'This source changed. Reload it before replacing or deleting it.')
-    def save(session,actor,kind,origin,items,details,expected):
+    def save(session,actor,kind,origin,items,details,expected,reviewed=None):
         if len(json.dumps({'items':items,'details':details},ensure_ascii=False).encode())>16_000_000:raise HTTPException(413,'The expanded source exceeds 16 MB. Use a smaller window; the previous copy was retained.')
         lock_owner(session,actor.owner_id);row=owned(session,actor.owner_id,kind);check(row,expected)
+        if reviewed is not None:
+            from .operations import saved
+            _,current=saved(session,actor.owner_id)
+            if current['links']!=reviewed:raise HTTPException(409,'Reviewed links changed. Refresh Beacon again.')
         check_evidence_size(session,actor.owner_id,kind,items,details)
         from .companion import invalidate_context
         if row:invalidate_context(session,actor.owner_id,'integration:'+row.kind)
@@ -99,12 +104,30 @@ def install(app,db,device,lock_owner,beacon_factory=BeaconReader):
 
     @app.post('/v1/integrations/beacon/refresh')
     def refresh(value:BeaconInput,actor=Depends(device),session=Depends(db)):
-        check(owned(session,actor.owner_id,'beacon'),value.expected_id);session.commit()
+        from .operations import saved
+        previous=owned(session,actor.owner_id,'beacon');check(previous,value.expected_id)
+        old_items={row['id']:row for row in previous.items} if previous else {}
+        _,review=saved(session,actor.owner_id)
+        session.commit()
         try:
             reader=beacon_factory(value.base_url,value.token.get_secret_value());items,details=reader.fetch()
+            instance=details.get('instance_id')
+            if value.retained_issue_token is not None:
+                if not instance:
+                    raise IntegrationError('Beacon must identify its instance in the alert feed before linked issues can be refreshed.')
+                present={row['id'] for row in items}
+                missing=[link for link in review['links'] if link['alert_id'] not in present
+                         and link.get('issue_id') and link.get('asset_id')
+                         and link.get('beacon_origin')==reader.origin and link.get('beacon_instance')==instance]
+                if len(missing)>5:
+                    raise IntegrationError('The pilot can refresh up to five linked issues outside the active feed.')
+                retained=beacon_factory(value.base_url,value.retained_issue_token.get_secret_value())
+                for link in missing:
+                    items.append(retained.retained_issue(link,details['generated_at'],old_items.get(link['alert_id'])))
+                details['retained_issue_count']=len(missing)
         except IntegrationError as error:
             failed(session,actor,'beacon',value.expected_id,str(error));raise HTTPException(502,str(error)) from None
-        return save(session,actor,'beacon',reader.origin,items,details,value.expected_id)
+        return save(session,actor,'beacon',reader.origin,items,details,value.expected_id,review['links'] if value.retained_issue_token is not None else None)
 
     @app.delete('/v1/integrations/{kind}')
     def remove(kind:Literal['beacon','calendar','schedules','taskdock_saved','gmail','google_calendar','google_tasks','google_chat','slack','smartsheet','outlook_calendar'],expected_id:str=Query(max_length=36),actor=Depends(device),session=Depends(db)):

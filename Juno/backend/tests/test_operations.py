@@ -1,5 +1,8 @@
 """Fictional two-source operational evidence; no production connections or writes."""
 from datetime import timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+from threading import Thread
 import uuid
 from sqlalchemy import select
 from fastapi.testclient import TestClient
@@ -44,6 +47,80 @@ class OperationsTests(planning_tests.PlanningTests):
         self.assertTrue(card['tasks'][0]['completed']);self.assertIn('recovery is not established',str(card['claims']))
         self.change_alert(verification_state='failed');card=self.operations()['cards'][0]
         self.assertTrue(any('failed verification' in x for x in card['conflicts']))
+
+    def test_retained_beacon_lookup_requires_reviewed_identity_and_independent_proof(self):
+        issue_id,proof_id,instance=(str(uuid.uuid4()) for _ in range(3))
+        observed=now().isoformat()
+        feed={**self.feed,'instance_id':instance,'total':0,'rows':[]}
+        issue=dict(issue_id=issue_id,asset_id='42',instance_id=instance,record_version='1',
+                   title='Fictional printer fault',evidence='Paper jam observed',observed_at=observed,
+                   updated_at=observed,issue_state='open',verification_state='pending')
+        proof=dict(id=proof_id,issue_id=issue_id,asset_id=42,actor_id='worker-1',observed_at=observed,
+                   method='Test print',outcome='verified_recovered')
+        calls=[]
+        class BeaconHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                key=self.headers.get('Authorization')
+                calls.append((self.path,key))
+                route={
+                    ('/api/alerts','Bearer fictional-alert-key'):feed,
+                    ('/api/equipment/issues/'+issue_id,'Bearer fictional-issue-key'):issue,
+                    ('/api/equipment/verifications/'+proof_id,'Bearer fictional-issue-key'):proof,
+                }
+                body=route.get((self.path,key))
+                self.send_response(200 if body is not None else 403)
+                self.end_headers()
+                if body is not None:self.wfile.write(json.dumps(body).encode())
+            def log_message(self,*args):pass
+
+        with ThreadingHTTPServer(('127.0.0.1',0),BeaconHandler) as server:
+            thread=Thread(target=server.serve_forever,daemon=True)
+            thread.start()
+            try:
+                origin=f'http://127.0.0.1:{server.server_port}'
+                with self.factory() as session:
+                    snapshot=session.get(IntegrationSnapshot,(self.actor.owner_id,'beacon'))
+                    snapshot.origin=origin
+                    snapshot.items=[{**snapshot.items[0],'asset_id':'42','issue_id':issue_id,'record_version':'1'}]
+                    snapshot.details={**snapshot.details,'instance_id':instance}
+                    snapshot_id=snapshot.id
+                    session.commit()
+                self.link('done')
+                def refresh(expected_id,key='fictional-issue-key'):
+                    return self.client.post('/v1/integrations/beacon/refresh',json={
+                        'base_url':origin,'token':'fictional-alert-key','retained_issue_token':key,
+                        'expected_id':expected_id,
+                    })
+                pending=refresh(snapshot_id)
+                self.assertEqual(pending.status_code,200,pending.text)
+                self.assertEqual(pending.json()['details']['retained_issue_count'],1)
+                card=self.operations()['cards'][0]
+                self.assertTrue(card['tasks'][0]['completed'])
+                self.assertEqual(card['verification_state'],'pending')
+                self.assertEqual(calls,[('/api/alerts','Bearer fictional-alert-key'),
+                                        ('/api/equipment/issues/'+issue_id,'Bearer fictional-issue-key')])
+
+                issue.update(record_version='2',issue_state='resolved',verification_state='verified_recovered',
+                             verification_record=dict(record_id=proof_id,asset_id='42',actor_id='worker-1',
+                                                      observed_at=observed,method='Test print'))
+                proof['asset_id']=99
+                self.assertEqual(refresh(pending.json()['id']).status_code,502)
+                card=self.operations()['cards'][0]
+                self.assertEqual(card['verification_state'],'pending')
+                self.assertTrue(card['stale'])
+                proof['asset_id']=42
+                recovered=refresh(pending.json()['id'])
+                self.assertEqual(recovered.status_code,200,recovered.text)
+                self.assertEqual(self.operations()['cards'][0]['verification_state'],'verified_recovered')
+                issue['record_version']='1'
+                self.assertEqual(refresh(recovered.json()['id']).status_code,502)
+                issue['record_version']='2'
+                self.assertEqual(refresh(recovered.json()['id'],'revoked-fictional-key').status_code,502)
+                self.assertTrue(self.operations()['cards'][0]['stale'])
+                self.assertNotIn('fictional-issue-key',self.client.get('/v1/cache').text)
+            finally:
+                server.shutdown()
+                thread.join()
 
     def test_authority_contradiction_and_stale_sources_block_unreviewed_repair(self):
         self.link();self.change_alert(decision_authority='department_lead',service_impact='unavailable')

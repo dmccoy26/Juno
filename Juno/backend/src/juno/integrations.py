@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 from urllib.parse import urlsplit
+from uuid import UUID
 from .taskdock import _NoRedirect
 
 MAX_ITEMS=20000
@@ -205,7 +206,7 @@ def beacon_feed(feed):
                  'decision_authority':{'unknown','none','department_lead'}}
         for key,allowed in choices.items():
             if key in row:
-                if row[key] not in allowed:raise IntegrationError('Invalid Beacon operational state.')
+                if not isinstance(row[key],str) or row[key] not in allowed:raise IntegrationError('Invalid Beacon operational state.')
                 metadata[key]=row[key]
         if 'verification_record' in row:
             proof=row['verification_record']
@@ -236,12 +237,15 @@ class BeaconReader:
         if not token or len(token)>4096 or any(c.isspace() or ord(c)<32 or ord(c)==127 for c in token):raise IntegrationError('Enter a dedicated read-only Beacon integration key.')
         self.origin=base_url.rstrip('/');self.token=token
     def fetch(self):
+        return beacon_feed(self._get('/api/alerts'))
+
+    def _get(self,path,timeout=10):
         try:
-            with build_opener(ProxyHandler({}),_NoRedirect).open(Request(self.origin+'/api/alerts',headers={'Authorization':'Bearer '+self.token,'Accept':'application/json'},method='GET'),timeout=10) as response:
+            with build_opener(ProxyHandler({}),_NoRedirect).open(Request(self.origin+path,headers={'Authorization':'Bearer '+self.token,'Accept':'application/json'},method='GET'),timeout=timeout) as response:
                 data=response.read(8_000_001)
                 if len(data)>8_000_000:raise IntegrationError('Beacon’s response exceeded 8 MB.')
                 if self.token in data.decode("utf-8"):raise IntegrationError("Beacon returned credential-bearing content. The previous snapshot has been retained.")
-                return beacon_feed(json.loads(data))
+                return json.loads(data)
         except HTTPError as error:
             code=error.code;error.close()
             raise IntegrationError('Beacon denied the dedicated integration key.' if code in (401,403) else f'Beacon returned HTTP {code}; the previous snapshot has been retained.') from None
@@ -249,3 +253,45 @@ class BeaconReader:
         except (ValueError,UnicodeError) as error:
             if isinstance(error,IntegrationError):raise
             raise IntegrationError('Beacon returned invalid JSON. The previous snapshot has been retained.') from None
+
+    def retained_issue(self,link,generated_at,previous):
+        def record_path(prefix,value):
+            try:
+                if str(UUID(value))==value:return prefix+value
+            except (ValueError,TypeError,AttributeError):pass
+            raise IntegrationError('Beacon supplied an invalid durable record ID.')
+
+        issue=self._get(record_path('/api/equipment/issues/',link['issue_id']),timeout=2)
+        if not isinstance(issue,dict) or any(issue.get(k)!=link[lk] for k,lk in (
+            ('issue_id','issue_id'),('asset_id','asset_id'),('instance_id','beacon_instance')
+        )):
+            raise IntegrationError('Beacon returned a different issue, asset or instance.')
+        version=issue.get('record_version')
+        if (not isinstance(version,str) or not version.isascii() or not version.isdecimal()
+            or len(version)>20 or int(version)<1):
+            raise IntegrationError('Beacon returned an invalid durable issue revision.')
+        old=previous.get('record_version') if previous else None
+        if isinstance(old,str) and len(old)<=20 and old.isascii() and old.isdecimal() and int(version)<int(old):
+            raise IntegrationError('Beacon returned an older issue revision.')
+        row={k:issue[k] for k in ('asset_id','issue_id','record_version','observed_at','updated_at',
+             'issue_state','verification_state','service_impact','decision_authority','url') if k in issue}
+        row.update(id=link['alert_id'],category='Equipment issue',item=issue.get('title'),
+                   problem=issue.get('title'),source='Beacon retained issue',evidence=issue.get('evidence'),
+                   action='Review the retained issue and its verification in Beacon.')
+        for key in ('observed_at','updated_at'):
+            try:
+                if datetime.fromisoformat(row[key]).tzinfo is None:raise ValueError()
+            except (KeyError,ValueError,TypeError):raise IntegrationError('Beacon returned an invalid issue timestamp.') from None
+        if row.get('verification_state')=='verified_recovered':
+            proof=issue.get('verification_record')
+            if not isinstance(proof,dict) or proof.get('asset_id')!=link['asset_id']:
+                raise IntegrationError('Beacon recovery is missing its asset verification.')
+            check=self._get(record_path('/api/equipment/verifications/',proof.get('record_id')),timeout=2)
+            if (not isinstance(check,dict) or check.get('id')!=proof.get('record_id')
+                or check.get('issue_id')!=link['issue_id'] or str(check.get('asset_id'))!=link['asset_id']
+                or check.get('outcome')!='verified_recovered'
+                or any(check.get(k)!=proof.get(k) for k in ('actor_id','observed_at','method'))):
+                raise IntegrationError('Beacon recovery does not match the retained verification.')
+            row['verification_record']=proof
+        rows,_=beacon_feed({'schema_version':1,'complete':True,'total':1,'generated_at':generated_at,'rows':[row]})
+        return rows[0]

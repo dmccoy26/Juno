@@ -69,6 +69,7 @@ struct IntegrationsWorkspace: View {
     @State private var zone = "America/Chicago"
     @State private var origin = UserDefaults.standard.string(forKey:"beaconOrigin") ?? "http://127.0.0.1:12108"
     @State private var token = ""
+    @State private var retainedIssueToken = ""
     @State private var search = ""
     @State private var busy = false
     @State private var notice: String?
@@ -105,13 +106,22 @@ struct IntegrationsWorkspace: View {
         Task {
             defer { busy = false }
             do {
-                let address = origin;let entered = token
+                let address = origin
+                let entered = token
+                let enteredIssueKey = retainedIssueToken
+                let issueAccount = address + "/retained-issues"
                 let key = entered.isEmpty ? try await credentialWork { try BeaconKeychain.read(address) } ?? "" : entered
-                var body:[String:Any] = ["base_url":origin,"token":key]
+                let issueKey: String? = enteredIssueKey.isEmpty ? try await credentialWork { try BeaconKeychain.read(issueAccount) } : enteredIssueKey
+                var body:[String:Any] = ["base_url":address,"token":key]
+                if let issueKey { body["retained_issue_token"] = issueKey }
                 if let previous = snapshot("beacon") { body["expected_id"] = previous.id }
                 _ = try await store.request("/v1/integrations/beacon/refresh",method:"POST",body:body)
-                try await credentialWork { try BeaconKeychain.save(key,origin:address) };token = "";UserDefaults.standard.set(origin,forKey:"beaconOrigin")
-                notice = "Read Beacon's complete alert feed. No inventory records or tasks were changed."
+                try await credentialWork {
+                    try BeaconKeychain.save(key,origin:address)
+                    if let issueKey { try BeaconKeychain.save(issueKey,origin:issueAccount) }
+                }
+                token = "";retainedIssueToken = "";UserDefaults.standard.set(address,forKey:"beaconOrigin")
+                notice = issueKey == nil ? "Refreshed Beacon alerts." : "Refreshed Beacon alerts and checked reviewed links for retained issues."
             } catch { notice = (error as? APIProblem)?.message ?? "Beacon could not be refreshed. The previous snapshot has been retained." }
             await load()
         }
@@ -151,11 +161,15 @@ struct IntegrationsWorkspace: View {
                         VStack(alignment:.leading,spacing:10) {
                             TextField("Loopback API address",text:$origin)
                             SecureField("Dedicated read-only integration key (blank uses Keychain)",text:$token)
-                            HStack {
-                                Button("Read Beacon alerts") { refreshBeacon() }.disabled(busy)
-                                Button("Forget saved key…",role:.destructive) { forgettingKey = true }.disabled(busy)
+                            DisclosureGroup("Linked repair history (pilot)") {
+                                SecureField("Asset-scoped issue key (blank uses Keychain)",text:$retainedIssueToken)
+                                Text("Use the separate Beacon issue key to check reviewed repair links after their alerts disappear. This requires a Beacon feed with stable issue and instance IDs.").font(.caption).foregroundStyle(.secondary)
                             }
-                            Text("Use the dedicated Beacon integration key. Juno reads only /api/alerts on loopback and stores the key in this Mac's Keychain. Refresh is manual.").font(.caption).foregroundStyle(.secondary)
+                            HStack {
+                                Button("Refresh Beacon") { refreshBeacon() }.disabled(busy)
+                                Button("Forget saved keys…",role:.destructive) { forgettingKey = true }.disabled(busy)
+                            }
+                            Text("Use the dedicated Beacon integration key. Juno reads Beacon on loopback and stores its keys in this Mac's Keychain. Refresh is manual.").font(.caption).foregroundStyle(.secondary)
                         }.padding(8)
                     }
                 } else {
@@ -225,7 +239,7 @@ struct IntegrationsWorkspace: View {
             }.padding(26).frame(maxWidth:.infinity,alignment:.leading)
         }.alert("Forget Beacon access on this Mac?",isPresented:$forgettingKey) {
             Button("Cancel",role:.cancel) { }
-            Button("Forget key",role:.destructive) { let address = origin;busy = true;Task { defer { busy = false };do { try await credentialWork { try BeaconKeychain.forget(address) };token = "";notice = "Saved key removed. Imported evidence remains." } catch { notice = "The key could not be removed." } } }
+            Button("Forget keys",role:.destructive) { let address = origin;busy = true;Task { defer { busy = false };do { try await credentialWork { try BeaconKeychain.forget(address);try BeaconKeychain.forget(address + "/retained-issues") };token = "";retainedIssueToken = "";notice = "Saved keys removed. Imported evidence remains." } catch { notice = "The key could not be removed." } } }
         } message: { Text("You will need the integration key to refresh again. Beacon records and Juno’s imported evidence are unchanged.") }.task { await load() }.onChange(of:store.section) { key in if key == "Evidence",!busy { Task { await load() } } }
         .alert("Remove this imported copy?",isPresented:Binding(get:{ deleting != nil },set:{ if !$0 { deleting = nil } })) {
             Button("Cancel",role:.cancel) { deleting = nil }

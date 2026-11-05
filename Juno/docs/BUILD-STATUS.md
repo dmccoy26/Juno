@@ -2,11 +2,15 @@
 
 Updated: November 5, 2026.
 
+## Beacon retained issue pilot — development
+
+Juno can refresh a reviewed Beacon issue after its alert disappears, using a separate asset-scoped key and exact instance, asset and issue IDs. A recovered claim requires a matching retained verification. A disposable HTTP regression with PostgreSQL covered completed-task-only, valid recovery, wrong-asset verification, stale revision and denied access. The live pilot still needs Beacon's stable identifiers in its active feed, the confirmed printer binding and reviewed TaskDock link, and an approved issue key. Installed Juno remains preview.21. See [connection contract](OPERATIONAL-CONNECTION-CONTRACT.md).
+
 ## Missions 12–14 — November 5 follow-up
 
 The runtime cache fix is on GitHub in `5418dc1`. Guardian's independent helper suite passed all 21 checks and the backend suite passed 234 tests. The matching preview.22-lab package passed all 15 installer check groups, including the operational evidence suite, isolated schema upgrades and backup recovery checks. This package was built and verified in a disposable workspace. The installed app remains preview.21.
 
-The full synthetic HTTP bridge passed against TaskDock's saved-evidence commit `1d165dd` in an isolated checkout, including explicit grants, 501 paged notes, owner isolation and revocation. The installed TaskDock still lacks the saved-source catalog. Beacon's draft fixtures passed current Juno alert and operation checks for stable IDs across rename, failed and successful verification, wrong-asset rejection, and completed tasks with recovery still pending. The empty active-feed fixture also confirmed the remaining Juno gap. It cannot retrieve an issue once the alert drops out of the active feed. The live pilot needs Beacon's confirmed printer asset binding and authorized issue, a linked TaskDock task, and a scoped retained-issue lookup in Juno. TaskDock writes still depend on the live read-only pilot and a supported write contract.
+The full synthetic HTTP bridge passed against TaskDock's saved-evidence commit `1d165dd` in an isolated checkout, including explicit grants, 501 paged notes, owner isolation and revocation. The installed TaskDock still lacks the saved-source catalog. Beacon's draft fixtures passed current Juno alert and operation checks for stable IDs across rename, failed and successful verification, wrong-asset rejection, and completed tasks with recovery still pending. The earlier empty active-feed fixture exposed a missing retained lookup, addressed in the development increment above. The live pilot needs Beacon's confirmed printer asset binding and authorized issue, a linked TaskDock task, and deployment of the scoped retained-issue lookup. TaskDock writes still depend on the live read-only pilot and a supported write contract.
 
 The timed native daily check-in, physical laptop offline/reconnect and worker-browser reconnect still require hands-on acceptance. Evidence is in the [installer report](/Volumes/Ai/Guardian/Development/Juno-release-verification.iXn96B/installer.json), [bridge report](/Volumes/Ai/Guardian/Development/Juno-release-verification.iXn96B/bridge.json) and [Beacon fixture log](/Volumes/Ai/Guardian/Development/Juno-release-verification.iXn96B/beacon-fixtures.log).
 

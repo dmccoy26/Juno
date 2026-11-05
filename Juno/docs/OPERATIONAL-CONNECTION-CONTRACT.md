@@ -30,6 +30,21 @@ Schema-1 alert fields remain required and compatible. The consumer can additiona
 
 These are proposed vocabulary, not agreed institutional policy. Unknown is the default; issue resolution is not recovery verification. A production verified-recovery claim also needs a producer verification record ID, scope, observed time, responsible actor and method; this consumer's optional state alone does **not** satisfy the final printer-pilot gate. Producers must agree how permission/version changes withdraw those facts. Relative app paths may be preserved, but arbitrary URLs, attachments and document instructions are never fetched automatically.
 
+The retained-issue pilot uses a separate asset-scoped Beacon key under
+**Work evidence → Beacon connection & refresh → Linked repair history (pilot)**.
+Juno still reads the complete alerts feed with the existing alert key. When a
+reviewed alert is absent, Juno looks up its exact issue UUID via
+`/api/equipment/issues/{id}`, checks the instance and asset, and looks up any
+claimed recovery via `/api/equipment/verifications/{id}`. The two keys are stored
+separately in the work Mac's Keychain. Refresh checks up to five retained issues;
+a denied or invalid lookup leaves the previous snapshot visibly stale.
+
+Beacon must supply its instance ID even when the active feed is empty. The
+active alert must first carry the stable asset and issue IDs when the
+relationship is reviewed. Older reviewed links need to be reviewed again with
+those IDs present. Production pilot acceptance still needs the confirmed printer
+binding, a linked TaskDock task, and an authorized scoped key.
+
 ## TaskDock write release — intentionally unavailable
 
 Do not enable writes until a supported Juno-specific contract supplies:
