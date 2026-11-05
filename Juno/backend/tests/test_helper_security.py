@@ -87,3 +87,58 @@ class HelperSecurityTests(unittest.TestCase):
                     with patch.object(fetch_runtimes, 'open_download') as network:
                         with self.assertRaises(ValueError): fetch_runtimes.fetch()
                         network.assert_not_called()
+
+    def test_runtime_cache_links_and_replacement_stay_inside_original_directory(self):
+        for scenario in ('cache-link', 'intermediate-link', 'swap', 'failed-swap',
+                         'intermediate-swap', 'entry-swap', 'normal'):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp) / 'repo'
+                (root / 'packaging').mkdir(parents=True)
+                outside = Path(temp) / 'outside'
+                outside.mkdir()
+                (outside / 'sentinel').write_bytes(b'unchanged')
+                (root / 'packaging/runtimes-arm64.json').write_text(json.dumps([{
+                    'name': 'fixture', 'file': 'runtime.bin', 'url': 'https://example.com/runtime',
+                    'sha256': hashlib.sha256(b'fixture').hexdigest(),
+                }]))
+                local = root / '.local'
+                cache = local / 'runtime-cache'
+                displaced = local / 'displaced'
+                if scenario == 'intermediate-link':
+                    local.symlink_to(outside, target_is_directory=True)
+                elif scenario == 'cache-link':
+                    local.mkdir()
+                    cache.symlink_to(outside, target_is_directory=True)
+
+                def response(_):
+                    if scenario in ('swap', 'failed-swap'):
+                        cache.rename(displaced)
+                        cache.symlink_to(outside, target_is_directory=True)
+                    if scenario == 'intermediate-swap':
+                        displaced_local = root / 'displaced-local'
+                        local.rename(displaced_local)
+                        local.symlink_to(outside, target_is_directory=True)
+                    if scenario == 'entry-swap':
+                        (cache / 'runtime.bin').symlink_to(outside / 'sentinel')
+                    if scenario == 'failed-swap':
+                        raise OSError('synthetic interrupted download')
+                    return io.BytesIO(b'fixture')
+
+                with patch.object(fetch_runtimes, 'ROOT', root), patch.object(
+                        fetch_runtimes, 'open_download', side_effect=response) as network:
+                    if scenario == 'normal':
+                        fetch_runtimes.fetch()
+                        fetch_runtimes.fetch()
+                        network.assert_called_once()
+                        self.assertEqual((cache / 'runtime.bin').read_bytes(), b'fixture')
+                    else:
+                        with self.assertRaises((ValueError, OSError)):
+                            fetch_runtimes.fetch()
+                        if scenario.endswith('-link'):
+                            network.assert_not_called()
+                self.assertEqual({p.name: p.read_bytes() for p in outside.iterdir()},
+                                 {'sentinel': b'unchanged'})
+                if scenario in ('swap', 'failed-swap'):
+                    self.assertEqual(list(displaced.iterdir()), [])
+                if scenario == 'intermediate-swap':
+                    self.assertEqual(list((root / 'displaced-local/runtime-cache').iterdir()), [])
