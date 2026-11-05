@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-04",
+  "version": "0.1.0-preview.20",
+  "installed_path": "/Applications/Juno.app",
+  "installed": true,
+  "deep_strict_codesign_verified": true,
+  "receipt_version": "0.1.0.20",
+  "native_light_dark_selection_observed": true,
+  "native_system_dark_selection_observed": true,
+  "confirmed_diary_reopened": true,
+  "canonical_diary_hashes_unchanged": true,
+  "owner_preserved": true,
+  "stable_configuration_hashes_unchanged": true,
+  "normal_local_device_rotation_verified": true,
+  "bundled_fixture_tests": 148,
+  "installer_checks": 14,
+  "package_sha256": "20b29bbd5730260b58dc9dbb57e620888359bf56837e56dd05c47352956e2c4a",
+  "open_acceptance": [
+    "Active packaged schedule configuration is missing; next-day capacity is not established",
+    "Timed real-user planning walkthrough remains incomplete",
+    "Physical laptop acceptance remains separate"
+  ],
+  "real_diary_text_in_report": false
+}

@@ -291,3 +291,12 @@ class DeanDraftOperation(Base):
     operation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     fingerprint: Mapped[str] = mapped_column(String(64))
     receipt: Mapped[dict] = mapped_column(JSONB)
+
+
+class OperationalState(Base):
+    """Reviewed source references and proposal feedback; never owning-app records."""
+    __tablename__ = 'operational_state'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    data: Mapped[dict] = mapped_column(JSONB, default=dict)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

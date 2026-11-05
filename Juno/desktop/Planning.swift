@@ -29,6 +29,7 @@ struct PlanningTask: Decodable, Identifiable {
     var estimate_reason: String; var missing: [String]; var actionable: Bool; var reason: String
     var blocker: String; var next_action: String; var next_check: String?; var resume: String; var employee: String
     var room: String; var room_hint: String?
+    var operational_reasons:[String]?
     var dean: Bool?
     var request_fields: [PlanningRequestField]?; var request_questions: [PlanningRequestQuestion]?
     var due_date: String?; var priority_label: String?; var taskdock_saved_at: String?; var request_scope_notice: String?
@@ -44,16 +45,26 @@ struct StaffPlanningLoad: Decodable, Identifiable {
     var employee: String; var reported_assignment_minutes: Int; var unknown_estimates: Int; var blocked_tasks: Int; var available_minutes: Int?; var weekly_limit_minutes: Int?; var notice: String
     var id: String { employee }
 }
+struct ProposedAllocationBlock:Decodable,Identifiable {var task_id:String;var title:String;var employee:String;var room:String;var start:String;var end:String;var minutes:Int;var id:String{task_id}}
+struct AllocationProposal:Decodable {var blocks:[ProposedAllocationBlock];var notice:String}
 struct PlanningResult: Decodable {
+    var allocation_proposal:AllocationProposal?
     var staff_loads: [StaffPlanningLoad]
     var capacity_minutes: Int; var free_minutes: Int; var reserve_minutes: Int
     var question: String?; var recommended_task_id: String?; var tasks: [PlanningTask]; var notices: [String]; var notice: String
 }
+struct OperationalSourceBasis: Codable, Equatable {
+    var taskdock_snapshot:String?;var workspace_id:String?;var beacon_snapshot:String?;var beacon_error:String?
+    var taskdock_stale:Bool;var beacon_stale:Bool;var operations_revision:Int;var planning_revision:Int
+    enum CodingKeys:String,CodingKey {case taskdock_snapshot,workspace_id,beacon_snapshot,beacon_error,taskdock_stale,beacon_stale,operations_revision,planning_revision}
+    func encode(to encoder:Encoder)throws {var c=encoder.container(keyedBy:CodingKeys.self);try c.encode(taskdock_snapshot,forKey:.taskdock_snapshot);try c.encode(workspace_id,forKey:.workspace_id);try c.encode(beacon_snapshot,forKey:.beacon_snapshot);try c.encode(beacon_error,forKey:.beacon_error);try c.encode(taskdock_stale,forKey:.taskdock_stale);try c.encode(beacon_stale,forKey:.beacon_stale);try c.encode(operations_revision,forKey:.operations_revision);try c.encode(planning_revision,forKey:.planning_revision)}
+}
 struct WeeklyDiaryBasis: Codable, Equatable { var id:String; var revision:Int; var day:String }
 struct WeeklyBasis: Codable, Equatable {
+    var operations_basis:OperationalSourceBasis?
     var diaries:[WeeklyDiaryBasis]; var snapshot_id:String?; var workspace_id:String?; var taskdock_saved_at:String?; var planning_revision:Int;var taskdock_uncertain:Bool
-    enum CodingKeys:String,CodingKey { case diaries,snapshot_id,workspace_id,taskdock_saved_at,planning_revision,taskdock_uncertain }
-    func encode(to encoder:Encoder) throws { var c=encoder.container(keyedBy:CodingKeys.self);try c.encode(diaries,forKey:.diaries);try c.encode(snapshot_id,forKey:.snapshot_id);try c.encode(workspace_id,forKey:.workspace_id);try c.encode(taskdock_saved_at,forKey:.taskdock_saved_at);try c.encode(planning_revision,forKey:.planning_revision);try c.encode(taskdock_uncertain,forKey:.taskdock_uncertain) }
+    enum CodingKeys:String,CodingKey { case operations_basis,diaries,snapshot_id,workspace_id,taskdock_saved_at,planning_revision,taskdock_uncertain }
+    func encode(to encoder:Encoder) throws { var c=encoder.container(keyedBy:CodingKeys.self);try c.encode(operations_basis,forKey:.operations_basis);try c.encode(diaries,forKey:.diaries);try c.encode(snapshot_id,forKey:.snapshot_id);try c.encode(workspace_id,forKey:.workspace_id);try c.encode(taskdock_saved_at,forKey:.taskdock_saved_at);try c.encode(planning_revision,forKey:.planning_revision);try c.encode(taskdock_uncertain,forKey:.taskdock_uncertain) }
 }
 struct WeeklyPlanningDraft: Decodable { var text:String; var notices:[String]; var basis:WeeklyBasis; var missing_diary_dates:[String] }
 struct SavedDeanDraft: Decodable {
@@ -225,6 +236,18 @@ struct PlanningWorkspace: View {
                                 Button("Prioritize: " + task.title) { record?.priority_choice = task.id; record?.priority_choice_date = dateString(day); dirty = true }
                             }
                         } }
+                    if let allocation=plan.allocation_proposal {
+                        DisclosureGroup("Coordinated work proposal · \(allocation.blocks.count) blocks") {
+                            VStack(alignment:.leading,spacing:8) {
+                                Text(allocation.notice).font(.caption)
+                                ForEach(allocation.blocks){block in
+                                    Text(block.title).font(.headline)
+                                    Text(scheduleDate(block.start)+"–"+dailyBriefTime(block.end)+" · "+String(block.minutes)+" minutes"+(block.employee.isEmpty ? " · My work" : " · "+block.employee)+(block.room.isEmpty ? "" : " · "+block.room))
+                                    RecommendationFeedbackButton(store:store,taskID:block.id,day:dateString(day))
+                                }
+                            }.padding(.vertical,8)
+                        }
+                    }
                     HStack {
                         TextField("Find an issue from TaskDock", text: $taskSearch).focused($searchFocused).onReceive(NotificationCenter.default.publisher(for:Notification.Name("JunoFind"))) { _ in if store.section == "Plan" { searchFocused = true } }.textFieldStyle(.roundedBorder)
                         Picker("Show",selection:$taskFilter) { Text("All issues").tag("All issues");Text("Needs details").tag("Needs details");Text("Blocked").tag("Blocked");Text("Ready to review").tag("Ready to review") }.frame(width:210)
@@ -251,6 +274,7 @@ struct PlanningWorkspace: View {
                                     store.prepareChat("Help me clarify “" + task.title + "”. Start with this question: “" + question.question + "” Ask me one question at a time.")
                                 }
                                 Text("\(task.estimate_minutes) min • \(task.reason)")
+                                ForEach(task.operational_reasons ?? [],id:\.self){Text($0).font(.caption)}
                                 Text(task.estimate_reason).font(.caption).foregroundStyle(.secondary)
                                 if !task.missing.isEmpty { DisclosureGroup("\(task.missing.count) details to confirm") { ForEach(task.missing,id:\.self) { Text($0).font(.caption).foregroundStyle(.orange) } } }
                                 if !task.next_action.isEmpty { Text("Unblock: " + task.next_action) }

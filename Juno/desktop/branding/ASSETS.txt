@@ -14,3 +14,11 @@ Prompt:
 Production app icon asset extracted from the RIGHT SIDE of the approved Juno identity reference. Preserve the deep-plum rounded-square tile and the identical two curved interlocking apricot and violet ribbon/petal forms, same orientation, same proportions, same clean continuous edges. No letters or words. Output a SQUARE 1024x1024 composition with the tile occupying 88% of the canvas, centered with equal transparent margins on all sides. Transparent pixels OUTSIDE the tile only; the tile itself is opaque solid deep plum. No presentation board, no left logo, no mockup, no floor shadow. Clean polished vector-style silhouette. Do not redesign; no new highlights, texture, speckles, sparkles or outlines.
 
 The generator returned a 1254-pixel square master; native builds resize it into the standard 16/32/128/256/512 point iconset at 1x and 2x. Rejected dark-mode exports with residual pixels are not bundled. Both generated masters above remain unchanged in source.
+
+Preview.20 dark appearance — November 4, 2026:
+The header now selects juno-logo.png for light appearance and juno-logo-dark.png for dark appearance, following Juno's Light/Dark/Follow system preference. This supersedes preview.19's single light badge. The app icon is unchanged. Both header layouts have identical view bounds and accessible name.
+
+juno-logo-dark.png (1920 × 819, opaque charcoal background), built-in image_gen edit:
+Reference: juno-logo.png
+Prompt:
+Create a precise DARK APPEARANCE version of this approved Juno header logo. Change only the Juno wordmark from dark plum to warm white, and replace ALL transparent pixels with a perfectly flat opaque charcoal background #242424. Preserve the exact two-tone apricot/violet emblem, letter shapes, layout, scale, canvas aspect ratio and margins. Output a pristine horizontal full-color logo on a uniform opaque charcoal rectangle. All negative spaces in and between letters must be solid charcoal, not transparent. Smooth clean continuous edges, no residual pixels or paint splatter, no outlines, no texture, no glow, no shadow, no redesign. The wordmark text is exactly Juno. This image will be used directly in a native app header at small size.

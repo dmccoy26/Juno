@@ -165,6 +165,12 @@ def build_plan(session, owner, day, *, horizon_days=7, reserve_override=None):
     if not busy: notices.append('No recorded busy intervals; this does not establish a complete calendar.')
     facts = {t['task_id']: t for t in state['tasks']}
     rows = []
+    from .operations import briefing as operational_briefing
+    operations = operational_briefing(session, owner)
+    operational_tasks = {}
+    for card in operations['cards']:
+        for linked in card['tasks']: operational_tasks.setdefault(linked['task_id'], []).append(card)
+    allocation_windows = {}
     stale_tasks = bool(snapshot and ((now()-snapshot.fetched_at).total_seconds()>86400 or (tdstate and tdstate.error)))
     availability_budget = {}
     candidates = list(snapshot.items) if snapshot else []
@@ -196,6 +202,14 @@ def build_plan(session, owner, day, *, horizon_days=7, reserve_override=None):
         if str(task.get('behavior', '')).lower() == 'waiting' and not blocker:
             blocker = 'TaskDock marks this task waiting; confirm the dependency.'
         if blocker: missing.append('Blocked: '+str(blocker))
+        operational_reasons=[]
+        for card in operational_tasks.get(identity,[]):
+            if card['conflicts']:missing.extend(card['conflicts'])
+            if card['stale']:missing.append('Refresh linked operational evidence before planning this repair.')
+            if card['decision_authority']=='department_lead':missing.append('A department-lead decision is explicitly required; review it before repair allocation.')
+            if card['service_impact']!='unknown':operational_reasons.append('Beacon reports service impact: '+card['service_impact'])
+        if employee: operational_reasons.append('Capability uses your reviewed Juno facts; TaskDock qualifications are not supplied by the current read interface.')
+        allocation_windows[identity]=available
         if calendar_uncertain: missing.append('Refresh the connected calendar: its saved copy is over 24 hours old or its last read failed.')
         if stale_tasks: missing.append('Refresh TaskDock: this copy is over 24 hours old or its last read failed.')
         start_date = str(task.get('start_date') or '')[:10]
@@ -215,7 +229,7 @@ def build_plan(session, owner, day, *, horizon_days=7, reserve_override=None):
                      'blocker':str(blocker),'waiting_on':f.get('waiting_on',''),'next_action':f.get('next_action',''),
                      'next_check':f.get('next_check'),'resume':f.get('resume',''),'employee':employee,'room':room,
                      'room_hint':None if fact(task,'room').get('state')=='none' else room_hint(provided(task,'room')) or provided(task,'room') or room_hint(str(task.get('title',''))),
-                     'missing':missing,'actionable':not missing,'slot_start':slot[0].isoformat() if slot and not missing else None,
+                     'supervision':f.get('supervision',False),'operational_reasons':operational_reasons,'missing':missing,'actionable':not missing,'slot_start':slot[0].isoformat() if slot and not missing else None,
                      'reason':'Dean request' if f.get('dean') else 'Teaching/operations need' if f.get('operational') else 'Due date and recorded TaskDock priority; impact needs your review.', '_rank':rank})
     rows.sort(key=lambda r:r['_rank'])
     for row in rows: del row['_rank']
@@ -250,8 +264,41 @@ def build_plan(session, owner, day, *, horizon_days=7, reserve_override=None):
             'notice':'Only the assignments and scheduled availability you supplied; not a complete workload or a performance measure.'})
     return {'day':str(day),'end':str(day+timedelta(days=horizon_days)),'generated_at':now(), 'revision':state['revision'],
             'capacity_minutes':capacity,'free_minutes':total,'reserve_minutes':reserve,
-            'staff_loads':loads,'question':question,'recommended_task_id':recommended,'tasks':rows[:500],'total_tasks':len(rows),'notices':notices,
+            'allocation_proposal':allocate_proposal([] if question else rows,allocation_windows,capacity,schedule_state),'staff_loads':loads,'question':question,'recommended_task_id':recommended,'tasks':rows[:500],'total_tasks':len(rows),'notices':notices,
             'notice':'Suggestions for one next task, not simultaneous assignments or a committed weekly schedule. Capacity capped at 40 hours before interruption reserve. Unknown or missing calendar events may reduce it. All TaskDock task changes remain in TaskDock.'}
+
+
+def allocate_proposal(rows, windows, capacity, schedule_state):
+    """Greedy ranked proposal, never a saved assignment or calendar booking."""
+    occupied={};blocks=[];unplaced=[];owner_left=capacity;staff_used={}
+    people={p['name'].casefold():p for p in schedule_state['people']}
+    from .schedules import room_key
+    for task in rows:
+        if not task['actionable']:continue
+        minutes=task['estimate_minutes'];employee=task['employee'].casefold()
+        uses_owner=not employee or task.get('supervision',False)
+        resources=(['owner'] if uses_owner else [])+(['staff:'+employee] if employee else [])+(['room:'+room_key(task['room'])] if task['room'] else [])
+        busy=[span for key in resources for span in occupied.get(key,[])]
+        possible=subtract(windows.get(task['task_id'],[]),busy)
+        placed=False
+        for start,end in possible:
+            if (end-start).total_seconds()<minutes*60 or (uses_owner and minutes>owner_left):continue
+            week=(start.astimezone(ZoneInfo('America/Chicago')).date()-timedelta(days=start.astimezone(ZoneInfo('America/Chicago')).weekday()))
+            profile=people.get(employee)
+            budget_key=(employee,str(week));limit=None
+            if employee and profile:
+                limit=min(profile['weekly_limit_minutes'],profile['desired_minutes'] if profile.get('desired_minutes') is not None else profile['weekly_limit_minutes'])
+                weekstart=datetime.combine(week,datetime.min.time(),ZoneInfo('America/Chicago'));weekend=weekstart+timedelta(days=7)
+                held=sum(max(0,(min(stamp(r['end']),weekend)-max(stamp(r['start']),weekstart)).total_seconds()/60) for r in schedule_state['reservations'] if r['employee'].casefold()==employee)
+                if held+staff_used.get(budget_key,0)+minutes>limit:continue
+            finish=start+timedelta(minutes=minutes)
+            for key in resources:occupied.setdefault(key,[]).append((start,finish))
+            if uses_owner:owner_left-=minutes
+            if employee:staff_used[budget_key]=staff_used.get(budget_key,0)+minutes
+            blocks.append({'task_id':task['task_id'],'title':task['title'],'employee':task['employee'],'room':task['room'],'start':start.isoformat(),'end':finish.isoformat(),'minutes':minutes})
+            placed=True;break
+        if not placed:unplaced.append({'task_id':task['task_id'],'reason':'No non-overlapping window remains within recorded capacity and weekly limits.'})
+    return {'blocks':blocks,'unplaced':unplaced,'notice':'Coordinated proposal only. These blocks do not reserve rooms, assign staff or change TaskDock. Existing alternatives remain separate choices. Worker calendar/qualification coverage may be incomplete.'}
 
 
 def weekly_draft(session, owner, day):
@@ -271,6 +318,22 @@ def weekly_draft(session, owner, day):
     missing=[str(day+timedelta(days=n)) for n in range(7) if str(day+timedelta(days=n)) not in {str(r.local_date) for r in rows}]
     lines.extend(['',str(len(rows))+' confirmed diary day(s); '+str(len(missing))+' date(s) without a confirmed diary. Missing dates do not establish inactivity.'])
     if basis['taskdock_uncertain']:lines.append('TaskDock context is missing, stale or its last read failed; current task status needs review.')
+    from .operations import briefing as operational_briefing
+    operations=operational_briefing(session,owner)
+    lines.extend(['','Decisions and meeting agenda'])
+    decisions=[c for c in operations['cards'] if c['decision_authority']=='department_lead']
+    if not decisions:lines.append('No explicit department-lead decision requirement is established in the shared operational records; confirm missing authority.')
+    for card in decisions:lines.append(card['title']+': '+card['recommendation']+' [Beacon alert '+card['id']+']')
+    lines.extend(['','Unresolved operational issues and source evidence'])
+    for card in operations['cards'][:20]:
+        lines.append(card['title']+': '+card['next_action']+' [Beacon alert '+card['id']+']')
+        for task in card['tasks']:lines.append('TaskDock record '+task['task_id']+': '+task['title']+'; recorded completion does not verify equipment recovery.')
+        for conflict in card['conflicts']:lines.append('Review contradiction: '+conflict)
+    lines.extend(operations['notices'])
+    lines.extend(['','Milestones and next-week priorities','Milestone/project data is not supplied by the current TaskDock Juno contract. Review recorded due dates; no milestone completion is inferred.'])
+    for task in plan['tasks'][:10]:
+        lines.append(task['title']+'; due '+str(task['due_date'] or 'unknown')+'; '+task['reason']+' [TaskDock record '+task['task_id']+']')
+    lines.append('Discussion agenda: review explicit decisions, confirm blockers and missing evidence, then agree next-week priorities. Nothing has been sent.')
     return {'basis':basis,'missing_diary_dates':missing,'text':'\n'.join(lines),'diary_dates':[str(r.local_date) for r in rows], 'notices':plan['notices']}
 
 

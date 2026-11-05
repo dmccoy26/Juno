@@ -47,6 +47,7 @@ def build(output):
     (contents/'MacOS').mkdir(parents=True)
     resources.mkdir()
     shutil.copy2(ROOT/'desktop/branding/juno-logo.png', resources/'JunoLogo.png')
+    shutil.copy2(ROOT/'desktop/branding/juno-logo-dark.png', resources/'JunoLogoDark.png')
     code = resources/'app'
     (code/'backend/src').mkdir(parents=True)
     copy_source(ROOT/'backend/src/juno', code/'backend/src/juno')

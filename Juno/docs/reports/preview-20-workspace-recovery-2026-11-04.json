@@ -1,0 +1,28 @@
+{
+  "release": "0.1.0-preview.20",
+  "cause": "Development and packaged apps used separate data roots; earlier work records were not migrated when the standard installed app was selected.",
+  "source_preserved": true,
+  "prior_installed_records_preserved": true,
+  "staged_recovery_verified": true,
+  "recovered_memories": 9,
+  "recovered_check_ins": 7,
+  "confirmed_current_diary_preserved": true,
+  "source_owner_identity_preserved": true,
+  "newer_same_workspace_taskdock_snapshot_retained": true,
+  "native_verified": [
+    "Memories list",
+    "ARTS 121 building access and class occupancy",
+    "Personal 9 AM to 5 PM work hours",
+    "Matching TaskDock issues",
+    "Current confirmed daily diary",
+    "Next-workday capacity now available"
+  ],
+  "backup_source_updated_to_installed_data_root": true,
+  "encrypted_volume_backup_restore_tested": true,
+  "limits": [
+    "Physical laptop reconnect not tested in this recovery",
+    "Worker browser reconnect not tested",
+    "Original development database remains intact; use /Applications/Juno.app as the active host."
+  ],
+  "privacy": "Private backups, credentials, database content and diary text remain outside Git."
+}

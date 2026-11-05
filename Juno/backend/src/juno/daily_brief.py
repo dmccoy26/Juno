@@ -81,7 +81,9 @@ def briefing(session, owner, day):
     question = plan['question']
     if not question and not candidates and plan['tasks']:
         question = 'No issue is ready for this workday. Open Plan to review the missing details or next unblocking action.'
+    from .operations import briefing as operational_briefing
     return {
+        'operations': operational_briefing(session,owner),
         'day': str(day), 'generated_at': now(), 'workspace_id': snapshot.info.get('workspace_id') if snapshot else None,
         'taskdock_saved_at': snapshot.fetched_at if snapshot else None, 'source_stale': stale,
         'diary_status': diary.status if diary else 'not_started', 'diary_revision': diary.revision if diary else None,

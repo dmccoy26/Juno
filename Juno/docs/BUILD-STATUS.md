@@ -2,7 +2,31 @@
 
 Updated: November 4, 2026.
 
-## Current release — preview.19 approved Juno identity
+## Mission 13 — source-only operational evidence candidate
+
+Extends existing connectors/planning with exact reviewed Beacon-alert/TaskDock-workspace/task relationships, evidence-linked native briefing, contradictions and explicit authority/health unknowns, coordinated allocation proposals, enriched preserved Dean drafts, proposal feedback and authorized saved procedure references. Additive schema 0013 is tested in disposable databases; it has not been applied to the installed work app. Existing repair history supplies investigation candidates while lifecycle facts remain missing. Current checks: 233 backend tests with zero skips, native Swift type-check and three native wire/continuity checks pass. Source/contract/workflow details and external gates are in [the mission report](reports/operational-evidence-2026-11-04.md).
+
+No installer or ZIP was built for this mission and `/Applications/Juno.app` remains verified preview.21. The full mission remains open: live producer contract/printer-pilot acceptance, TaskDock writes (`write_tasks: false` in inspected producer code), qualification/milestone/lifecycle and linked-document inputs require their owning apps. No general credentials, name matching, event transport or direct cross-app database writes are used to bypass those gates.
+
+## Current release — preview.21 update preservation
+
+Adds workspace path/owner pins and fail-closed checks for missing identity/database, plus a private database/settings backup before every release change even without migration. Existing databases cannot silently provision a replacement owner. Device rotation remains supported. A reusable private before/after fingerprint gate checks actual work tables and retained device identities. Automatic backup recovery files now include workspace/release metadata. 195 backend tests pass without skips, plus two additional preservation-comparison tests; synthetic backup checks pass. Actual package verification passes 148 bundled-runtime tests and 15 installer check groups. Installed `/Applications/Juno.app` is verified preview.21/build 21, receipt 0.1.0.21 and deep/strict signature valid. The private before/after gate passed: same workspace/owner, every work-table row fingerprint unchanged and prior device identities retained. Native schedules, matching issues, memories and today’s confirmed diary remain visible. Workspace pin and release-only database/settings backup were created. The final encrypted volume backup passed its restore check. See [delivery evidence](reports/preview-21-delivery-2026-11-04.json). See [setup](PREVIEW-21-SETUP.md).
+
+## Preview.20 workspace recovery — November 4
+
+The user reported missing prior work data. Read-only inspection confirmed the installed app was using its separate Application Support database, while earlier memories, schedules, planning and conversations remained in the development data root. The prior delivery preserved only the installed database; that did not establish continuity with the earlier work host. This was a missed migration, not evidence of source record deletion.
+
+Both databases were privately dumped and checked. Recovery was first exercised against a restored staging database, then applied transactionally to the installed database while Juno was quit. Existing installed records remain unchanged under their original identity; the recovered work-owner identity and source records are retained. Today's confirmed diary was reconciled only over an empty old draft, and the newer same-workspace TaskDock snapshot remains active. Original databases and private recovery copies remain intact. Native preview.20 now shows memories, classroom schedules, personal hours, matching issues and today's confirmed diary; tomorrow's capacity is no longer absent for lack of recorded hours. This supersedes the earlier missing-schedule setup note.
+
+Automatic backups now target the installed workspace. An encrypted backup to the existing approved volume completed and passed its restore check. Physical laptop and worker-browser reconnect remain untested. Continue using `/Applications/Juno.app` as the active work host; the original development data is a retained recovery source. See [recovery evidence](reports/preview-20-workspace-recovery-2026-11-04.json). No real work text or secrets are included in the report.
+
+## Current release — preview.20 appearance-aware logo
+
+Adds a dedicated dark header logo with a warm-white wordmark, retaining the apricot/violet emblem. A child branding view reads the effective SwiftUI color scheme, so Light/Dark/Follow system selects the matching bundled resource automatically. View bounds, accessible label, version and app icon remain stable. Both native and installer builders include the new resource; package checks require it. No schema or diary/planning data change is introduced.
+
+Installed `/Applications/Juno.app` at preview.20 with a current 0.1.0.20 receipt and valid deep/strict signature. Native effective light and system-dark logo selection was observed in an isolated lab. Extracted-package checks pass: 148 bundled-runtime fixtures and all 14 installer check groups, including all three brand resources. The isolated lab was quit and its database stopped. The actual app reopened the confirmed diary; canonical diary hashes, owner and stable settings were verified unchanged. Normal local-device credential rotation was verified. See [delivery](reports/preview-20-delivery-2026-11-04.json) and [installer evidence](reports/installer-preview-20.json). Private before-update evidence includes owner/configuration hashes and canonical diary row hashes. The daily check-in walkthrough has reached an observed confirmed diary; the next-workday panel lacks recorded availability in this packaged data root. This is an open setup/acceptance issue, not a measured 15-minute pass. No real diary text is stored in repository reports.
+
+## Previous release — preview.19 approved Juno identity
 
 Dan approved the new apricot/violet flowing-symbol logo and matching plum app icon. Production generated assets are local under `desktop/branding`, with original concept and prompts preserved. Header uses the complete logo lockup, accessible Juno label and separate version text. Both build paths bundle the logo and derive all native icon sizes from the approved master. The package verifier now requires both identity resources. No schema/API/network/credential changes are introduced.
 

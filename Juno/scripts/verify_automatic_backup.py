@@ -19,6 +19,14 @@ with tempfile.TemporaryDirectory() as directory:
     except ValueError:pass
     else:raise AssertionError('Unmounted destination accepted')
     assert not absent.exists()
+    state=root/'state';state.mkdir()
+    for name in ('desktop-owner.json','workspace-identity.json','last-successful-release.json'):
+        (state/name).write_text('{}')
+    assert {p.name for p in m.state_files(state)}=={'desktop-owner.json','workspace-identity.json','last-successful-release.json'}
+    (state/'workspace-identity.json').unlink();(state/'workspace-identity.json').symlink_to(state/'desktop-owner.json')
+    try:m.state_files(state)
+    except ValueError:pass
+    else:raise AssertionError('Symlinked workspace pin accepted')
     now=datetime(2026,11,2,tzinfo=timezone.utc)
     names=['juno-'+(now-timedelta(hours=i)).strftime('%Y%m%dT%H%M%S%fZ')+'.junobak' for i in range(24*400)]
     kept=m.retained(names,now);assert set(names[:48])<=kept

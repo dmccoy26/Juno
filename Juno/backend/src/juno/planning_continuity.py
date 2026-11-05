@@ -85,13 +85,15 @@ def weekly_basis(session,owner,day):
     snapshot=active_snapshot(session,owner)
     planning=session.get(PlanningState,owner)
     status=session.get(TaskDockState,owner)
-    return {'diaries':[{'id':r.id,'revision':r.revision,'day':str(r.local_date)} for r in diaries],
+    from .operations import source_basis
+    operational_basis=source_basis(session,owner)
+    return {'operations_basis':operational_basis,'diaries':[{'id':r.id,'revision':r.revision,'day':str(r.local_date)} for r in diaries],
             'snapshot_id':snapshot.id if snapshot else None,'workspace_id':snapshot.info.get('workspace_id') if snapshot else None,
             'taskdock_saved_at':snapshot.fetched_at.isoformat() if snapshot else None,'planning_revision':planning.revision if planning else 0,'taskdock_uncertain':not snapshot or bool(status and status.error) or (now()-snapshot.fetched_at).total_seconds()>86400}
 
 def normalized_basis(value):
     # Older saved preparation metadata has unknown source quality, never assumed fresh.
-    return {'taskdock_uncertain':True,**value}
+    return {'taskdock_uncertain':True,'operations_basis':None,**value}
 
 def dean_view(session,owner,day):
     row=session.scalar(select(DeanDraft).where(DeanDraft.owner_id==owner,DeanDraft.week_start==day))

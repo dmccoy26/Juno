@@ -46,7 +46,7 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
     from fastapi.responses import JSONResponse
     @app.exception_handler(RequestValidationError)
     async def safe_connection_validation(request,error):
-        if request.url.path.startswith(('/worker','/v1/workers','/v1/providers','/v1/taskdock','/v1/integrations/beacon')):
+        if request.url.path.startswith(('/worker','/v1/workers','/v1/providers','/v1/taskdock','/v1/integrations/beacon','/v1/operations')):
             return JSONResponse({'detail':'Check the required fields and allowed values. Private input is not echoed.'},status_code=422,headers={'Cache-Control':'no-store'})
         from fastapi.exception_handlers import request_validation_exception_handler
         return await request_validation_exception_handler(request,error)
@@ -190,4 +190,7 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
     workers.install(app, db, device, lock_owner, worker_manager)
     schedules.install(app, db, device, lock_owner)
     estimates.install(app, db, device, model_factory)
+    from . import operations
+    operations.install(app, db, device, lock_owner)
+    operations.install_references(app, db, device, lock_owner)
     return app

@@ -1,0 +1,28 @@
+{
+  "release": "0.1.0-preview.21",
+  "installed_app": "/Applications/Juno.app",
+  "package_receipt": "0.1.0.21",
+  "signature": "deep/strict verification passed",
+  "backend_tests": {
+    "suite": 195,
+    "additional_preservation_tests": 2,
+    "skips": 0
+  },
+  "bundled_runtime_tests": 148,
+  "installer_check_groups": 15,
+  "preservation": {
+    "same_workspace": true,
+    "same_owner": true,
+    "all_work_table_row_fingerprints_unchanged": true,
+    "previous_device_ids_retained": true,
+    "native_memories_schedules_tasks_confirmed_diary_visible": true,
+    "workspace_pin_created": true,
+    "pre_release_database_and_settings_backup_created": true,
+    "encrypted_volume_backup_restore_tested": true
+  },
+  "limits": [
+    "Physical laptop update/reconnect not tested",
+    "Unexpected migration changes require explicit review of baseline differences"
+  ],
+  "privacy": "No private work records, identity values, database dumps or credentials included."
+}

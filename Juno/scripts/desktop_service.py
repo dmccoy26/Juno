@@ -6,6 +6,8 @@ Never run this helper in a terminal: the handshake contains a temporary token.
 import fcntl
 import json
 import os
+import plistlib
+import tarfile
 from pathlib import Path
 import signal
 import socket
@@ -43,6 +45,8 @@ def main():
                 raise RuntimeError('Another Juno service is still running.')
             time.sleep(.1)
     os.chmod(state / 'desktop.lock', 0o600)
+    from juno.workspace_guard import read_identity, validate_owner, pin_identity
+    previous = read_identity(state)
     pg = Path(os.environ.get('JUNO_POSTGRES_BIN', '/opt/homebrew/opt/postgresql@17/bin')) / 'pg_ctl'
     data = state / 'postgres/data'
     was_running = data.exists() and subprocess.run(
@@ -68,21 +72,37 @@ def main():
         engine = engine_for(url)
         config = Config(str(ROOT / 'backend/alembic.ini'))
         expected = ScriptDirectory.from_config(config).get_current_head()
+        # Back up on every release change, including updates without migrations.
+        info = ROOT.parent.parent / 'Info.plist'
+        release = (plistlib.loads(info.read_bytes()).get('JunoReleaseVersion', 'development')
+                   if info.exists() else json.loads((ROOT/'packaging/release.json').read_text())['version'])
+        receipt = state/'last-successful-release.json'
+        last_release = json.loads(receipt.read_text()).get('release') if receipt.exists() else None
         if inspect(engine).has_table('alembic_version'):
             with engine.connect() as connection:
                 installed = connection.scalar(text('SELECT version_num FROM alembic_version'))
-            if installed != expected:
+            if installed != expected or last_release != release:
                 backups = state/'backups'; backups.mkdir(mode=0o700, exist_ok=True)
-                backup = backups/(time.strftime('%Y%m%d-%H%M%S')+'-before-'+expected+'.dump')
+                backup = backups/(time.strftime('%Y%m%d-%H%M%S')+'-'+str(time.time_ns())+'-before-update.dump')
                 subprocess.run([str(pg.parent/'pg_dump'), '-h', str(state/'postgres/socket'), '-U', 'juno',
                                 '-d', 'juno_dev', '-Fc', '-f', str(backup)], check=True, stdout=sys.stderr)
                 backup.chmod(0o600)
                 subprocess.run([str(pg.parent/'pg_restore'), '--list', str(backup)], check=True, stdout=subprocess.DEVNULL)
+                # Preserve identity, pinned TLS and hosting configuration beside the DB dump.
+                archive = backup.with_suffix('.settings.tar.gz')
+                fd = os.open(archive, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(fd, 'wb') as output, tarfile.open(fileobj=output, mode='w:gz') as bundle:
+                    for name in ('desktop-owner.json', 'workspace-identity.json', 'last-successful-release.json', 'shared-host', 'worker-portal'):
+                        if (state/name).exists(): bundle.add(state/name, arcname=name)
+                with tarfile.open(archive, 'r:gz') as bundle: bundle.getmembers()
+
         command.upgrade(config, 'head')
         factory = sessions(engine)
         saved = state / 'desktop-owner.json'
-        previous = json.loads(saved.read_text()) if saved.exists() else {}
         with factory() as session:
+            from juno.models import Owner
+            from sqlalchemy import select
+            validate_owner(previous, session.scalars(select(Owner.id)))
             # This helper owns the exclusive local service lock. Pending replies
             # from a previous process cannot still be running after a restart.
             from sqlalchemy import update
@@ -99,6 +119,11 @@ def main():
             with os.fdopen(fd, 'w') as out:
                 json.dump({'owner_id': actor.owner_id, 'device_id': actor.id}, out)
             temporary.replace(saved)
+            pin_identity(state, actor.owner_id)
+            release_temp = receipt.with_suffix('.tmp')
+            fd = os.open(release_temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'w') as output: json.dump({'release': release}, output)
+            release_temp.replace(receipt)
         listener = socket.socket()
         listener.bind(('127.0.0.1', 0))
         listener.listen(128)
@@ -146,6 +171,8 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         # No URLs, request bodies, credentials or raw database errors on stdout.
-        print(json.dumps({'error': 'Local service could not start. See the development log.'}), flush=True)
+        from juno.workspace_guard import WorkspaceError
+        message = str(error) if isinstance(error, WorkspaceError) else 'Local service could not start. See the development log.'
+        print(json.dumps({'error': message}), flush=True)
         print(f'Juno helper stopped: {type(error).__name__}', file=sys.stderr)
         sys.exit(1)

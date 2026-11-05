@@ -69,6 +69,10 @@ def state_files(state):
     owner=state/'desktop-owner.json'
     if not owner.is_file() or owner.is_symlink():raise ValueError('Work-Mac identity is missing')
     result.append(owner)
+    for name in ('workspace-identity.json', 'last-successful-release.json'):
+        path=state/name
+        if path.is_symlink():raise ValueError('Symlinked workspace identity is unsupported')
+        if path.is_file():result.append(path)
     for folder in ('shared-host','worker-portal','offline-copies'):
         directory=state/folder
         if directory.is_symlink():raise ValueError('Symlinked recovery directory is unsupported')

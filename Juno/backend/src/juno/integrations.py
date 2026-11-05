@@ -192,8 +192,39 @@ def beacon_feed(feed):
             remaining=cartridge.get('remaining')
             if remaining is not None and (type(remaining) not in (int,float) or not 0<=remaining<=100):raise IntegrationError('Beacon returned invalid cartridge percentage.')
             safe.append({'color':bounded_text(cartridge.get('color',''),100),'reference':bounded_text(cartridge.get('reference',''),200),'remaining':remaining})
-        result.append({'id':row['id'],**{k:bounded_text(row.get(k,'')) for k in fields},'cartridges':safe})
-    return result,{'generated_at':stamp.isoformat(),'complete':True,'notice':bounded_text(feed.get('note',''),1000) or 'Cached observations; not an atomic physical-world snapshot or network probe.'}
+        from .operations import relative_link
+        metadata={}
+        for key in ('asset_id','issue_id','record_version','updated_at'):
+            value=row.get(key)
+            if value is not None:
+                if not isinstance(value,str) or not value.strip() or len(value)>500:raise IntegrationError('Invalid Beacon record reference.')
+                metadata[key]=value
+        choices={'issue_state':{'unknown','acknowledged','open','resolved'},
+                 'verification_state':{'unknown','pending','failed','verified_recovered'},
+                 'service_impact':{'unknown','none','degraded','unavailable'},
+                 'decision_authority':{'unknown','none','department_lead'}}
+        for key,allowed in choices.items():
+            if key in row:
+                if row[key] not in allowed:raise IntegrationError('Invalid Beacon operational state.')
+                metadata[key]=row[key]
+        if 'verification_record' in row:
+            proof=row['verification_record']
+            keys={'record_id','asset_id','actor_id','observed_at','method'}
+            if not isinstance(proof,dict) or set(proof)!=keys or any(not isinstance(proof[k],str) or not proof[k].strip() or len(proof[k])>500 for k in keys):raise IntegrationError('Invalid Beacon verification record.')
+            try:
+                observed=datetime.fromisoformat(proof['observed_at'].replace('Z','+00:00'))
+                if observed.tzinfo is None:raise ValueError()
+            except ValueError:raise IntegrationError('Invalid Beacon verification timestamp.') from None
+            metadata['verification_record']=proof
+        source_link=relative_link(row.get('url'))
+        if source_link:metadata['source_link']=source_link
+        # Optional extensions are consumer support, not evidence that a producer supplies them.
+        result.append({'id':row['id'],**{k:bounded_text(row.get(k,'')) for k in fields},'cartridges':safe,**metadata})
+    details={'generated_at':stamp.isoformat(),'complete':True,'notice':bounded_text(feed.get('note',''),1000) or 'Cached observations; not an atomic physical-world snapshot or network probe.'}
+    if 'instance_id' in feed:
+        if not isinstance(feed['instance_id'],str) or not feed['instance_id'].strip() or len(feed['instance_id'])>500:raise IntegrationError('Invalid Beacon instance identity.')
+        details['instance_id']=feed['instance_id']
+    return result,details
 
 
 class BeaconReader:

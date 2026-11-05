@@ -24,7 +24,7 @@ def check_payload(app):
     assert info.get('JunoPackaged') is True
     assert 'JunoProjectRoot' not in info
     resources = app/'Contents/Resources'
-    for asset in ('Juno.icns', 'JunoLogo.png'):
+    for asset in ('Juno.icns', 'JunoLogo.png', 'JunoLogoDark.png'):
         assert (resources/asset).is_file(), 'Missing bundled brand asset: ' + asset
     for asset in ('index.html','app.js','style.css'):
         assert (resources/'app/backend/src/juno/worker_web'/asset).is_file(), 'Missing bundled worker portal asset'
@@ -383,6 +383,29 @@ with sessions(engine_for())() as session:
                 run(resources/'runtime/postgres/bin/pg_restore','--list',backups[0])
                 stop(process,relocated,legacy);process=None
                 checks.append('schema-1 upgrade with readable pre-migration backup and preserved memory')
+                assert (legacy/'workspace-identity.json').is_file()
+                # A release-only update still gets a backup, without a schema change.
+                (legacy/'last-successful-release.json').write_text(json.dumps({'release':'older-fixture'}))
+                process,unchanged=launch(relocated,legacy,log)
+                assert api(unchanged['url'],unchanged['token'],'/v1/memories')['items']==legacy_rows
+                stop(process,relocated,legacy);process=None
+                assert len(list((legacy/'backups').glob('*.dump')))==2
+                assert len(list((legacy/'backups').glob('*.settings.tar.gz')))==2
+                # Losing identity or the DB marker must yield an explicit error, not an empty replacement.
+                owner_file=legacy/'desktop-owner.json'
+                owner_bytes=owner_file.read_bytes();owner_file.unlink()
+                result=subprocess.run([str(python),str(resources/'app/scripts/desktop_service.py')],env=env,stdout=subprocess.PIPE,stderr=log,text=True,timeout=20)
+                assert result.returncode!=0 and 'owner' in json.loads(result.stdout)['error']
+                owner_file.write_bytes(owner_bytes);owner_file.chmod(0o600)
+                version_file=legacy/'postgres/data/PG_VERSION'
+                version_bytes=version_file.read_bytes();version_file.rename(version_file.with_suffix('.saved'))
+                result=subprocess.run([str(python),str(resources/'app/scripts/desktop_service.py')],env=env,stdout=subprocess.PIPE,stderr=log,text=True,timeout=20)
+                assert result.returncode!=0 and 'database is missing' in json.loads(result.stdout)['error']
+                assert not version_file.exists(), 'Missing DB was silently initialized'
+                version_file.with_suffix('.saved').rename(version_file)
+                assert version_file.read_bytes()==version_bytes
+                checks.append('release-only backup and fail-closed missing-owner/database protection')
+
 
             finally:
                 if process is not None:

@@ -59,6 +59,7 @@ class LANBoundary:
             path == '/v1/availability' and method == 'GET' or
             path == '/v1/schedules/reservations' and method == 'POST' or
             path.startswith('/v1/schedules/reservations/') and method == 'DELETE' or
+            path in {'/v1/operations','/v1/operations/procedures','/v1/operations/lifecycle'} and method == 'GET' or
             path == '/v1/planning/estimate' and method == 'POST' or
             path.startswith('/v1/planning/weekly-draft/') and method in {'GET','PUT'} or
             path in {'/v1/planning/carry-forward','/v1/planning/carry-forward/history'} and method == 'GET' or

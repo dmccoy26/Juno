@@ -35,6 +35,7 @@ def main():
         resources = contents/'Resources'
         resources.mkdir()
         shutil.copy2(ROOT/'desktop/branding/juno-logo.png', resources/'JunoLogo.png')
+        shutil.copy2(ROOT/'desktop/branding/juno-logo-dark.png', resources/'JunoLogoDark.png')
         iconset = Path(temp)/'Juno.iconset'
         iconset.mkdir()
         master = Path(temp)/'icon.png'

@@ -166,6 +166,25 @@ extension JunoStore {
     }
 }
 
+struct JunoBrandLogo: View {
+    @Environment(\.colorScheme) private var colorScheme
+    private var resource: String { colorScheme == .dark ? "JunoLogoDark" : "JunoLogo" }
+    var body: some View {
+        Group {
+            if let url = Bundle.main.url(forResource: resource, withExtension: "png"), let logo = NSImage(contentsOf: url) {
+                Image(nsImage: logo).resizable().interpolation(.high).scaledToFill()
+                    .frame(width: 132, height: 42).clipped()
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(colorScheme == .dark ? Color(red: 36.0/255, green: 36.0/255, blue: 36.0/255) : Color(red: 0.99, green: 0.97, blue: 0.95))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .accessibilityLabel("Juno")
+            } else {
+                Text("Juno").font(.title2.bold()).foregroundStyle(.primary)
+            }
+        }
+    }
+}
+
 struct RootView: View {
     @ObservedObject var store: JunoStore
     @AppStorage("sidebarVisible") private var showSidebar = true
@@ -196,16 +215,7 @@ struct RootView: View {
         VStack(spacing:0) {
             HStack(spacing:12) {
                 Button { showSidebar.toggle() } label: { Image(systemName:"sidebar.left") }.help("Show or hide navigation")
-                if let logoURL = Bundle.main.url(forResource: "JunoLogo", withExtension: "png"), let logo = NSImage(contentsOf: logoURL) {
-                    Image(nsImage: logo).resizable().interpolation(.high).scaledToFill()
-                        .frame(width: 132, height: 42).clipped()
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Color(red: 0.99, green: 0.97, blue: 0.95))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .accessibilityLabel("Juno")
-                } else {
-                    Text("Juno").font(.title2.bold()).foregroundStyle(.purple)
-                }
+                JunoBrandLogo()
                 HStack(alignment:.firstTextBaseline,spacing:6) {
                     Text(Bundle.main.object(forInfoDictionaryKey:"JunoReleaseVersion") as? String ?? "Development")
                         .font(.subheadline).foregroundStyle(.secondary)
@@ -380,7 +390,15 @@ struct DailyBriefOption: Decodable, Identifiable {
     let room: String; let employee: String; let resume: String; let slot_start: String; let slot_end: String
     var id: String { task_id }
 }
+struct OperationalClaim:Decodable,Identifiable {var kind:String;var text:String;var evidence_ids:[String];var id:String{kind+text}}
+struct OperationalTask:Decodable,Identifiable {var task_id:String;var title:String;var assignment:String?;var completed:Bool;var impact:String?;var evidence_id:String;var id:String{task_id}}
+struct OperationalCard:Decodable,Identifiable {var id:String;var title:String;var asset_id:String?;var issue_id:String?;var issue_state:String;var verification_state:String;var service_impact:String;var decision_authority:String;var relationship:String;var claims:[OperationalClaim];var tasks:[OperationalTask];var conflicts:[String];var next_action:String;var recommendation:String;var missing:[String];var stale:Bool}
+struct OperationalEvidence:Decodable,Identifiable {var id:String;var app:String;var record_id:String;var snapshot_id:String;var version:String?;var retrieved_at:String;var updated_at:String?;var observed_at:String?;var source_link:String?;var local_path:String;var stale:Bool}
+struct OperationalChoice:Decodable,Identifiable {var id:String;var title:String}
+struct OperationalFeedback:Decodable,Identifiable {var operation_id:String;var outcome:String;var task_id:String;var planning_day:String;var rationale:String;var recorded_at:String;var id:String{operation_id}}
+struct OperationalBrief:Decodable {var basis_token:String;var revision:Int;var cards:[OperationalCard];var evidence:[OperationalEvidence];var notices:[String];var task_choices:[OperationalChoice];var alert_choices:[OperationalChoice];var feedback:[OperationalFeedback];var notice:String}
 struct DailyBrief: Decodable {
+    let operations:OperationalBrief?
     let day: String; let workspace_id: String?; let taskdock_saved_at: String?; let source_stale: Bool
     let diary_status: String; let review: [String]; let completed: [DailyBriefItem]; let completed_count: Int
     let blockers: [DailyBriefItem]; let deferred_blocker_count: Int; let upcoming_blocker_count: Int
@@ -443,6 +461,7 @@ struct CheckInWorkspace: View {
                     }.frame(maxWidth:.infinity,alignment:.leading)
                 }
             }
+            if let operations = brief?.operations { OperationalBriefView(store:store,initial:operations) }
             if let brief, let row = store.checkIn, row.local_date == dayKey, row.next_key == nil {
                 GroupBox("Next workday · " + brief.next_day) {
                     VStack(alignment:.leading,spacing:10) {
@@ -457,6 +476,7 @@ struct CheckInWorkspace: View {
                                 Text((task.id == brief.recommended_task_id ? "Suggested first · " : "Alternative · ") + task.reason)
                                 Text("\(task.estimate_minutes) minutes · \(dailyBriefTime(task.slot_start))–\(dailyBriefTime(task.slot_end))" + (task.room.isEmpty ? "" : " · " + task.room) + (task.employee.isEmpty ? "" : " · " + task.employee))
                                 if !task.resume.isEmpty { Text("Resume: " + task.resume) }
+                                RecommendationFeedbackButton(store:store,taskID:task.id,day:brief.next_day)
                                 Button("Review this issue in Plan") { openPlan(brief,task.id) }.disabled(store.offline || store.checkBusy || store.unsavedSections.contains("Plan"))
                             }.padding(.vertical,6)
                         }
@@ -776,4 +796,192 @@ struct CarryForwardEditor:View {
         .onDisappear{store.unsavedSections.remove("Planning carry-forward")}
         .interactiveDismissDisabled(busy || pending != nil)
     }
+}
+
+struct OperationalBriefView:View {
+    @ObservedObject var store:JunoStore
+    var initial:OperationalBrief
+    @State private var current:OperationalBrief?
+    @State private var manage=false
+    @State private var refreshing=false
+    @State private var selectedEvidence:OperationalEvidence?
+    var value:OperationalBrief {current ?? initial}
+    var body:some View {
+        GroupBox("Equipment & linked work · saved evidence") {
+            VStack(alignment:.leading,spacing:12) {
+                ForEach(value.notices,id:\.self){Text($0).font(.caption).foregroundStyle(.secondary)}
+                ForEach(value.cards){card in
+                    DisclosureGroup(card.title+(card.stale ? " · needs refresh" : "")) {
+                        VStack(alignment:.leading,spacing:8) {
+                            Text("Relationship: "+card.relationship.replacingOccurrences(of:"_",with:" "))
+                            ForEach(card.claims){claim in
+                                Text(claim.kind.replacingOccurrences(of:"_",with:" ")+": "+claim.text).textSelection(.enabled)
+                                HStack {ForEach(claim.evidence_ids,id:\.self){identity in
+                                    if let evidence=value.evidence.first(where:{$0.id==identity}) {Button("View "+evidence.app+" evidence"){selectedEvidence=evidence}.font(.caption)}
+                                }}
+                            }
+                            ForEach(card.tasks){task in Text("Assigned person: "+(task.assignment ?? "Not shared / unknown"))}
+                            Text("Issue: "+card.issue_state+" · Recovery verification: "+card.verification_state)
+                            Text("Next recorded action: "+card.next_action)
+                            Text("Juno suggests: "+card.recommendation).font(.callout)
+                            ForEach(card.conflicts,id:\.self){Text("Review contradiction: "+$0).foregroundStyle(.orange)}
+                            if !card.missing.isEmpty {Text("Missing references: "+card.missing.joined(separator:", ")).font(.caption)}
+                        }.padding(.vertical,6)
+                    }
+                }
+                Button("Reload saved operational evidence") {refreshing=true;Task {defer{refreshing=false};do{current=try await store.decode(OperationalBrief.self,"/v1/operations")}catch{current=nil}}}.disabled(store.offline || refreshing)
+                Button("Review alert–task links…"){manage=true}.disabled(store.offline || store.sharedProfile != nil)
+                if !value.feedback.isEmpty {
+                    DisclosureGroup("Recent planning choices") {ForEach(Array(value.feedback.suffix(10).reversed())){item in Text(item.planning_day+" · "+item.outcome+" · Task "+item.task_id+" · "+item.rationale).font(.caption)}}
+                }
+                OperationalSupportingReferences(store:store)
+                Text(value.notice).font(.caption).foregroundStyle(.secondary)
+                if store.sharedProfile != nil {Text("Review links on the work Mac. This laptop can read saved operational evidence while connected.").font(.caption)}
+            }.frame(maxWidth:.infinity,alignment:.leading)
+        }
+        .onChange(of:initial.basis_token){_ in current=nil}
+        .sheet(isPresented:$manage){OperationalLinkEditor(store:store,value:value){current=$0}}
+        .sheet(item:$selectedEvidence){OperationalEvidenceSheet(store:store,evidence:$0)}
+    }
+}
+
+struct OperationalLinkEditor:View {
+    @ObservedObject var store:JunoStore
+    var value:OperationalBrief
+    var onSaved:(OperationalBrief)->Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var alert="";@State private var task="";@State private var search="";@State private var rationale="";@State private var issue:String?;@State private var busy=false
+    var choices:[OperationalChoice]{value.task_choices.filter{search.isEmpty || ($0.title+" "+$0.id).localizedCaseInsensitiveContains(search)}}
+    var body:some View {
+        VStack(alignment:.leading,spacing:14) {
+            Text("Review a source relationship").font(.title2)
+            Text("Choose exact records you know describe the same work. This saves references in Juno; it does not change either source.")
+            Picker("Beacon observation",selection:$alert){Text("Choose observation").tag("");ForEach(value.alert_choices){Text($0.title+" · "+String($0.id.suffix(8))).tag($0.id)}}
+            TextField("Search task titles or references",text:$search).textFieldStyle(.roundedBorder)
+            Picker("TaskDock task",selection:$task){Text("Choose task").tag("");ForEach(choices){Text($0.title+" · "+String($0.id.suffix(12))).tag($0.id)}}
+            TextField("Why these records belong together (optional)",text:$rationale).textFieldStyle(.roundedBorder)
+            Text("Saving replaces the earlier link for this observation. Names and room labels are never used to create a link automatically.").font(.caption)
+            if let issue {Text(issue).foregroundStyle(.orange)}
+            if !alert.isEmpty {Button("Remove reviewed link") {
+                busy=true;Task {defer{busy=false};do {let encoded=alert.addingPercentEncoding(withAllowedCharacters:.urlPathAllowed) ?? "";let result=try await store.decode(OperationalBrief.self,"/v1/operations/links/"+encoded+"?expected_revision="+String(value.revision),method:"DELETE");onSaved(result);dismiss()}catch{issue=(error as? APIProblem)?.message ?? "The link could not be removed. Reload and review."}}
+            }}
+            HStack {Button("Cancel"){dismiss()}.keyboardShortcut(.cancelAction);Spacer();Button("Save reviewed link"){
+                busy=true;Task {defer{busy=false};do {let result=try await store.decode(OperationalBrief.self,"/v1/operations/links",method:"POST",body:["expected_revision":value.revision,"basis_token":value.basis_token,"alert_id":alert,"task_id":task,"rationale":rationale]);onSaved(result);dismiss()}catch{issue=(error as? APIProblem)?.message ?? "The link could not be saved. Reload the briefing before trying again."}}
+            }.disabled(alert.isEmpty || task.isEmpty || !choices.contains(where:{$0.id==task}))}
+        }.padding(24).frame(width:600).disabled(busy)
+    }
+}
+
+struct OperationalEvidenceSheet:View {
+    @ObservedObject var store:JunoStore;var evidence:OperationalEvidence
+    @Environment(\.dismiss) private var dismiss
+    @State private var original="Loading the saved source record…"
+    var body:some View {
+        VStack(alignment:.leading,spacing:12) {
+            Text(evidence.app+" evidence").font(.title2)
+            Text("Record: "+evidence.record_id+"\nSnapshot: "+evidence.snapshot_id+"\nRetrieved: "+evidence.retrieved_at+"\nObserved: "+(evidence.observed_at ?? "Unknown")+"\nVersion: "+(evidence.version ?? "Not supplied")).font(.caption).textSelection(.enabled)
+            ScrollView {Text(original).font(.system(.body,design:.monospaced)).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)}
+            Text("Saved source evidence, not proof of current equipment condition.").font(.caption)
+            Button("Close"){dismiss()}.keyboardShortcut(.cancelAction)
+        }.padding(24).frame(width:660,height:540)
+        .task {
+            do {let data=try await store.request(evidence.local_path);let object=try JSONSerialization.jsonObject(with:data)
+                var selected:Any?
+                if let root=object as? [String:Any] {
+                    if evidence.app=="TaskDock",let items=root["items"] as? [[String:Any]] {selected=items.first{String(describing:$0["id"] ?? "")==evidence.record_id}}
+                    if evidence.app=="Beacon",let sources=root["items"] as? [[String:Any]],let source=sources.first(where:{($0["id"] as? String)==evidence.snapshot_id}),let items=source["items"] as? [[String:Any]] {selected=items.first{($0["id"] as? String)==evidence.record_id}}
+                }
+                if let selected {original=String(data:try JSONSerialization.data(withJSONObject:selected,options:[.prettyPrinted,.sortedKeys]),encoding:.utf8) ?? "Record unavailable."} else {original="The record is no longer available in this authorized snapshot. Reload the briefing; no older content is substituted."}
+            }catch{original="The saved evidence could not be loaded. Reconnect or refresh the source; its contents remain unknown."}
+        }
+    }
+}
+
+struct RecommendationFeedbackButton:View {
+    @ObservedObject var store:JunoStore;var taskID:String;var day:String
+    @State private var show=false
+    var body:some View {Button("Record planning choice…"){show=true}.disabled(store.offline || store.sharedProfile != nil).sheet(isPresented:$show){RecommendationFeedbackEditor(store:store,taskID:taskID,day:day)}}
+}
+struct RecommendationFeedbackEditor:View {
+    @ObservedObject var store:JunoStore;var taskID:String;var day:String
+    @Environment(\.dismiss) private var dismiss
+    @State private var value:OperationalBrief?;@State private var outcome="accepted";@State private var rationale="";@State private var reschedule="";@State private var busy=false;@State private var issue:String?;@State private var pending:[String:Any]?;@State private var saved=false
+    var body:some View {
+        VStack(alignment:.leading,spacing:14) {
+            Text("Record your planning choice").font(.title2)
+            Text("This records feedback in Juno. It does not assign work, reserve time or change a TaskDock deadline.")
+            Picker("Choice",selection:$outcome){Text("Accepted proposal").tag("accepted");Text("Dismissed").tag("dismissed");Text("Reschedule proposal").tag("rescheduled")}.disabled(pending != nil || saved)
+            TextField("Reason (optional)",text:$rationale).textFieldStyle(.roundedBorder).disabled(pending != nil || saved)
+            if outcome=="rescheduled" {TextField("Proposed date · YYYY-MM-DD",text:$reschedule).textFieldStyle(.roundedBorder).disabled(pending != nil || saved)}
+            if let issue {Text(issue).foregroundStyle(.orange)}
+            if saved {Text("Choice saved in Juno. TaskDock and calendar records were not changed.")}
+            HStack {Button(saved ? "Close" : "Cancel"){dismiss()}.keyboardShortcut(.cancelAction);Spacer();if !saved {Button(pending == nil ? "Save choice" : "Retry same choice"){
+                guard let value else{return};busy=true
+                if pending == nil {var body:[String:Any]=["operation_id":UUID().uuidString,"expected_revision":value.revision,"basis_token":value.basis_token,"task_id":taskID,"planning_day":day,"outcome":outcome,"rationale":rationale];if outcome=="rescheduled"{body["reschedule_day"]=reschedule};pending=body}
+                Task {defer{busy=false};do {_ = try await store.request("/v1/operations/feedback",method:"POST",body:pending);saved=true;pending=nil;issue=nil}catch{let error=error as? APIProblem;issue=error?.message ?? "Save result uncertain. Retry the same choice to recover its receipt.";if let status=error?.status,status>=400 && status<500{pending=nil}}}
+            }.disabled(value == nil)}}
+        }.padding(24).frame(width:560).disabled(busy)
+        .task {do{value=try await store.decode(OperationalBrief.self,"/v1/operations");reschedule=day}catch{issue="Planning context could not load. Reconnect and try again."}}
+    }
+}
+
+struct ProcedureChoice:Decodable,Identifiable {var kind:String;var snapshot_id:String;var record_id:String;var title:String;var id:String{kind+":"+record_id}}
+struct ProcedureReference:Decodable,Identifiable {var kind:String;var record_id:String;var label:String;var text:String?;var changed:Bool;var stale:Bool;var available:Bool;var notice:String;var retrieved_at:String?;var source_updated_at:String?;var current_snapshot_id:String?;var id:String{kind+":"+record_id}}
+struct ProcedureReferences:Decodable {var revision:Int;var items:[ProcedureReference];var choices:[ProcedureChoice];var limited:Bool;var notice:String}
+struct LifecycleEvidence:Decodable,Identifiable {var id:String;var work_date:String;var summary:String}
+struct LifecycleCandidate:Decodable,Identifiable {var room:String;var equipment:String;var reports:Int;var verified_repairs:Int;var evidence:[LifecycleEvidence];var recommendation:String;var missing:[String];var replacement_supported:Bool;var id:String{room+equipment}}
+struct LifecycleReview:Decodable {var candidates:[LifecycleCandidate];var limited:Bool;var notice:String}
+struct OperationalSupportingReferences:View {
+    @ObservedObject var store:JunoStore
+    @State private var procedures:ProcedureReferences?;@State private var lifecycle:LifecycleReview?;@State private var issue:String?;@State private var choose=false;@State private var selected="";@State private var label="";@State private var busy=false
+    var body:some View {
+        DisclosureGroup("Procedures & longer-term repair review") {
+            VStack(alignment:.leading,spacing:10) {
+                Button("Load authorized references") {load()}.disabled(store.offline || busy)
+                if let issue {Text(issue).foregroundStyle(.orange)}
+                if let procedures {
+                    Text(procedures.notice).font(.caption)
+                    ForEach(procedures.items){reference in
+                        DisclosureGroup(reference.label+((reference.changed || reference.stale) ? " · review source" : "")) {
+                            Text("Source: "+reference.kind+" · Record: "+reference.record_id+" · Snapshot: "+(reference.current_snapshot_id ?? "Unavailable")).font(.caption).textSelection(.enabled)
+                            Text("Retrieved: "+(reference.retrieved_at ?? "Unknown")+" · Source update: "+(reference.source_updated_at ?? "Unknown")).font(.caption)
+                            Text(reference.text ?? "Instructions are unavailable in the current authorized source.").textSelection(.enabled)
+                            Text(reference.notice).font(.caption).foregroundStyle(.secondary)
+                            Button("Remove reference") {
+                                busy=true;Task{defer{busy=false};do{self.procedures=try await store.decode(ProcedureReferences.self,"/v1/operations/procedures/remove",method:"POST",body:["expected_revision":procedures.revision,"kind":reference.kind,"record_id":reference.record_id]);issue=nil}catch{issue=(error as? APIProblem)?.message ?? "The reference could not be removed. Reload and review."}}
+                            }.disabled(store.sharedProfile != nil || busy)
+
+                        }
+                    }
+                    Button("Designate a saved reference…"){choose=true}.disabled(store.sharedProfile != nil || procedures.choices.isEmpty || busy)
+                    if procedures.limited {Text("Only the first 500 eligible saved records are listed.").font(.caption)}
+                }
+                if let lifecycle {
+                    Text(lifecycle.notice).font(.caption)
+                    ForEach(lifecycle.candidates){candidate in
+                        Text(candidate.equipment+" · "+candidate.room).font(.headline)
+                        Text(candidate.recommendation)
+                        Text("Missing lifecycle inputs: "+candidate.missing.joined(separator:", ")).font(.caption)
+                        ForEach(candidate.evidence){record in Text(record.work_date+": "+record.summary+" · Report "+record.id).font(.caption).textSelection(.enabled)}
+                    }
+                    if lifecycle.candidates.isEmpty {Text("No recurring-repair candidate is established in the reviewed history.").font(.caption)}
+                    if lifecycle.limited {Text("Analysis covers the latest 2,000 included repair reports; older records remain retained.").font(.caption)}
+                }
+            }.padding(.vertical,6)
+        }
+        .sheet(isPresented:$choose) {
+            VStack(alignment:.leading,spacing:12) {
+                Text("Designate an authorized reference").font(.title2)
+                Text("Select a record already shared with Juno. This does not mark its instructions as officially approved or permit execution.")
+                Picker("Saved record",selection:$selected){Text("Choose record").tag("");ForEach(procedures?.choices ?? []){Text($0.kind+" · "+$0.title+" · "+String($0.record_id.suffix(10))).tag($0.id)}}
+                TextField("Reference label",text:$label).textFieldStyle(.roundedBorder)
+                if let issue {Text(issue).foregroundStyle(.orange)}
+                HStack {Button("Cancel"){choose=false}.keyboardShortcut(.cancelAction);Spacer();Button("Save reference"){
+                    guard let procedures,let choice=procedures.choices.first(where:{$0.id==selected}) else{return};busy=true
+                    Task {defer{busy=false};do{self.procedures=try await store.decode(ProcedureReferences.self,"/v1/operations/procedures",method:"POST",body:["expected_revision":procedures.revision,"kind":choice.kind,"snapshot_id":choice.snapshot_id,"record_id":choice.record_id,"label":label]);choose=false;issue=nil}catch{issue=(error as? APIProblem)?.message ?? "The reference could not be saved. Reload the current source before retrying."}}
+                }.disabled(selected.isEmpty || label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)}
+            }.padding(24).frame(width:590).disabled(busy)
+        }
+    }
+    func load(){busy=true;Task {defer{busy=false};do{procedures=try await store.decode(ProcedureReferences.self,"/v1/operations/procedures");lifecycle=try await store.decode(LifecycleReview.self,"/v1/operations/lifecycle");issue=nil}catch{issue="Saved references could not load. Reconnect to the work Mac and retry."}}}
 }
