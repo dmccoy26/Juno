@@ -1,10 +1,14 @@
 # Build status
 
-Updated: November 5, 2026.
+Updated: November 6, 2026.
+
+## Current release — preview.22
+
+Installed at `/Applications/Juno.app` through macOS Installer with receipt 0.1.0.22 and a valid deep/strict bundle signature. The actual package passed all 15 installer check groups. The native app reopened connected to the existing workspace on schema 0013. A private before/after comparison matched all pre-existing work table rows, owner, workspace, device identities, hosting settings and offline copies. The network backup volume was unavailable on November 6, so encrypted pre- and post-upgrade backups were created in a private local directory and restore-tested. The scheduled backup configuration was left in place.
 
 ## Beacon retained issue pilot — development
 
-Juno can refresh a reviewed Beacon issue after its alert disappears, using a separate asset-scoped key and exact instance, asset and issue IDs. A recovered claim requires a matching retained verification. A disposable HTTP regression with PostgreSQL covered completed-task-only, valid recovery, wrong-asset verification, stale revision and denied access. The live pilot still needs Beacon's stable identifiers in its active feed, the confirmed printer binding and reviewed TaskDock link, and an approved issue key. Installed Juno remains preview.21. See [connection contract](OPERATIONAL-CONNECTION-CONTRACT.md).
+Juno can refresh a reviewed Beacon issue after its alert disappears, using a separate asset-scoped key and exact instance, asset and issue IDs. A recovered claim requires a matching retained verification. A disposable HTTP regression with PostgreSQL covered completed-task-only, valid recovery, wrong-asset verification, stale revision and denied access. The live pilot still needs Beacon's stable identifiers in its active feed, the confirmed printer binding and reviewed TaskDock link, and an approved issue key. Included in installed preview.22. See [connection contract](OPERATIONAL-CONNECTION-CONTRACT.md).
 
 ## Missions 12–14 — November 5 follow-up
 
