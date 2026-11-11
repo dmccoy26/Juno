@@ -1,8 +1,16 @@
 # Build status
 
-Updated: November 6, 2026.
+Updated: November 11, 2026.
 
-## Current release — preview.22
+## Current release — preview.23
+
+Daily check-in opens on the current Chicago date each time you return to the workspace. An older date can still be selected, and its draft stays with that date. The carry-forward task picker accepts the full TaskDock reference. The native lab reopened on November 11 after selecting November 9, recovered the historical draft, and took a fictional five-answer interview through diary confirmation, a reviewed planning save and handoff to November 12. The 235-test backend suite and native briefing, continuity and offline queue checks passed.
+
+Installed at `/Applications/Juno.app` with receipt 0.1.0.23 and a valid deep/strict bundle signature. All 15 installer check groups passed. The app reopened connected to the existing workspace and showed the November 11 check-in. The private before/after comparison matched all existing work rows, owner, device identities, hosting settings, offline copies, local drafts and pending edit preferences. Encrypted backups before and after the upgrade passed restore checks on the configured backup volume.
+
+The November 9 HCH203 pilot links persist in the installed work workspace. On November 11, the scoped Beacon feed returned both linked observations, and the retained issue lookup returned open with verification pending. A physical printer check and the subsequent live recovery transition remain open. The timed real-user walkthrough, M5 Air offline sync and worker report from campus Wi-Fi still need hands-on acceptance.
+
+## Preview.22 upgrade evidence
 
 Installed at `/Applications/Juno.app` through macOS Installer with receipt 0.1.0.22 and a valid deep/strict bundle signature. The actual package passed all 15 installer check groups. The native app reopened connected to the existing workspace on schema 0013. A private before/after comparison matched all pre-existing work table rows, owner, workspace, device identities, hosting settings and offline copies. The network backup volume was unavailable on November 6, so encrypted pre- and post-upgrade backups were created in a private local directory and restore-tested. The scheduled backup configuration was left in place.
 

@@ -421,10 +421,17 @@ struct CheckInWorkspace: View {
     @State private var briefIssue: String?
     @State private var briefRefresh = UUID()
     @State private var showCarry = false
-    var dayKey: String { let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.timeZone = TimeZone(identifier:"America/Chicago"); return formatter.string(from: day) }
+    private let workTimeZone = TimeZone(identifier: "America/Chicago")!
+    var dayKey: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = workTimeZone
+        return formatter.string(from: day)
+    }
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 16) {
-            HStack { Text("Your daily check-in").font(.title2.bold()); Spacer(); DatePicker("Day", selection: $day, displayedComponents: .date).fixedSize().disabled(store.checkBusy) }
+            HStack { Text("Your daily check-in").font(.title2.bold()); Spacer(); DatePicker("Day", selection: $day, displayedComponents: .date).environment(\.timeZone, workTimeZone).fixedSize().disabled(store.checkBusy) }
             Text("About 15 minutes · answer here, one question at a time · no model required").font(.subheadline).foregroundStyle(.secondary)
             if let briefIssue { Text(briefIssue).font(.callout).foregroundStyle(.orange) }
 
@@ -503,9 +510,25 @@ struct CheckInWorkspace: View {
             } catch { if !Task.isCancelled { briefIssue = "Your interview is still available. Saved work context could not refresh; reconnect and reload to preview the next workday." } }
         }
         .sheet(isPresented:$showCarry,onDismiss:{briefRefresh=UUID()}) { CarryForwardEditor(store:store,dayKey:dayKey,planDay:brief?.next_day ?? dayKey) }
-        .onAppear { if store.connected { store.loadCheckIn(day: dayKey) } }
-        .onChange(of: store.connected) { value in if value { store.loadCheckIn(day: dayKey) } }
-        .onChange(of: day) { _ in store.loadCheckIn(day: dayKey) }
+        .onAppear { openToday() }
+        .onChange(of: store.section) { section in if section == "Check-in" { openToday() } }
+        .onChange(of: store.connected) { connected in
+            if connected, store.section == "Check-in" { store.loadCheckIn(day: dayKey) }
+        }
+        .onChange(of: dayKey) { key in
+            if store.connected, store.section == "Check-in" { store.loadCheckIn(day: key) }
+        }
+    }
+    private func openToday() {
+        guard store.section == "Check-in" else { return }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = workTimeZone
+        let today = Date()
+        if !calendar.isDate(day, inSameDayAs: today) {
+            day = today
+        } else if store.connected {
+            store.loadCheckIn(day: dayKey)
+        }
     }
     private func openPlan(_ brief: DailyBrief,_ taskID: String?) {
         guard !store.unsavedSections.contains("Plan"), !store.offline else { return }
@@ -768,7 +791,15 @@ struct CarryForwardEditor:View {
                     Text("Diary excerpt supporting this detail").font(.headline)
                     TextEditor(text:$quote).frame(height:100).accessibilityLabel("Carry-forward diary excerpt").overlay(RoundedRectangle(cornerRadius:8).stroke(.quaternary))
                     TextField("Find task by title or reference",text:$query).textFieldStyle(.roundedBorder)
-                    Picker("Task to update",selection:$taskID) { Text("Choose a task").tag("");ForEach(source.tasks.filter {query.isEmpty || ($0.title+" "+$0.context+" "+$0.reference).localizedCaseInsensitiveContains(query)}) { task in Text(task.title+(task.context.isEmpty ? "" : " · "+task.context)+" · "+task.reference).tag(task.id) } }
+                    Picker("Task to update", selection: $taskID) {
+                        Text("Choose a task").tag("")
+                        ForEach(source.tasks.filter { task in
+                            query.isEmpty || [task.title, task.context, task.reference, task.id]
+                                .joined(separator: " ").localizedCaseInsensitiveContains(query)
+                        }) { task in
+                            Text(task.title + (task.context.isEmpty ? "" : " · " + task.context) + " · " + task.reference).tag(task.id)
+                        }
+                    }
                     Text("Only checked fields change. Unchecked fields keep their saved values.").font(.callout)
                     Toggle("Where to resume",isOn:toggle("resume"));if selectedFields.contains("resume") {TextField("Reviewed resumption note",text:$resume).textFieldStyle(.roundedBorder);Button("Use diary excerpt as resumption note"){resume=quote}}
                     Toggle("Blocker",isOn:toggle("blocker"));if selectedFields.contains("blocker"){TextField("Reviewed blocker — blank explicitly clears",text:$blocker).textFieldStyle(.roundedBorder)}
