@@ -117,6 +117,12 @@ def build(output):
         vendor_reference = path == runtime/'postgres/share/proj/proj.db'
         if path.is_file() and (path.name == '.env' or (path.suffix in ('.db', '.sqlite', '.sqlite3') and not vendor_reference)):
             raise RuntimeError('Private data entered app payload.')
+    # Installer assigns the payload to root. Preserve read/traverse access for the
+    # person running Juno even when the build was invoked with a private umask.
+    for path in (app,*app.rglob('*')):
+        if not path.is_symlink():
+            mode=path.stat().st_mode
+            path.chmod(mode | 0o044 | (0o011 if path.is_dir() or mode & 0o100 else 0))
     # Re-sign every Mach-O after redistribution, then seal the outer bundle.
     macho = (b'\xcf\xfa\xed\xfe', b'\xca\xfe\xba\xbe', b'\xfe\xed\xfa\xcf', b'\xca\xfe\xba\xbf')
     for path in app.rglob('*'):

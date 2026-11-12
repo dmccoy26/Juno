@@ -1,12 +1,13 @@
 """Explicitly reviewed diary-to-plan changes and durable weekly Dean drafts."""
-from datetime import date,timedelta
+from datetime import date,datetime,timedelta
+from zoneinfo import ZoneInfo
 from hashlib import sha256
 import json
 from uuid import UUID
 from fastapi import Depends,HTTPException,Query
-from pydantic import Field
+from pydantic import AwareDatetime,Field
 from sqlalchemy import select
-from .models import CheckIn,PlanningState,PlanningCarry,DeanDraft,DeanDraftOperation,TaskDockState,now
+from .models import CheckIn,PlanningState,PlanningCarry,DeanDraft,DeanDraftOperation,TaskDockHistory,TaskDockState,now
 from .planning import Strict,PlanningInput,TaskFacts,state_view,persist_planning
 from .taskdock_api import active_snapshot
 
@@ -79,15 +80,32 @@ def carry_preview(session,owner,value):
            'after':str(val) if val not in (None,'') else 'Clear this value'} for key,val in changes.items()]
     return source,current,facts,changes,rows
 
-def weekly_basis(session,owner,day):
+CHICAGO=ZoneInfo('America/Chicago')
+
+class MeetingPrepare(Strict):
+    previous:AwareDatetime
+    meeting:AwareDatetime
+    previous_confirmed:bool=False
+    taskdock_id:str=Field(min_length=1,max_length=36)
+    beacon_id:str=Field(min_length=1,max_length=36)
+
+
+def meeting_diaries(session,owner,start,end):
+    return session.scalars(select(CheckIn).where(CheckIn.owner_id==owner,CheckIn.local_date>=start,
+        CheckIn.local_date<=end,CheckIn.status=='confirmed').order_by(CheckIn.local_date)).all()
+
+
+def weekly_basis(session,owner,day,window=None):
     valid_day(day)
-    diaries=session.scalars(select(CheckIn).where(CheckIn.owner_id==owner,CheckIn.local_date>=day,CheckIn.local_date<day+timedelta(days=7),CheckIn.status=='confirmed').order_by(CheckIn.local_date)).all()
+    start=day if not window else datetime.fromisoformat(window['previous']).astimezone(CHICAGO).date()
+    end=day+timedelta(days=6) if not window else datetime.fromisoformat(window['prepared']).astimezone(CHICAGO).date()
+    diaries=meeting_diaries(session,owner,start,end)
     snapshot=active_snapshot(session,owner)
     planning=session.get(PlanningState,owner)
     status=session.get(TaskDockState,owner)
     from .operations import source_basis
     operational_basis=source_basis(session,owner)
-    return {'operations_basis':operational_basis,'diaries':[{'id':r.id,'revision':r.revision,'day':str(r.local_date)} for r in diaries],
+    return {**({'meeting_window':window} if window else {}),'operations_basis':operational_basis,'diaries':[{'id':r.id,'revision':r.revision,'day':str(r.local_date)} for r in diaries],
             'snapshot_id':snapshot.id if snapshot else None,'workspace_id':snapshot.info.get('workspace_id') if snapshot else None,
             'taskdock_saved_at':snapshot.fetched_at.isoformat() if snapshot else None,'planning_revision':planning.revision if planning else 0,'taskdock_uncertain':not snapshot or bool(status and status.error) or (now()-snapshot.fetched_at).total_seconds()>86400}
 
@@ -97,11 +115,112 @@ def normalized_basis(value):
 
 def dean_view(session,owner,day):
     row=session.scalar(select(DeanDraft).where(DeanDraft.owner_id==owner,DeanDraft.week_start==day))
-    basis=weekly_basis(session,owner,day)
+    basis=weekly_basis(session,owner,day,row.basis.get('meeting_window') if row else None)
     return {'owner_id':owner,'week_start':str(day),'exists':row is not None,'id':row.id if row else None,
             'text':row.text if row else '', 'revision':row.revision if row else 0,'basis':normalized_basis(row.basis) if row else basis,
             'sources_changed':bool(row and normalized_basis(row.basis)!=basis),'updated_at':row.updated_at if row else None,
             'notice':'Saved reviewed writing, not a live report. Changes to evidence do not overwrite this text. Nothing is sent automatically.'}
+
+def meeting_text(session,owner,previous,cutoff,meeting,td,beacon,beacon_stale,previous_confirmed):
+    from .planning import stamp
+    from .taskdock_planning import provided,request_overview
+    from .operations import briefing
+    def dated(value):
+        try:
+            parsed=stamp(value)
+            if previous<parsed<=cutoff:return parsed.astimezone(CHICAGO)
+        except (AttributeError,ValueError,TypeError):pass
+        return None
+
+    def brief(value,limit=280):
+        return ' '.join(str(value or '').split())[:limit]
+
+    def show(when):return when.strftime('%b %d, %Y at %-I:%M %p')
+    def section(lines,title,entries,limit,empty):
+        lines.extend(['',title])
+        lines.extend(entries[:limit] or [empty])
+        if len(entries)>limit:lines.append(f'{len(entries)-limit} more in the source records.')
+
+    lines=['Dean meeting update — draft',show(meeting)+' Central',
+           f'From {show(previous)} through {show(cutoff)} Central.']
+    lines.append('Start: last meeting as confirmed in Juno.' if previous_confirmed else
+                 'Start: previous scheduled Thursday meeting. If it was skipped or moved, review the reporting window.')
+    diaries=meeting_diaries(session,owner,previous.date(),cutoff.date())
+    notes=[f'{r.local_date}: '+brief(r.diary_text,900) for r in reversed(diaries)]
+    section(lines,'Confirmed check-ins (day-level records)',notes,18,'No confirmed check-ins in this window.')
+    if any(r.local_date==previous.date() for r in diaries):
+        lines.append('The prior meeting day’s check-in may include work from earlier that day.')
+    completed=[];updates=[];open_items=[]
+    histories={r.task_id:r.items for r in session.scalars(select(TaskDockHistory).where(
+        TaskDockHistory.owner_id==owner,TaskDockHistory.snapshot_id==td.id,TaskDockHistory.kind=='updates')).all()}
+    for task in td.items:
+        title=brief(task.get('title') or 'Untitled TaskDock item',160)
+        at=dated(task.get('completed_at'))
+        if at:completed.append((at,f'• {title} — marked complete {show(at)}.'))
+        sample=task.get('source_updates')
+        source_notes=sample.get('items') or [] if isinstance(sample,dict) else []
+        for item in [*source_notes,*histories.get(task['id'],[])]:
+            if not isinstance(item,dict):continue
+            date_value=item.get('created_at') or item.get('posted_at') or item.get('timestamp') or item.get('observed_at')
+            at=dated(date_value)
+            modified=dated(item.get('modified_at') or item.get('updated_at'))
+            if modified and (not at or modified>at):
+                at=modified
+                label=' (edited)'
+            else:label=''
+            body=brief(item.get('body') or item.get('text'))
+            if at and body:updates.append((at,f'• {title} — {show(at)}{label}: {body}'))
+        if unfinished(task):
+            due=brief(task.get('due_date'),30)
+            blocker=brief(provided(task,'blockers') or task.get('blocked_reason'))
+            latest=brief(task.get('latest_update'))
+            priority=brief(provided(task,'reported_priority') or request_overview(task,td.info,td.fetched_at)['priority_label'],40)
+            activity=dated(task.get('source_updated_at') or task.get('updated_at'))
+            open_items.append(((not bool(blocker),not bool(due),due,not bool(activity),title),
+                f'• {title}'+(f' — due {due}' if due else '')+(f'; priority: {priority}' if priority else '')+
+                (f'; blocker: {blocker}' if blocker else '')+(f'; latest note (date unverified): {latest}' if latest else '')))
+    section(lines,'TaskDock: completions recorded since the meeting',
+            [entry for _,entry in sorted(completed,reverse=True)],24,'No shared completion timestamps in this window.')
+    section(lines,'TaskDock: dated progress notes',
+            list(dict.fromkeys(entry for _,entry in sorted(updates,reverse=True))),20,'No dated notes available from the shared records.')
+    section(lines,'TaskDock: current open work and blockers',
+            [entry for _,entry in sorted(open_items)],15,'No open work in the current shared copy.')
+    cards=briefing(session,owner)['cards']
+    by_id={c['id']:c for c in cards}
+    recent=[];current=[];decisions=[]
+    for row in beacon.items:
+        at=dated(row.get('observed_at'))
+        card=by_id.get(row['id'],{})
+        line=f"• {brief(row.get('item'),140)} — {brief(row.get('problem'))}"
+        if card.get('verification_state')=='verified_recovered':
+            line+='; recovery verified in Beacon'
+        elif row.get('issue_state')=='resolved':
+            line+='; recorded as resolved, recovery not verified here'
+        linked=[brief(t['title'],120) for t in card.get('tasks',[])[:2]]
+        if linked:line+='; linked TaskDock work: '+', '.join(linked)
+        verification=dated((card.get('verification_record') or {}).get('observed_at'))
+        updated=dated(row.get('updated_at'))
+        if verification:recent.append((verification,line+f' (recovery verified {show(verification)})'))
+        elif at:recent.append((at,line+f' (observed {show(at)})'))
+        elif updated:recent.append((updated,line+f' (record updated {show(updated)}; observation time separate)'))
+        elif row.get('issue_state')!='resolved':current.append(line+' (observation outside this window or date unavailable)')
+        if card.get('decision_authority')=='department_lead':
+            decisions.append(line+'; '+brief(card.get('recommendation')))
+    section(lines,'Beacon: observations since the meeting',
+            [entry for _,entry in sorted(recent,reverse=True)],24,'No observations in this window from the connected Beacon feed.')
+    section(lines,'Beacon: other findings still shown in the feed',current,12,'No additional findings in this copy.')
+    section(lines,'Decisions to raise',decisions,10,'No department-level decision was explicitly tagged in the connected Beacon records. Review open blockers for decisions to raise.')
+    lines.extend(['','Source coverage',
+                  f'TaskDock refreshed {show(td.fetched_at.astimezone(CHICAGO))} Central. Shared fields and comment samples can be limited. Task completion alone does not verify a repair.',
+                  f'Beacon refreshed {show(beacon.fetched_at.astimezone(CHICAGO))} Central. Includes the authorized alert feed and supported linked issues; it is not a complete equipment or incident history.'])
+    candidates=sum(bool(t.get('latest_update')) for t in td.items)
+    lines.append(f'TaskDock timelines read for {len(histories)} of {candidates} tasks with a shared latest progress note. Smartsheet comment samples are separate and may be partial.')
+    if 'issue_snapshot_count' in beacon.details:
+        lines.append(f"Beacon includes {beacon.details['issue_snapshot_count']} retained issue records across the authorized inventory, including resolved issues. Current alerts still reflect Beacon's monitoring coverage.")
+    if beacon_stale:lines.append('Beacon’s feed timestamp is stale or unavailable. Verify current status before sharing.')
+    return '\n'.join(lines)
+
+
 
 def install(app,db,device,lock_owner):
     @app.get('/v1/planning/carry-forward')
@@ -145,6 +264,31 @@ def install(app,db,device,lock_owner):
                 'rows':[{'key':k,'label':LABELS[k],'before':str(r.before[k]) if r.before.get(k) not in (None,'') else 'Unknown / not recorded','after':str(v) if v not in (None,'') else 'Cleared'} for k,v in r.after.items()]})
         return {'items':items}
 
+
+    @app.post('/v1/planning/dean-meeting/prepare')
+    def prepare_meeting(value:MeetingPrepare,actor=Depends(device),session=Depends(db)):
+        from .operations import sources
+        previous=value.previous.astimezone(CHICAGO)
+        meeting=value.meeting.astimezone(CHICAGO)
+        cutoff=now().astimezone(CHICAGO)
+        valid_day(previous.date());valid_day(meeting.date())
+        if not previous<cutoff<=meeting or meeting.date()-previous.date()>timedelta(days=366):
+            raise HTTPException(422,'Choose a past reporting start and an upcoming meeting within one year of it.')
+        day=meeting.date()-timedelta(days=meeting.weekday())
+        lock_owner(session,actor.owner_id)
+        row=session.scalar(select(DeanDraft).where(DeanDraft.owner_id==actor.owner_id,DeanDraft.week_start==day))
+        if row:return {'created':False,'week_start':str(day)}
+        td,beacon,td_stale,beacon_stale=sources(session,actor.owner_id)
+        if not td or td_stale or td.info.get('sharing_restricted') or td.id!=value.taskdock_id:
+            raise HTTPException(409,'TaskDock did not supply a current shared copy. Refresh it again before preparing this draft.')
+        if not beacon or beacon.error or beacon.id!=value.beacon_id or cutoff-beacon.fetched_at>timedelta(minutes=15):
+            raise HTTPException(409,'Beacon did not supply a current copy. Refresh it again before preparing this draft.')
+        window={'previous':previous.isoformat(),'meeting':meeting.isoformat(),'prepared':cutoff.isoformat(),'previous_confirmed':value.previous_confirmed}
+        basis=weekly_basis(session,actor.owner_id,day,window)
+        content=meeting_text(session,actor.owner_id,previous,cutoff,meeting,td,beacon,beacon_stale,value.previous_confirmed)
+        session.add(DeanDraft(owner_id=actor.owner_id,week_start=day,text=content,basis=basis))
+        session.commit()
+        return {'created':True,'week_start':str(day)}
 
     @app.get('/v1/planning/weekly-draft/{day}')
     def read(day:date,actor=Depends(device),session=Depends(db)):

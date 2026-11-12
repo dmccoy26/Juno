@@ -158,3 +158,49 @@ class ContinuityTests(daily_tests.DailyBriefTests):
         saved=self.client.get(path).json();self.assertTrue(saved['basis']['taskdock_uncertain'])
         response=self.client.put(path,json={'operation_id':str(uuid.uuid4()),'expected_revision':1,'text':'Later reviewed writing','basis':saved['basis']})
         self.assertEqual(response.status_code,200,response.text)
+
+
+    def test_meeting_compiles_refreshed_sources_with_cutoff_and_preserves_reviewed_writing(self):
+        from datetime import datetime
+        from unittest.mock import patch
+        from juno.models import IntegrationSnapshot,TaskDockHistory
+        stamp=datetime.fromisoformat('2030-01-10T15:00:00+00:00')
+        self.diary()
+        self.snapshot(lambda items:items+[
+            {'id':'in','title':'In-window completion','completed_at':'2030-01-03T16:00:01Z'},
+            {'id':'out','title':'Before or at last meeting','completed_at':'2030-01-03T16:00:00Z'},
+            {'id':'future','title':'Future completion','completed_at':'2030-01-10T15:00:01Z'},
+            {'id':'progress','title':'In-window progress','behavior':'open','blocked_reason':'Awaiting fictional part',
+             'source_updates':{'items':[{'created_at':'2030-01-09T18:00:00Z','body':'Tested fictional cable'}]}}])
+        with self.factory() as session:
+            snapshot=session.scalar(select(TaskDockSnapshot).where(TaskDockSnapshot.owner_id==self.actor.owner_id))
+            snapshot.fetched_at=stamp
+            beacon=IntegrationSnapshot(owner_id=self.actor.owner_id,kind='beacon',origin='http://localhost:12108',
+                fetched_at=stamp,details={'generated_at':stamp.isoformat()},items=[
+                    {'id':'observation','item':'Example printer','problem':'Alignment warning','observed_at':'2030-01-09T18:00:00Z'}])
+            session.add(beacon)
+            session.add(TaskDockHistory(owner_id=self.actor.owner_id,snapshot_id=snapshot.id,kind='updates',
+                task_id='dean',items=[{'body':'Confirmed the fictional request','created_at':'2030-01-09T20:00:00Z'}],read_at=stamp))
+            session.flush()
+            intent={'previous':'2030-01-03T16:00:00Z','meeting':'2030-01-10T16:00:00Z','previous_confirmed':True,
+                    'taskdock_id':snapshot.id,'beacon_id':beacon.id}
+            session.commit()
+        endpoint='/v1/planning/dean-meeting/prepare'
+        with patch('juno.planning_continuity.now',return_value=stamp),patch('juno.operations.now',return_value=stamp):
+            self.assertEqual(self.client.post(endpoint,json=intent|{'beacon_id':'stale'}).status_code,409)
+            with TestClient(self.app) as other:
+                other.headers['Authorization']='Bearer '+self.other_token
+                self.assertEqual(other.post(endpoint,json=intent).status_code,409)
+            reply=self.client.post(endpoint,json=intent);self.assertEqual(reply.status_code,200,reply.text)
+            self.assertTrue(reply.json()['created'])
+            path='/v1/planning/weekly-draft/2030-01-07'
+            draft=self.client.get(path).json()
+            for piece in ('Fictional tomorrow','In-window completion','Tested fictional cable','Awaiting fictional part','Alignment warning','last meeting as confirmed','Confirmed the fictional request'):
+                self.assertIn(piece,draft['text'])
+            self.assertNotIn('Before or at last meeting',draft['text'])
+            self.assertNotIn('Future completion',draft['text'])
+            self.assertTrue(draft['basis']['meeting_window']['previous_confirmed'])
+            body={'operation_id':str(uuid.uuid4()),'expected_revision':1,'text':'Reviewed draft','basis':draft['basis']}
+            self.assertEqual(self.client.put(path,json=body).status_code,200)
+            self.assertFalse(self.client.post(endpoint,json=intent).json()['created'])
+            self.assertEqual(self.client.get(path).json()['text'],'Reviewed draft')

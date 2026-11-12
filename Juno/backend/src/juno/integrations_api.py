@@ -26,6 +26,7 @@ class BeaconInput(BaseModel):
     base_url: str=Field(max_length=500)
     token: SecretStr
     retained_issue_token: SecretStr | None=None
+    include_issue_snapshot: bool=False
     expected_id: str | None=Field(default=None,max_length=36)
 
 
@@ -105,6 +106,8 @@ def install(app,db,device,lock_owner,beacon_factory=BeaconReader):
     @app.post('/v1/integrations/beacon/refresh')
     def refresh(value:BeaconInput,actor=Depends(device),session=Depends(db)):
         from .operations import saved
+        if value.include_issue_snapshot and value.retained_issue_token is None:
+            raise HTTPException(422,'An authorized retained issue key is required for the equipment issue snapshot.')
         previous=owned(session,actor.owner_id,'beacon');check(previous,value.expected_id)
         old_items={row['id']:row for row in previous.items} if previous else {}
         _,review=saved(session,actor.owner_id)
@@ -115,13 +118,17 @@ def install(app,db,device,lock_owner,beacon_factory=BeaconReader):
             if value.retained_issue_token is not None:
                 if not instance:
                     raise IntegrationError('Beacon must identify its instance in the alert feed before linked issues can be refreshed.')
+                retained=beacon_factory(value.base_url,value.retained_issue_token.get_secret_value())
+                if value.include_issue_snapshot:
+                    additions,count,generated=retained.issue_snapshot(instance,items,review['links'],old_items.values())
+                    details.update(issue_snapshot_count=count,issue_snapshot_generated_at=generated)
+                    items.extend(additions)
                 present={row['id'] for row in items}
                 missing=[link for link in review['links'] if link['alert_id'] not in present
                          and link.get('issue_id') and link.get('asset_id')
                          and link.get('beacon_origin')==reader.origin and link.get('beacon_instance')==instance]
                 if len(missing)>5:
                     raise IntegrationError('The pilot can refresh up to five linked issues outside the active feed.')
-                retained=beacon_factory(value.base_url,value.retained_issue_token.get_secret_value())
                 for link in missing:
                     items.append(retained.retained_issue(link,details['generated_at'],old_items.get(link['alert_id'])))
                 details['retained_issue_count']=len(missing)

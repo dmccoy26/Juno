@@ -21,6 +21,7 @@ def run(*args):
 
 def check_payload(app):
     info = plistlib.loads((app/'Contents/Info.plist').read_bytes())
+    assert app.stat().st_mode & 0o005 == 0o005, 'Installed root-owned app must be traversable'
     assert info.get('JunoPackaged') is True
     assert 'JunoProjectRoot' not in info
     resources = app/'Contents/Resources'
@@ -34,6 +35,10 @@ def check_payload(app):
     for path in app.rglob('*'):
         if path.is_symlink():
             assert path.resolve().is_relative_to(app.resolve()), 'External symlink in payload'
+        if path.is_symlink(): continue
+        assert path.stat().st_mode & 0o004, 'Root-owned payload must be readable: '+str(path.relative_to(app))
+        if path.is_dir() or path.stat().st_mode & 0o100:
+            assert path.stat().st_mode & 0o001, 'Root-owned payload must be executable: '+str(path.relative_to(app))
         if not path.is_file(): continue
         if path.name in ('.env', 'desktop-owner.json') or (path.suffix in ('.db','.sqlite','.sqlite3') and path != reference):
             forbidden.append(str(path.relative_to(app)))

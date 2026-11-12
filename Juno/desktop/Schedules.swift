@@ -249,8 +249,9 @@ struct SchedulesWorkspace: View {
 
 struct RepairWindowsView: View {
     @ObservedObject var store: JunoStore
+    let day: String
     var tasks: [PlanningTask]; var workspace: String?
-    @State private var day = integrationDay(0);@State private var room = "";@State private var employee = "";@State private var minutes = "60";@State private var supervision = false
+    @State private var room = "";@State private var employee = "";@State private var minutes = "60";@State private var supervision = false
     @State private var data: AvailabilityRecord?;@State private var busy = false;@State private var issue: String?;@State private var taskID = ""
     @State private var rosterRooms: [String] = []; @State private var rosterPeople: [AvailabilityPerson] = []
     @State private var searched: String?
@@ -264,12 +265,15 @@ struct RepairWindowsView: View {
         } catch { issue = (error as? APIProblem)?.message ?? "Could not find possible windows. Reconnect to the work Mac." }
     }
     var body: some View {
-        GroupBox("When could we work on this?") {
+        GroupBox("Find a work window") {
             VStack(alignment:.leading,spacing:10) {
-                HStack { DatePicker("Seven days starting",selection:scheduleDayBinding($day),displayedComponents:.date);TextField("Minutes needed",text:$minutes).frame(width:130) }
                 HStack {
                     Picker("Room",selection:$room) { Text("Choose room").tag("");ForEach(rosterRooms,id:\.self) { Text($0).tag($0) } }
-                    Picker("Who",selection:$employee) { Text("Me").tag("");ForEach(rosterPeople) { Text($0.name+" • "+$0.status).tag($0.name) } }
+                    Picker("Person",selection:$employee) { Text("Me").tag("");ForEach(rosterPeople) { Text($0.name+" • "+$0.status).tag($0.name) } }
+                }
+                HStack {
+                    TextField("Duration (minutes)", text: $minutes).frame(width: 65)
+                    Text("minutes needed").foregroundStyle(.secondary)
                 }
                 if !employee.isEmpty { Toggle("Needs my supervision / collaboration",isOn:$supervision) }
                 HStack { Button("Find possible windows") { Task { await find() } }.disabled(busy || store.offline);Button("Manage schedules") { store.section = "Schedules" };if busy { ProgressView().controlSize(.small) } }
@@ -277,24 +281,28 @@ struct RepairWindowsView: View {
                 if let data, signature == searched {
                     ForEach(data.warnings,id:\.self) { Text($0).foregroundStyle(.orange) }
                     if !room.isEmpty && data.windows.isEmpty { Text("No confirmed window fits. Review the duration, room/staff hours and blockers.").foregroundStyle(.secondary) }
-                    Picker("Issue for a planning hold",selection:$taskID) { Text("Explore windows only").tag("");ForEach(tasks) { Text($0.title).tag($0.id) } }
-                    Text("A hold requires saved task details: reviewed room, person, duration, prerequisites and capability/supervision. It changes only Juno’s plan.").font(.caption)
-                    ForEach(data.windows.prefix(20)) { w in
-                        HStack {
-                            VStack(alignment:.leading) { Text(scheduleDate(w.start) + " → " + scheduleDate(w.proposed_end)).font(.headline);Text("Within a \(w.available_minutes)-minute opening").font(.caption) }
-                            Spacer();Button("Reserve reviewed task") {
-                                guard let workspace else { issue = "Connect TaskDock first.";return };busy = true
-                                Task { defer { busy = false };do {
-                                    _ = try await store.request("/v1/schedules/reservations",method:"POST",body:["expected_revision":data.revision,"task_id":taskID,"workspace_id":workspace,"room":room,"employee":employee,"start":w.start,"end":w.proposed_end]);await find();issue = "Planning hold saved in Juno. TaskDock was not changed."
-                                } catch { issue = (error as? APIProblem)?.message ?? "Hold not confirmed. Refresh before retrying." } }
-                            }.disabled(busy || taskID.isEmpty || store.offline)
+                    if !data.windows.isEmpty {
+                        Picker("Issue to reserve",selection:$taskID) { Text("Explore windows only").tag("");ForEach(tasks) { Text($0.title).tag($0.id) } }
+                        Text("To reserve a window, choose an issue with reviewed planning details.").font(.caption)
+                        ForEach(data.windows.prefix(20)) { w in
+                            HStack {
+                                VStack(alignment:.leading) { Text(scheduleDate(w.start) + " → " + scheduleDate(w.proposed_end)).font(.headline);Text("Within a \(w.available_minutes)-minute opening").font(.caption) }
+                                Spacer();Button("Reserve reviewed task") {
+                                    guard let workspace else { issue = "Connect TaskDock first.";return };busy = true
+                                    Task { defer { busy = false };do {
+                                        _ = try await store.request("/v1/schedules/reservations",method:"POST",body:["expected_revision":data.revision,"task_id":taskID,"workspace_id":workspace,"room":room,"employee":employee,"start":w.start,"end":w.proposed_end]);await find();issue = "Planning hold saved in Juno. TaskDock was not changed."
+                                    } catch { issue = (error as? APIProblem)?.message ?? "Hold not confirmed. Refresh before retrying." } }
+                                }.disabled(busy || taskID.isEmpty || store.offline)
+                            }
                         }
                     }
-                    Text(data.notice).font(.caption).foregroundStyle(.secondary)
-                    DisclosureGroup("Source dates") { ForEach(data.source_notices,id:\.self) { Text($0).font(.caption) } }
+                    DisclosureGroup("Availability sources and limits") {
+                        Text(data.notice).font(.caption).foregroundStyle(.secondary)
+                        ForEach(data.source_notices,id:\.self) { Text($0).font(.caption) }
+                    }
                 } else if searched != nil { Text("Inputs changed; find windows again before using a result.").font(.caption).foregroundStyle(.orange) }
             }.frame(maxWidth:.infinity,alignment:.leading).padding(6).disabled(busy)
-        }.task { day = integrationDay(0); if !store.offline { await find() } }
+        }.task(id: day) { if !store.offline { await find() } }
     }
 }
 

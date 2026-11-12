@@ -41,3 +41,7 @@ Dan authorized reviewed carry-forward and persisted weekly Dean drafts. Both are
 ## Preview 16 installed work-host delivery
 
 At Dan's request on November 4, the active work-host app was updated to preview.16 and the version added beside Juno in the header. Installer and preservation checks passed; see [delivery evidence](../reports/preview-16-delivery-2026-11-04.md). Administrator installation of the older root-owned standalone copy, physical laptop acceptance and the timed real-user walkthrough remain open.
+
+## November 11 — real-user walkthrough complete
+
+Dan completed the five-question check-in in installed preview.23 and the diary was confirmed. A reviewed next action from the diary was saved with provenance to the intended TaskDock task in Juno, then verified in Plan for November 12. The Dean briefing was saved and read back in both Juno and TaskDock. Elapsed user time was not measured. Physical M5 Air offline edit and reconnect acceptance is tracked separately.

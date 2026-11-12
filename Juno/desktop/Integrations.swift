@@ -19,7 +19,7 @@ struct BusyDay: Decodable, Identifiable {
     var id: String { date }
 }
 struct EvidenceDetails: Decodable {
-    let notice: String?; let start: String?; let end: String?; let timezone: String?; let generated_at: String?; let active: Bool?; let tombstone: Bool?; let route: String?; let busy_days: [BusyDay]?
+    let notice: String?; let start: String?; let end: String?; let timezone: String?; let generated_at: String?; let issue_snapshot_count: Int?; let active: Bool?; let tombstone: Bool?; let route: String?; let busy_days: [BusyDay]?
 }
 struct EvidenceSnapshot: Decodable, Identifiable {
     let id: String; let kind: String; let origin: String; let count: Int; let items: [EvidenceRow]
@@ -70,6 +70,7 @@ struct IntegrationsWorkspace: View {
     @State private var origin = UserDefaults.standard.string(forKey:"beaconOrigin") ?? "http://127.0.0.1:12108"
     @State private var token = ""
     @State private var retainedIssueToken = ""
+    @AppStorage("beaconIncludeIssueSnapshot") private var includeIssueSnapshot = false
     @State private var search = ""
     @State private var busy = false
     @State private var notice: String?
@@ -112,7 +113,7 @@ struct IntegrationsWorkspace: View {
                 let issueAccount = address + "/retained-issues"
                 let key = entered.isEmpty ? try await credentialWork { try BeaconKeychain.read(address) } ?? "" : entered
                 let issueKey: String? = enteredIssueKey.isEmpty ? try await credentialWork { try BeaconKeychain.read(issueAccount) } : enteredIssueKey
-                var body:[String:Any] = ["base_url":address,"token":key]
+                var body:[String:Any] = ["base_url":address,"token":key,"include_issue_snapshot":includeIssueSnapshot]
                 if let issueKey { body["retained_issue_token"] = issueKey }
                 if let previous = snapshot("beacon") { body["expected_id"] = previous.id }
                 _ = try await store.request("/v1/integrations/beacon/refresh",method:"POST",body:body)
@@ -121,7 +122,7 @@ struct IntegrationsWorkspace: View {
                     if let issueKey { try BeaconKeychain.save(issueKey,origin:issueAccount) }
                 }
                 token = "";retainedIssueToken = "";UserDefaults.standard.set(address,forKey:"beaconOrigin")
-                notice = issueKey == nil ? "Refreshed Beacon alerts." : "Refreshed Beacon alerts and checked reviewed links for retained issues."
+                notice = includeIssueSnapshot ? "Refreshed Beacon alerts and retained equipment issues." : issueKey == nil ? "Refreshed Beacon alerts." : "Refreshed Beacon alerts and checked reviewed links for retained issues."
             } catch { notice = (error as? APIProblem)?.message ?? "Beacon could not be refreshed. The previous snapshot has been retained." }
             await load()
         }
@@ -161,15 +162,16 @@ struct IntegrationsWorkspace: View {
                         VStack(alignment:.leading,spacing:10) {
                             TextField("Loopback API address",text:$origin)
                             SecureField("Dedicated read-only integration key (blank uses Keychain)",text:$token)
-                            DisclosureGroup("Linked repair history (pilot)") {
+                            DisclosureGroup("Retained equipment issues") {
                                 SecureField("Asset-scoped issue key (blank uses Keychain)",text:$retainedIssueToken)
-                                Text("Use the separate Beacon issue key to check reviewed repair links after their alerts disappear. This requires a Beacon feed with stable issue and instance IDs.").font(.caption).foregroundStyle(.secondary)
+                                Toggle("Include the authorized inventory’s retained issues",isOn:$includeIssueSnapshot)
+                                Text("Use the separate Beacon issue key to include open and resolved records for its authorized assets. With this off, Juno checks reviewed repair links only.").font(.caption).foregroundStyle(.secondary)
                             }
                             HStack {
                                 Button("Refresh Beacon") { refreshBeacon() }.disabled(busy)
                                 Button("Forget saved keys…",role:.destructive) { forgettingKey = true }.disabled(busy)
                             }
-                            Text("Use the dedicated Beacon integration key. Juno reads Beacon on loopback and stores its keys in this Mac's Keychain. Refresh is manual.").font(.caption).foregroundStyle(.secondary)
+                            Text("Use the dedicated Beacon integration key. Juno reads Beacon on loopback and stores its keys in this Mac's Keychain. Dean draft preparation also refreshes this connection.").font(.caption).foregroundStyle(.secondary)
                         }.padding(8)
                     }
                 } else {

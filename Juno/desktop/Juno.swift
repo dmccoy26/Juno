@@ -94,6 +94,20 @@ final class JunoStore: ObservableObject {
     var endpoint: URL?
     var token = ""
     var connectionTask: Task<Void,Never>?
+    @Published var deanAutomatic = UserDefaults.standard.bool(forKey:"deanAutomatic") {
+        didSet { UserDefaults.standard.set(deanAutomatic,forKey:"deanAutomatic") }
+    }
+    @Published var deanNotice = ""
+    @Published var deanPreparing = false
+    @Published var deanOverride = UserDefaults.standard.object(forKey:"deanOverride") as? Date {
+        didSet { UserDefaults.standard.set(deanOverride,forKey:"deanOverride") }
+    }
+    @Published var deanOverrideWeek = UserDefaults.standard.string(forKey:"deanOverrideWeek") ?? "" {
+        didSet { UserDefaults.standard.set(deanOverrideWeek,forKey:"deanOverrideWeek") }
+    }
+    var deanMonitor: Task<Void,Never>?
+    var deanLastAttempt: Date?
+    var deanHandledWeek: String?
     var startupTask: Task<Void, Never>?
     var selectedMemory: Memory? { items.first { $0.id == selected } }
 
@@ -153,7 +167,7 @@ final class JunoStore: ObservableObject {
                 do { try await self.restoreShared() } catch { self.problem = (error as? APIProblem)?.message ?? "Shared connection could not be restored." }
                 self.startupTask = Task {
                     for _ in 0..<40 {
-                        do { try await self.load(); await self.loadCompanion(); self.startSharedMonitor(); return }
+                        do { try await self.load(); await self.loadCompanion(); self.startSharedMonitor(); self.startDeanMonitor(); return }
                         catch {
                             if self.sharedProfile != nil, ((error as? APIProblem)?.status == 401 || self.offlineCopy?.archive.pages.isEmpty == true) {
                                 self.status = "Connect work Mac"; self.problem = (error as? APIProblem)?.message ?? "Connect to the work Mac or import a fresh pairing invitation in Computers. Queued edits are retained."; self.startSharedMonitor(); return

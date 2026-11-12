@@ -2,13 +2,41 @@
 
 Updated: November 11, 2026.
 
-## Current release — preview.23
+## Current release — preview.27 Plan workspace
+
+Plan opens to a weekly overview showing hours available and suggested work times. Separate Issues, Scheduling and Dean briefing views provide the relevant controls. Issues can be searched by title or room and filtered by the status shown on each row. Scheduling uses the same start date as the weekly plan.
+
+Preview.27 is installed in `/Applications/Juno.app`. Native planning and all 15 installer check groups passed. Live checks covered opening a suggested issue, filtering by search, the shared scheduling date and reopening the saved November 12 briefing. The upgrade preserved the workspace, pairing and local drafts, and backup restore checks passed.
+
+## Preview.26 Dean briefing layout
+
+The Dean briefing opens as a formatted reading page with a document title, reporting dates, section headings and indented lists. Edit briefing opens the editor and Preview returns to the reading page. Source details and draft comparisons sit outside the document. The existing save, recovery and copy flows use the original text.
+
+Preview.26 is installed in `/Applications/Juno.app`. The native save/reopen check and all 15 installer check groups passed. The installed app opened the saved November 12 briefing in the new view and switched between Edit and Preview. The upgrade preserved the workspace, pairing and local drafts. Backups before and after installation passed restore checks.
+
+## Preview.25 Beacon equipment coverage
+
+Preview.25 is installed and running at `/Applications/Juno.app` with its preserved workspace and paired-device host. The corrected installer was approved and applied successfully. Package validation now checks root-owned bundle accessibility in addition to the signature and runtime tests. All 237 backend tests and 15 corrected installer check groups passed. The before/after gate matched existing data, local drafts, device identity and sharing settings.
+
+The live Beacon API returned 60 current alerts and 13 retained issues using dedicated read-only keys. The retained key covers the 2,814 assets registered at setup, and future assets need a scope update for retained issues. The live Juno refresh succeeded after macOS Keychain approval and was repeated from the installed app using the saved keys. Only Keychain retains the two new credentials on this Mac. Beacon keys are not part of paired-laptop sync. The existing M5 Air remains paired; completion of a sync on the laptop still needs confirmation there.
+
+## Preview.24 recurring Dean draft
+
+In Plan, the Thursday Dean meeting panel opens the current week’s draft. The work Mac can prepare it automatically at 9:00 AM Central for the 10:00 AM Thursday meeting. Juno must be open and the Mac awake. The automatic run can retry before 10:00 AM; Plan also has a manual preparation button. The normal reporting start is the previous scheduled meeting. Correct it in Plan if the meeting was skipped or moved.
+
+Juno refreshes the two read-only connections, uses confirmed check-ins, collects dated TaskDock completions and shared progress notes, and separates current blockers from dated activity. Beacon observations and verified recoveries retain their evidence labels and are limited to the approved feed and reviewed links. The draft records source coverage and freshness and preserves any draft already saved for the week. Nothing is sent automatically.
+
+Installed and enabled on the work Mac at `/Applications/Juno.app`, receipt 0.1.0.24. All 236 backend tests and 15 installer check groups passed. Native checks covered the Central daylight saving transition, the enabled schedule, preservation of a saved draft, and reopening the November 12 briefing from Plan. The work records, owner, device identities, settings, offline copies and local drafts matched the pre-install fingerprints. Backups before and after installation passed restore checks. The first scheduled run that will create a new draft has not occurred yet. The live Beacon connection still covers the HCH203 pilot.
+
+## Preview.23 upgrade evidence
 
 Daily check-in opens on the current Chicago date each time you return to the workspace. An older date can still be selected, and its draft stays with that date. The carry-forward task picker accepts the full TaskDock reference. The native lab reopened on November 11 after selecting November 9, recovered the historical draft, and took a fictional five-answer interview through diary confirmation, a reviewed planning save and handoff to November 12. The 235-test backend suite and native briefing, continuity and offline queue checks passed.
 
 Installed at `/Applications/Juno.app` with receipt 0.1.0.23 and a valid deep/strict bundle signature. All 15 installer check groups passed. The app reopened connected to the existing workspace and showed the November 11 check-in. The private before/after comparison matched all existing work rows, owner, device identities, hosting settings, offline copies, local drafts and pending edit preferences. Encrypted backups before and after the upgrade passed restore checks on the configured backup volume.
 
-The November 9 HCH203 pilot links persist in the installed work workspace. On November 11, the scoped Beacon feed returned both linked observations, and the retained issue lookup returned open with verification pending. A physical printer check and the subsequent live recovery transition remain open. The timed real-user walkthrough, M5 Air offline sync and worker report from campus Wi-Fi still need hands-on acceptance.
+The November 11 real-user walkthrough is complete in preview.23. The confirmed diary supplied a reviewed next action for a TaskDock task in the November 12 Plan. Juno saved the diary source with the planning detail and reopened it in Plan. The Dean briefing was also saved and read back in Juno and TaskDock. Elapsed user time was not measured.
+
+The November 9 HCH203 pilot links persist in the installed work workspace. On November 11, the scoped Beacon feed returned both linked observations, and the retained issue lookup returned open with verification pending. A physical printer check and the subsequent live recovery transition remain open. M5 Air offline sync and the worker report from campus Wi-Fi still need hands-on acceptance.
 
 ## Preview.22 upgrade evidence
 

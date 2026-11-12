@@ -47,3 +47,15 @@ The implementation and isolated checks pass; preview.17 installation and another
 ## Current delivery — preview.19
 
 The question-first interview is installed in `/Applications/Juno.app` as part of preview.19, alongside the approved Juno logo/icon, clear TaskDock connection fields and Today refresh-on-return. Backend, isolated native and extracted-package checks pass; see [build status](BUILD-STATUS.md). Earlier development/install-pending notes are historical. The timed real-user check-in remains open following the original prompt-placement confusion; no completion time or user acceptance is inferred from synthetic checks.
+
+## Preview.24 — Thursday Dean meeting
+
+Open **Plan → Dean briefing** and find **Thursday Dean meeting**. On the work Mac, **Prepare automatically** starts at 9:00 AM Central before the 10:00 AM meeting. Leave Juno running and the Mac awake. Use **Refresh sources and prepare now** to start earlier in the same week, or **Open this week’s draft** to read, edit or copy the saved text. If a draft already exists, Juno keeps it.
+
+The window starts at the preceding scheduled Thursday meeting. Use **Correct last meeting** before preparation if the meeting was skipped or moved. Juno refreshes TaskDock and Beacon using their saved connections, combines the shared records with confirmed check-ins, and marks the coverage and time limits. Review the draft before sharing it. Juno saves it locally and does not send it.
+
+## Preview.25 — Beacon equipment coverage
+
+The work Mac reads Beacon’s authorized active alert feed and can also refresh the complete retained issue snapshot for the assets covered by its separate read-only issue key. The Dean draft can use dated retained issues and recovery evidence even after the alert disappears. Current alerts are limited to Beacon’s monitoring; this is not a history of every observation or an inventory of healthy assets. Newly registered assets already participate in the normal alert feed, but require an updated retained-issue key if it was issued for a fixed set of assets.
+
+A paired laptop can use **Settings → Computers → Reconnect and synchronize** on the work network to refresh its saved copy and send its queued memory and diary edits. Beacon keys stay on the work Mac.

@@ -65,6 +65,30 @@ class ReaderTests(unittest.TestCase):
         extra={**FEED,'rows':[{**FEED['rows'][0],'api_key':'synthetic-excluded','url':'https://example.invalid/never-follow'}]}
         self.assertNotIn('synthetic-excluded',json.dumps(beacon_feed(extra)))
 
+    def test_retained_issue_snapshot_validates_instance_and_preserves_reviewed_aliases(self):
+        reader=BeaconReader('http://127.0.0.1:12108','synthetic-key')
+        issue_id='52e6f3bc-a68e-47a9-8483-50d8b09531f2'
+        proof_id='6f1eb851-2553-4f92-8114-23502e8ac337'
+        stamp=FEED['generated_at']
+        issue={'instance_id':'fictional','issue_id':issue_id,'asset_id':'17','record_version':'2','title':'Fictional projector',
+               'observed_at':stamp,'updated_at':stamp,'issue_state':'resolved','verification_state':'verified_recovered',
+               'verification_id':proof_id,'evidence':'Bench test','verification_record':{'record_id':proof_id,
+                   'asset_id':'17','actor_id':'fictional','observed_at':stamp,'method':'Bench test'}}
+        feed={'operational_contract_version':'1','instance_id':'fictional','complete':True,'includes_resolved':True,
+              'generated_at':stamp,'total':1,'rows':[issue]}
+        links=[{'beacon_instance':'fictional','beacon_origin':reader.origin,'alert_id':'reviewed','issue_id':issue_id,'asset_id':'17'}]
+        with patch.object(reader,'_get',return_value=feed) as fetch:
+            rows,count,_=reader.issue_snapshot('fictional',[],links,[])
+            self.assertEqual(count,1);self.assertEqual(rows[0]['id'],'reviewed')
+            self.assertEqual(rows[0]['verification_record']['record_id'],proof_id)
+            fetch.assert_called_once_with('/api/equipment/issues')
+            self.assertFalse(reader.issue_snapshot('fictional',rows,[],rows)[0])
+            with self.assertRaises(IntegrationError):reader.issue_snapshot('other',[],links,[])
+            with self.assertRaises(IntegrationError):reader.issue_snapshot('fictional',[],links,[rows[0]|{'record_version':'3'}])
+        for bad in [feed|{'complete':False},feed|{'rows':[issue|{'verification_id':issue_id}]}]:
+            with patch.object(reader,'_get',return_value=bad),self.assertRaises(IntegrationError):
+                reader.issue_snapshot('fictional',[],links,[])
+
     def test_beacon_transport_fixed_get_no_redirect_and_sanitized_errors(self):
         calls=[]
         class Handler(BaseHTTPRequestHandler):

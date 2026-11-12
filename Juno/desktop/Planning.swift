@@ -60,11 +60,15 @@ struct OperationalSourceBasis: Codable, Equatable {
     func encode(to encoder:Encoder)throws {var c=encoder.container(keyedBy:CodingKeys.self);try c.encode(taskdock_snapshot,forKey:.taskdock_snapshot);try c.encode(workspace_id,forKey:.workspace_id);try c.encode(beacon_snapshot,forKey:.beacon_snapshot);try c.encode(beacon_error,forKey:.beacon_error);try c.encode(taskdock_stale,forKey:.taskdock_stale);try c.encode(beacon_stale,forKey:.beacon_stale);try c.encode(operations_revision,forKey:.operations_revision);try c.encode(planning_revision,forKey:.planning_revision)}
 }
 struct WeeklyDiaryBasis: Codable, Equatable { var id:String; var revision:Int; var day:String }
+struct DeanMeetingWindow: Codable, Equatable {
+    let previous:String;let meeting:String;let prepared:String;let previous_confirmed:Bool
+}
 struct WeeklyBasis: Codable, Equatable {
     var operations_basis:OperationalSourceBasis?
+    var meeting_window:DeanMeetingWindow?
     var diaries:[WeeklyDiaryBasis]; var snapshot_id:String?; var workspace_id:String?; var taskdock_saved_at:String?; var planning_revision:Int;var taskdock_uncertain:Bool
-    enum CodingKeys:String,CodingKey { case operations_basis,diaries,snapshot_id,workspace_id,taskdock_saved_at,planning_revision,taskdock_uncertain }
-    func encode(to encoder:Encoder) throws { var c=encoder.container(keyedBy:CodingKeys.self);try c.encode(operations_basis,forKey:.operations_basis);try c.encode(diaries,forKey:.diaries);try c.encode(snapshot_id,forKey:.snapshot_id);try c.encode(workspace_id,forKey:.workspace_id);try c.encode(taskdock_saved_at,forKey:.taskdock_saved_at);try c.encode(planning_revision,forKey:.planning_revision);try c.encode(taskdock_uncertain,forKey:.taskdock_uncertain) }
+    enum CodingKeys:String,CodingKey { case meeting_window,operations_basis,diaries,snapshot_id,workspace_id,taskdock_saved_at,planning_revision,taskdock_uncertain }
+    func encode(to encoder:Encoder) throws { var c=encoder.container(keyedBy:CodingKeys.self);try c.encodeIfPresent(meeting_window,forKey:.meeting_window);try c.encode(operations_basis,forKey:.operations_basis);try c.encode(diaries,forKey:.diaries);try c.encode(snapshot_id,forKey:.snapshot_id);try c.encode(workspace_id,forKey:.workspace_id);try c.encode(taskdock_saved_at,forKey:.taskdock_saved_at);try c.encode(planning_revision,forKey:.planning_revision);try c.encode(taskdock_uncertain,forKey:.taskdock_uncertain) }
 }
 struct WeeklyPlanningDraft: Decodable { var text:String; var notices:[String]; var basis:WeeklyBasis; var missing_diary_dates:[String] }
 struct SavedDeanDraft: Decodable {
@@ -115,7 +119,24 @@ struct PlanningWorkspace: View {
     @State private var editorIssue: String?
     @State private var estimateTask: Task<Void,Never>?
     @State private var estimating = false
-    @State private var taskFilter = "All issues"
+    private enum Page: String, CaseIterable, Identifiable {
+        case week = "Week", issues = "Issues", scheduling = "Scheduling", briefing = "Dean briefing"
+        var id: Self { self }
+    }
+    private enum IssueFilter: String, CaseIterable, Identifiable {
+        case all = "All issues", details = "Needs details", blocked = "Blocked", ready = "Ready to review"
+        var id: Self { self }
+        var icon: String {
+            switch self {
+            case .all: return "list.bullet"
+            case .details: return "questionmark.circle"
+            case .blocked: return "hand.raised"
+            case .ready: return "checkmark.circle"
+            }
+        }
+    }
+    @State private var page: Page = .week
+    @State private var taskFilter: IssueFilter = .all
     @State private var inspected: String?
     @State private var guided = false
     @State private var guideStep = 0
@@ -149,7 +170,7 @@ struct PlanningWorkspace: View {
             }
             store.planningWorkspaceID = nil
             if let wanted = store.planningTaskID {
-                if let task = plan?.tasks.first(where:{$0.id == wanted}) { inspected = task.id; choose(task) }
+                if let task = plan?.tasks.first(where:{$0.id == wanted}) { inspect(task); choose(task) }
                 else { issue = "This issue is completed or outside the current planning candidate set. Review the source details in TaskDock." }
                 store.planningTaskID = nil
             }
@@ -185,145 +206,343 @@ struct PlanningWorkspace: View {
         dirty = true; issue = "Task planning details added to your draft. Save planning to use them."
         return true
     }
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+    private func duration(_ minutes: Int) -> String {
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        if hours == 0 { return "\(remainder)m" }
+        return remainder == 0 ? "\(hours)h" : "\(hours)h \(remainder)m"
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
                 Text("Plan your week").font(.title2.bold())
-                Text("Choose one issue to review its context, clarify what’s missing and decide the next step.").foregroundStyle(.secondary)
-                HStack {
-                    DatePicker("Seven days starting", selection: $day, displayedComponents: .date)
+                Spacer()
+                if busy { ProgressView().controlSize(.small).accessibilityLabel("Loading plan") }
+                Menu {
                     Button("Reload saved planning") { Task { await load() } }.disabled(busy || dirty)
-                    Button("Save planning") { Task { await save() } }.disabled(busy || !dirty || store.offline)
-                    if busy { ProgressView().controlSize(.small) }
+                    if dirty { Button("Discard changes and reload") { Task { await load(discard: true) } }.disabled(busy) }
+                } label: {
+                    Label("Plan actions", systemImage: "ellipsis.circle")
+                }.menuStyle(.borderlessButton).fixedSize()
+                if dirty {
+                    Button("Save planning") { Task { await save() } }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(busy || store.offline)
                 }
-                if dirty { HStack { Text("Unsaved planning changes").foregroundStyle(.orange); Button("Discard draft and reload") { Task { await load(discard: true) } } } }
-                if let issue { Text(issue).foregroundStyle(.orange).textSelection(.enabled) }
-                DisclosureGroup("Find a room and person’s work window") { RepairWindowsView(store: store, tasks: plan?.tasks ?? [], workspace: record?.workspace_id) }
-                if let record {
-                    DisclosureGroup("Legacy dated availability (\(record.windows.count) windows)") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Times use this Mac’s timezone. Enter individual days, room access and staff availability. Missing hours mean unknown availability.").font(.caption)
-                            HStack {
-                                Text("Interruption reserve, minutes per seven days")
-                                Stepper("\(record.reserve_minutes)", value: Binding(get: { self.record?.reserve_minutes ?? 240 }, set: { self.record?.reserve_minutes = $0; dirty = true }), in: 0...2400, step: 30)
-                            }
-                            ForEach(Array(record.windows.enumerated()), id: \.offset) { index, w in
-                                HStack {
-                                    Text("\(w.kind): \(w.name)  \(w.start) → \(w.end)").font(.caption).textSelection(.enabled)
-                                    Spacer(); Button("Remove") { self.record?.windows.remove(at: index); dirty = true }
-                                }
-                            }
-                            HStack {
-                                Picker("Window", selection: $windowKind) { Text("My work").tag("work"); Text("Room access").tag("room"); Text("Staff available").tag("staff") }.frame(width: 220)
-                                if windowKind != "work" { TextField("Exact room or employee name", text: $windowName) }
-                            }
-                            DatePicker("Start", selection: $windowStart)
-                            DatePicker("End", selection: $windowEnd)
-                            Button("Add confirmed window") {
-                                guard windowEnd > windowStart, windowEnd.timeIntervalSince(windowStart) <= 86400, windowKind == "work" || !windowName.trimmingCharacters(in: .whitespaces).isEmpty else { issue = "Choose an end after the start, within 24 hours, and a room or employee name where required."; return }
-                                let f = ISO8601DateFormatter()
-                                self.record?.windows.append(PlanningWindow(kind: windowKind, name: windowName.trimmingCharacters(in: .whitespaces), start: f.string(from: windowStart), end: f.string(from: windowEnd)))
+            }
+            HStack {
+                Picker("Plan view", selection: $page) {
+                    ForEach(Page.allCases) { page in Text(page.rawValue).tag(page) }
+                }.pickerStyle(.segmented).labelsHidden().frame(maxWidth: 430)
+                Spacer()
+                if page != .briefing {
+                    DatePicker("Starting", selection: $day, displayedComponents: .date)
+                        .fixedSize().disabled(dirty || busy)
+                }
+            }
+            if dirty {
+                Label("Unsaved planning changes", systemImage: "pencil.circle")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            if let issue { Text(issue).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+        .frame(maxWidth: 1100)
+    }
+
+    private func metric(_ minutes: Int, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(duration(minutes)).font(.title2.weight(.semibold)).monospacedDigit()
+            Text(label).font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var currentPlan: PlanningResult? { dirty || busy ? nil : plan }
+
+    @ViewBuilder
+    private var week: some View {
+        if let plan = currentPlan {
+            Text("Time available").font(.headline).accessibilityAddTraits(.isHeader)
+            HStack(spacing: 10) {
+                metric(plan.capacity_minutes, "To plan")
+                metric(plan.free_minutes, "After recorded meetings")
+                metric(plan.reserve_minutes, "Reserved for interruptions")
+            }
+            if let question = plan.question,
+               plan.tasks.contains(where: { $0.dean == true }),
+               plan.tasks.contains(where: { $0.reason == "Teaching/operations need" }) {
+                GroupBox("Choose a priority") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(question)
+                        ForEach(plan.tasks.filter { $0.dean == true || $0.reason == "Teaching/operations need" }.prefix(4)) { task in
+                            Button("Prioritize " + task.title) {
+                                record?.priority_choice = task.id
+                                record?.priority_choice_date = dateString(day)
                                 dirty = true
-                            }.disabled(store.offline)
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
+                            }
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else if let next = plan.tasks.first(where: { $0.id == plan.recommended_task_id }) {
+                GroupBox("Suggested next") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(next.title).font(.headline)
+                        Text(duration(next.estimate_minutes) + " · " + next.reason).foregroundStyle(.secondary)
+                        Button("Review issue") { inspect(next) }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if let allocation = plan.allocation_proposal, !allocation.blocks.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Suggested work times").font(.headline).accessibilityAddTraits(.isHeader)
+                    ForEach(allocation.blocks) { block in
+                        GroupBox {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(block.title).font(.headline)
+                                Text(scheduleDate(block.start) + "–" + dailyBriefTime(block.end))
+                                Text([duration(block.minutes), block.employee.isEmpty ? "Me" : block.employee, block.room]
+                                    .filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(.callout).foregroundStyle(.secondary)
+                                HStack {
+                                    if let task = plan.tasks.first(where: { $0.id == block.id }) {
+                                        Button("Review issue") { inspect(task) }
+                                    }
+                                    RecommendationFeedbackButton(store: store, taskID: block.id, day: dateString(day))
+                                }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    DisclosureGroup("About these suggestions") {
+                        Text(allocation.notice).font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                if let plan, !dirty, !busy {
-                    Text("\(plan.capacity_minutes) minutes to plan • \(plan.free_minutes) after recorded meetings • \(plan.reserve_minutes) reserved for interruptions").font(.headline)
-                    if let question = plan.question,plan.tasks.contains(where:{$0.dean == true}) && plan.tasks.contains(where:{$0.reason == "Teaching/operations need"}) { Text("Before I choose: " + question).font(.headline).foregroundStyle(.purple); Text("Discuss it in Chat, or confirm which priority should lead for this planning date.").font(.caption)
-                        HStack {
-                            ForEach(plan.tasks.filter { $0.reason == "Dean request" || $0.reason == "Teaching/operations need" }.prefix(4)) { task in
-                                Button("Prioritize: " + task.title) { record?.priority_choice = task.id; record?.priority_choice_date = dateString(day); dirty = true }
+            }
+            Button("Browse issues (\(plan.tasks.count))") { page = .issues }
+            DisclosureGroup("Sources and availability limits") {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(plan.notices, id: \.self) { Text($0) }
+                    Text(plan.notice)
+                }.font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else {
+            planUnavailable
+        }
+        Button("Open daily check-in") { store.section = "Check-in" }
+    }
+
+    private var planUnavailable: some View {
+        Text(busy ? "Loading the plan…" : dirty ? "Save planning to see updated recommendations." :
+             store.offline ? "Reconnect to see planning recommendations." : "No plan available for these dates.")
+            .foregroundStyle(.secondary)
+    }
+
+    private func inspect(_ task: PlanningTask) {
+        inspected = task.id
+        page = .issues
+        taskSearch = ""
+        taskFilter = .all
+    }
+
+    private var issueList: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("TaskDock issues").font(.headline).accessibilityAddTraits(.isHeader)
+                Spacer()
+                Button("Open TaskDock") { store.section = "TaskDock" }
+            }
+            HStack {
+                TextField("Search issues by title or room", text: $taskSearch)
+                    .focused($searchFocused)
+                    .textFieldStyle(.roundedBorder)
+                Picker("Status", selection: $taskFilter) {
+                    ForEach(IssueFilter.allCases) { filter in Text(filter.rawValue).tag(filter) }
+                }.fixedSize()
+            }
+            if let plan = currentPlan {
+                let search = taskSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+                let tasks = plan.tasks.filter {
+                    (search.isEmpty || [$0.title, $0.roomSummary].contains { $0.localizedCaseInsensitiveContains(search) })
+                        && (taskFilter == .all || taskStatus($0) == taskFilter)
+                }
+                Text("\(tasks.count) of \(plan.tasks.count) issues").font(.caption).foregroundStyle(.secondary)
+                if tasks.isEmpty {
+                    Text(plan.tasks.isEmpty ? "No issues in this plan." : "No issues match your search and status.")
+                        .foregroundStyle(.secondary)
+                }
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(tasks) { task in issueRow(task, recommended: plan.recommended_task_id == task.id) }
+                }
+            } else { planUnavailable }
+        }
+    }
+
+    private func taskStatus(_ task: PlanningTask) -> IssueFilter {
+        if !task.blocker.isEmpty { return .blocked }
+        return task.actionable && (task.request_questions ?? []).isEmpty ? .ready : .details
+    }
+
+    private func issueRow(_ task: PlanningTask, recommended: Bool) -> some View {
+        let expanded = inspected == task.id
+        let status = taskStatus(task)
+        let location = task.roomSummary
+        let metadata = [location == "Unknown" || location == "Not supplied / unknown" ? nil : location,
+                        task.priority_label.flatMap { $0 == "Unknown" ? nil : $0 + " priority" },
+                        task.due_date.map { "Due " + scheduleDate($0) }].compactMap { $0 }
+
+        return GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                Button { inspected = expanded ? nil : task.id } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                            .font(.caption.weight(.semibold))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(task.title).font(.headline)
+                            if !metadata.isEmpty {
+                                Text(metadata.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                             }
-                        } }
-                    if let allocation=plan.allocation_proposal {
-                        DisclosureGroup("Coordinated work proposal · \(allocation.blocks.count) blocks") {
-                            VStack(alignment:.leading,spacing:8) {
-                                Text(allocation.notice).font(.caption)
-                                ForEach(allocation.blocks){block in
-                                    Text(block.title).font(.headline)
-                                    Text(scheduleDate(block.start)+"–"+dailyBriefTime(block.end)+" · "+String(block.minutes)+" minutes"+(block.employee.isEmpty ? " · My work" : " · "+block.employee)+(block.room.isEmpty ? "" : " · "+block.room))
-                                    RecommendationFeedbackButton(store:store,taskID:block.id,day:dateString(day))
-                                }
-                            }.padding(.vertical,8)
+                        }
+                        Spacer()
+                        Label(status.rawValue, systemImage: status.icon)
+                            .font(.caption)
+                            .foregroundStyle(status == .blocked ? Color.orange : Color.secondary)
+                    }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel("Inspect " + task.title)
+                    .accessibilityValue(status.rawValue + (expanded ? ", expanded" : ", collapsed"))
+                if expanded { issueDetails(task, recommended: recommended) }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func issueDetails(_ task: PlanningTask, recommended: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+            if recommended { Label("Suggested next", systemImage: "sparkle").font(.subheadline.weight(.semibold)) }
+            HStack {
+                Button("Planning details") { choose(task) }
+                Button("Clarify with Juno") { choose(task, guidedMode: true) }
+                Menu("More actions") {
+                    Button("Discuss estimate") {
+                        store.prepareChat("Help me estimate this task from the saved evidence: “" + task.title + "”. Give a range and explain the uncertainty. Ask one scope question if needed. Do not change my confirmed estimate; I will review and enter it in Plan.")
+                    }
+                    Button("Request worker update…") {
+                        store.workerTaskID = task.id
+                        store.section = "Workers"
+                    }.disabled(store.sharedProfile != nil)
+                }.fixedSize()
+            }
+            PlanningRequestOverview(task: task) { question in
+                store.prepareChat("Help me clarify “" + task.title + "”. Start with this question: “" + question.question + "” Ask me one question at a time.")
+            }
+            Text(duration(task.estimate_minutes) + " · " + task.reason)
+            ForEach(task.operational_reasons ?? [], id: \.self) { Text($0).font(.caption) }
+            Text(task.estimate_reason).font(.caption).foregroundStyle(.secondary)
+            if !task.missing.isEmpty {
+                DisclosureGroup("\(task.missing.count) details to confirm") {
+                    ForEach(task.missing, id: \.self) { Text($0).font(.caption) }
+                }
+            }
+            if !task.next_action.isEmpty { Text("Unblock: " + task.next_action) }
+            if let check = task.next_check { Text("Next blocker check: " + check).font(.caption) }
+            if !task.resume.isEmpty { Text("Resume: " + task.resume) }
+            DisclosureGroup("Reviewed check-in sources") {
+                if let sourceIssue { Text(sourceIssue).font(.caption) }
+                else if let planningSources {
+                    if planningSources.items.isEmpty { Text("No diary carry-forward history recorded for this task.").font(.caption) }
+                    ForEach(planningSources.items) { source in
+                        Text("Diary \(source.diary_day) · revision \(source.diary_revision)").font(.headline)
+                        Text(source.source_quote).textSelection(.enabled)
+                        if source.source_changed { Text("The diary has changed since this review. Compare the current source before reusing this evidence.").foregroundStyle(.orange) }
+                        ForEach(source.rows) { change in Text(change.label+": "+change.before+" → "+change.after).font(.caption) }
+                    }
+                    Text("Historical reviewed changes; later planning edits can supersede these values.").font(.caption).foregroundStyle(.secondary)
+                } else { Text("Loading source history…").font(.caption) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var scheduling: some View {
+        RepairWindowsView(store: store, day: dateString(day), tasks: currentPlan?.tasks ?? [], workspace: record?.workspace_id)
+        if let loads = currentPlan?.staff_loads, !loads.isEmpty {
+            DisclosureGroup("Staff workload") {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(loads) { load in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(load.employee).font(.headline)
+                            Text(duration(load.reported_assignment_minutes) + " estimated · \(load.unknown_estimates) without estimates · \(load.blocked_tasks) blocked")
+                            Text(load.available_minutes.map { duration($0) + " scheduled before weekly limits" } ?? "Availability unknown")
+                            if let limit = load.weekly_limit_minutes { Text("Weekly limit " + duration(limit)) }
+                            Text(load.notice).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }.padding(.vertical, 8)
+            }
+        }
+        if let record {
+            DisclosureGroup("Planning settings and dated availability") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Times are shown in Central time. Add individual work, room access or staff windows.").font(.caption)
+                    HStack {
+                        Text("Interruption reserve, minutes per seven days")
+                        Stepper("\(record.reserve_minutes)", value: Binding(get: { self.record?.reserve_minutes ?? 240 }, set: { self.record?.reserve_minutes = $0; dirty = true }), in: 0...2400, step: 30)
+                    }
+                    ForEach(Array(record.windows.enumerated()), id: \.offset) { index, w in
+                        HStack {
+                            Text("\(w.name.isEmpty ? w.kind.capitalized : w.name) · \(scheduleDate(w.start)) – \(scheduleDate(w.end))").font(.caption).textSelection(.enabled)
+                            Spacer(); Button("Remove") { self.record?.windows.remove(at: index); dirty = true }
                         }
                     }
                     HStack {
-                        TextField("Find an issue from TaskDock", text: $taskSearch).focused($searchFocused).onReceive(NotificationCenter.default.publisher(for:Notification.Name("JunoFind"))) { _ in if store.section == "Plan" { searchFocused = true } }.textFieldStyle(.roundedBorder)
-                        Picker("Show",selection:$taskFilter) { Text("All issues").tag("All issues");Text("Needs details").tag("Needs details");Text("Blocked").tag("Blocked");Text("Ready to review").tag("Ready to review") }.frame(width:210)
+                        Picker("Window", selection: $windowKind) { Text("My work").tag("work"); Text("Room access").tag("room"); Text("Staff available").tag("staff") }.frame(width: 220)
+                        if windowKind != "work" { TextField("Exact room or employee name", text: $windowName) }
                     }
-                    Button("Refresh tasks in TaskDock connection") { store.section = "TaskDock" }
-                    ForEach(plan.tasks.filter { (taskSearch.isEmpty || $0.title.localizedCaseInsensitiveContains(taskSearch)) && (taskFilter == "All issues" || taskFilter == "Needs details" && (!$0.missing.isEmpty || !($0.request_questions ?? []).isEmpty) || taskFilter == "Blocked" && !$0.blocker.isEmpty || taskFilter == "Ready to review" && $0.actionable) }) { task in
-                        GroupBox {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Button { inspected = inspected == task.id ? nil : task.id } label: {
-                                    HStack(alignment:.top) {
-                                        Image(systemName: inspected == task.id ? "chevron.down" : "chevron.right")
-                                        VStack(alignment:.leading,spacing:4) { Text(task.title).font(.headline);Text(task.roomSummary + " • " + (task.priority_label ?? "Priority unknown")).font(.caption).foregroundStyle(.secondary) }
-                                        Spacer()
-                                        if !task.blocker.isEmpty { Label("Blocked",systemImage:"hand.raised").foregroundStyle(.orange) }
-                                        else if !(task.request_questions ?? []).isEmpty || !task.missing.isEmpty { Label("Needs details",systemImage:"questionmark.circle").foregroundStyle(.secondary) }
-                                        else { Label("Ready to review",systemImage:"checkmark.circle") }
-                                    }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
-                                }.buttonStyle(.plain).accessibilityLabel("Inspect " + task.title)
-                                if inspected == task.id {
-                                HStack { Text(task.title).font(.headline); if plan.recommended_task_id == task.id { Text("Suggested next").foregroundStyle(.green) }; Spacer(); Button("Discuss estimate") {
-                                    store.prepareChat("Help me estimate this task from the saved evidence: “" + task.title + "”. Give a range and explain the uncertainty. Ask one scope question if needed. Do not change my confirmed estimate; I will review and enter it in Plan.")
-                                }; Button("Clarify with Juno") { choose(task,guidedMode:true) }; Button("Planning details") { choose(task) };Button("Request worker update…") {store.workerTaskID=task.id;store.section="Workers"}.disabled(store.sharedProfile != nil) }
-                                PlanningRequestOverview(task:task) { question in
-                                    store.prepareChat("Help me clarify “" + task.title + "”. Start with this question: “" + question.question + "” Ask me one question at a time.")
-                                }
-                                Text("\(task.estimate_minutes) min • \(task.reason)")
-                                ForEach(task.operational_reasons ?? [],id:\.self){Text($0).font(.caption)}
-                                Text(task.estimate_reason).font(.caption).foregroundStyle(.secondary)
-                                if !task.missing.isEmpty { DisclosureGroup("\(task.missing.count) details to confirm") { ForEach(task.missing,id:\.self) { Text($0).font(.caption).foregroundStyle(.orange) } } }
-                                if !task.next_action.isEmpty { Text("Unblock: " + task.next_action) }
-                                if let check = task.next_check { Text("Next blocker check: " + check).font(.caption) }
-                                if !task.resume.isEmpty { Text("Resume: " + task.resume) }
-                                DisclosureGroup("Reviewed check-in sources") {
-                                    if let sourceIssue { Text(sourceIssue).font(.caption) }
-                                    else if let planningSources {
-                                        if planningSources.items.isEmpty { Text("No diary carry-forward history recorded for this task.").font(.caption) }
-                                        ForEach(planningSources.items) { source in
-                                            Text("Diary \(source.diary_day) · revision \(source.diary_revision)").font(.headline)
-                                            Text(source.source_quote).textSelection(.enabled)
-                                            if source.source_changed { Text("The diary has changed since this review. Compare the current source before reusing this evidence.").foregroundStyle(.orange) }
-                                            ForEach(source.rows) { change in Text(change.label+": "+change.before+" → "+change.after).font(.caption) }
-                                        }
-                                        Text("Historical reviewed changes; later planning edits can supersede these values.").font(.caption).foregroundStyle(.secondary)
-                                    } else { Text("Loading source history…").font(.caption) }
-                                }
+                    DatePicker("Start", selection: $windowStart)
+                    DatePicker("End", selection: $windowEnd)
+                    Button("Add confirmed window") {
+                        guard windowEnd > windowStart, windowEnd.timeIntervalSince(windowStart) <= 86400, windowKind == "work" || !windowName.trimmingCharacters(in: .whitespaces).isEmpty else { issue = "Choose an end after the start, within 24 hours, and a room or employee name where required."; return }
+                        let f = ISO8601DateFormatter()
+                        self.record?.windows.append(PlanningWindow(kind: windowKind, name: windowName.trimmingCharacters(in: .whitespaces), start: f.string(from: windowStart), end: f.string(from: windowEnd)))
+                        dirty = true
+                    }.disabled(store.offline)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
+            }
+        }
+    }
 
-                                }
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    switch page {
+                    case .week: week
+                    case .issues: issueList
+                    case .scheduling: scheduling
+                    case .briefing: DeanMeetingControls(store: store) { showDeanDraft = true }
                     }
-                        ForEach(plan.staff_loads) { load in
-                        GroupBox(load.employee + " — supplied workload") {
-                            VStack(alignment: .leading) {
-                                Text("\(load.reported_assignment_minutes) estimated assignment minutes • \(load.unknown_estimates) unestimated • \(load.blocked_tasks) blocked")
-                                Text(load.available_minutes.map { "\($0) minutes of scheduled availability before weekly limits" } ?? "Availability unknown")
-                                if let limit = load.weekly_limit_minutes { Text("Weekly work limit: \(limit / 60) hours").font(.callout) }
-                                Text(load.notice).font(.caption).foregroundStyle(.secondary)
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                    DisclosureGroup("Source details & limits") { VStack(alignment: .leading) { ForEach(plan.notices, id: \.self) { Text($0).font(.caption) }; Text(plan.notice).font(.caption) }.frame(maxWidth: .infinity, alignment: .leading) }
                 }
-
-                Divider()
-                Text("End-of-day continuity").font(.headline)
-                Text("Use Daily check-in for the five-question interview: accomplishments, interruptions, blockers, employee contributions and tomorrow. Aim for about 15 minutes; drafts survive interruptions.")
-                Button("Open daily check-in") { store.section = "Check-in" }
-                GroupBox("Weekly Dean update") {
-                    VStack(alignment:.leading,spacing:8) {
-                        Text("Prepare, edit and save a draft for a seven-day period. Saved writing reopens across sessions and devices.")
-                        Button("Open weekly Dean drafts…") { showDeanDraft = true }
-                    }.frame(maxWidth:.infinity,alignment:.leading)
-                }
-
-            }.padding(24).disabled(busy)
-        }.environment(\.locale,Locale(identifier:"en_US"))
+                .padding(24)
+                .frame(maxWidth: 1100, alignment: .leading)
+                .frame(maxWidth: .infinity)
+            }.id(page)
+        }
+        .environment(\.locale, Locale(identifier: "en_US"))
+        .environment(\.timeZone, DeanMeetingSchedule.zone)
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("JunoFind"))) { _ in
+            guard store.section == "Plan" else { return }
+            page = .issues
+            Task { @MainActor in
+                await Task.yield()
+                searchFocused = true
+            }
+        }
         .task(id:(inspected ?? "")+":"+(record?.workspace_id ?? "")+":"+String(record?.revision ?? 0)) {
             planningSources=nil;sourceIssue=nil
             guard let id=inspected,let workspace=record?.workspace_id else{return}
@@ -334,7 +553,7 @@ struct PlanningWorkspace: View {
             catch {if !Task.isCancelled {sourceIssue="Source history unavailable; reconnect to read it."}}
         }
         .task { await load() }
-        .sheet(isPresented:$showDeanDraft) { WeeklyDeanEditor(store:store,initialDay:day) }
+        .sheet(isPresented:$showDeanDraft) { WeeklyDeanEditor(store:store,initialDay:DeanMeetingSchedule(now:Date()).week) }
         .sheet(isPresented: Binding(get:{ selected != nil },set:{ if !$0 { selected = nil } }),onDismiss:{ estimateTask?.cancel();estimating = false }) {
             VStack(alignment:.leading,spacing:0) {
                 HStack { VStack(alignment:.leading) { Text("Task planning details").font(.title2.bold());Text(plan?.tasks.first { $0.id == selected }?.title ?? "Review your task context").foregroundStyle(.secondary).lineLimit(2) };Spacer() }.padding(20)
@@ -355,7 +574,7 @@ struct PlanningWorkspace: View {
         .onChange(of:dirty) { value in if value { store.unsavedSections.insert("Plan") } else { store.unsavedSections.remove("Plan") } }
         .onChange(of:store.section) { key in if key == "Plan",!dirty,selected == nil { Task { await load() } } }
         .onChange(of:store.planningTaskID) { wanted in
-            if store.section == "Plan", !dirty, selected == nil, !busy, store.planningDayKey == nil, store.planningWorkspaceID == nil, let task = plan?.tasks.first(where:{$0.id == wanted}) { inspected = task.id;choose(task);store.planningTaskID = nil }
+            if store.section == "Plan", !dirty, selected == nil, !busy, store.planningDayKey == nil, store.planningWorkspaceID == nil, let task = plan?.tasks.first(where:{$0.id == wanted}) { inspect(task);choose(task);store.planningTaskID = nil }
         }
         .onChange(of: day) { _ in if !dirty { Task { await load() } } }
     }
@@ -500,11 +719,127 @@ struct PlanningRequestOverview: View {
     private var priority: some View { VStack(alignment:.leading,spacing:4) { Text("Priority: " + (task.priority_label ?? "Unknown"));Text("Due: " + due(task.due_date)) }.frame(maxWidth:.infinity,alignment:.leading) }
 }
 
+private struct DeanDocumentLine {
+    enum Style { case title, date, heading, paragraph, list }
+    let style: Style
+    let text: String
+    var marker = ""
+    var startsParagraph = false
+
+    static func read(_ document: String) -> [Self] {
+        let lines = document.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        var result: [Self] = []
+        var inHeader = false
+
+        for (index, line) in lines.enumerated() {
+            guard !line.isEmpty else { continue }
+            let startsParagraph = index > 0 && lines[index - 1].isEmpty
+            let followedByBlank = index + 1 < lines.count && lines[index + 1].isEmpty
+            let markdownHeading = line.range(of: #"^#{1,6}[ \t]+"#, options: .regularExpression)
+            let marker = line.range(of: #"^(?:[•*-]|[0-9]{1,3}[.)])[ \t]+"#, options: .regularExpression)
+            let looksLikeHeading = line.count <= 80 && line.first?.isUppercase == true
+                && !line.hasSuffix(".") && !line.hasSuffix("?") && !line.hasSuffix("!")
+            let date = line.range(of: #"^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}(?:$| through )|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[ .]+[0-9]{1,2}(?:\b|–))"#,
+                                  options: .regularExpression) != nil
+            let nextIsBullet = index + 1 < lines.count && lines[index + 1].hasPrefix("•")
+            let text = markdownHeading.map { String(line[$0.upperBound...]) } ?? line
+
+            if result.isEmpty && marker == nil && !date && (looksLikeHeading || markdownHeading != nil) {
+                result.append(.init(style: .title, text: text))
+                inHeader = true
+            } else if inHeader && !startsParagraph && (date || line.hasPrefix("From ")) {
+                result.append(.init(style: .date, text: text))
+            } else if let marker {
+                let symbol = line[marker].trimmingCharacters(in: .whitespaces)
+                result.append(.init(style: .list, text: String(line[marker.upperBound...]),
+                                    marker: symbol == "-" || symbol == "*" ? "•" : symbol,
+                                    startsParagraph: startsParagraph))
+                inHeader = false
+            } else {
+                let isSection = markdownHeading != nil || (startsParagraph && looksLikeHeading
+                    && (followedByBlank || nextIsBullet || line.hasPrefix("TaskDock:") || line.hasPrefix("Beacon:")
+                        || ["Confirmed daily records", "Confirmed check-ins (day-level records)",
+                            "Decisions to raise", "Source coverage", "Decisions and meeting agenda",
+                            "Unresolved operational issues and source evidence", "Milestones and next-week priorities",
+                            "Priorities and blockers from the current saved task copy"].contains(line)))
+                result.append(.init(style: isSection ? .heading : .paragraph,
+                                    text: text, startsParagraph: startsParagraph))
+                inHeader = false
+            }
+        }
+        return result
+    }
+}
+
+private struct DeanDocumentPage: View {
+    let document: String
+
+    var body: some View {
+        let lines = DeanDocumentLine.read(document)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                row(line)
+                    .padding(.top, spacing(for: line, after: index > 0 ? lines[index - 1].style : nil))
+            }
+        }
+        .lineSpacing(5)
+        .textSelection(.enabled)
+        .padding(.horizontal, 44)
+        .padding(.vertical, 38)
+        .frame(maxWidth: 660, alignment: .leading)
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary))
+    }
+
+    private func spacing(for line: DeanDocumentLine, after previous: DeanDocumentLine.Style?) -> CGFloat {
+        guard let previous else { return 0 }
+        switch line.style {
+        case .title: return 0
+        case .date: return previous == .title ? 9 : 5
+        case .heading: return 24
+        case .paragraph: return line.startsParagraph || previous == .date ? 16 : 7
+        case .list: return line.startsParagraph ? 13 : 9
+        }
+    }
+
+    @ViewBuilder
+    private func row(_ line: DeanDocumentLine) -> some View {
+        switch line.style {
+        case .title:
+            Text(verbatim: line.text)
+                .font(.system(size: 33, weight: .semibold, design: .serif))
+                .accessibilityAddTraits(.isHeader)
+        case .date:
+            Text(verbatim: line.text).font(.system(size: 14)).foregroundStyle(.secondary)
+        case .heading:
+            Text(verbatim: line.text)
+                .font(.system(size: 18, weight: .semibold))
+                .accessibilityAddTraits(.isHeader)
+        case .paragraph:
+            Text(verbatim: line.text).font(.system(size: 15))
+        case .list:
+            HStack(alignment: .firstTextBaseline, spacing: 9) {
+                Text(verbatim: line.marker)
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 13, alignment: .leading)
+                Text(verbatim: line.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .font(.system(size: 15))
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
 struct WeeklyDeanEditor: View {
     @ObservedObject var store:JunoStore
-    let initialDay:Date
     @Environment(\.dismiss) private var dismiss
-    @State private var day=Date()
+    @State private var day:Date
+    init(store:JunoStore,initialDay:Date) {
+        self.store=store
+        _day=State(initialValue:initialDay)
+    }
     @State private var saved:SavedDeanDraft?
     @State private var basis:WeeklyBasis?
     @State private var text=""
@@ -516,6 +851,9 @@ struct WeeklyDeanEditor: View {
     @State private var pending:[String:Any]?
     @State private var baseRevision=0
     @State private var confirmClose=false
+    @State private var editing = false
+    @State private var showDetails = false
+    @State private var showFresh = false
     var dayKey:String { let f=DateFormatter();f.locale=Locale(identifier:"en_US_POSIX");f.timeZone=TimeZone(identifier:"America/Chicago");f.dateFormat="yyyy-MM-dd";return f.string(from:day) }
     var recoveryKey:String? { saved.map { "deanDraft."+$0.owner_id+":"+dayKey } }
     private func object<T:Encodable>(_ value:T) throws -> [String:Any] { try JSONSerialization.jsonObject(with:JSONEncoder().encode(value)) as! [String:Any] }
@@ -527,10 +865,23 @@ struct WeeklyDeanEditor: View {
         if let data=try? JSONSerialization.data(withJSONObject:value) { UserDefaults.standard.set(data,forKey:key) }
     }
     private func load() async {
-        guard !busy else { return };busy=true;defer{busy=false}
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        if saved?.week_start != dayKey {
+            saved = nil
+            basis = nil
+            text = ""
+            prepared = nil
+            comparison = nil
+            showFresh = false
+            showDetails = false
+            notice = ""
+        }
         do {
             let result=try await store.decode(SavedDeanDraft.self,"/v1/planning/weekly-draft/"+dayKey)
             saved=result;basis=result.basis;baseRevision=result.revision;text=result.text;dirty=false;prepared=nil;comparison=nil;notice=""
+            editing = false; showFresh = false; showDetails = false
             if let key=recoveryKey,let data=UserDefaults.standard.data(forKey:key),let local=try JSONSerialization.jsonObject(with:data) as? [String:Any],let recovered=local["text"] as? String,let revision=local["revision"] as? Int,let raw=local["basis"] {
                 text=recovered;baseRevision=revision;basis=try JSONDecoder().decode(WeeklyBasis.self,from:JSONSerialization.data(withJSONObject:raw));pending=local["pending"] as? [String:Any];dirty=true
                 notice="Recovered local writing. Compare it with the saved draft before replacing either version."
@@ -543,7 +894,7 @@ struct WeeklyDeanEditor: View {
             let value=try await store.decode(WeeklyPlanningDraft.self,"/v1/planning/weekly?day="+dayKey)
             prepared=value
             if saved?.exists == false && !dirty { text=value.text;basis=value.basis;dirty=true;recoverable();notice="Prepared for your review. Save draft keeps your edited writing on the work Mac." }
-            else { notice="A fresh comparison is shown below. Your writing has been kept intact." }
+            else { showFresh = true; comparison = nil; notice = "" }
         } catch { notice=(error as? APIProblem)?.message ?? "Could not prepare the draft. Your writing is still here." } }
     }
     private func save() {
@@ -555,7 +906,7 @@ struct WeeklyDeanEditor: View {
         guard let operation=pending,!busy else{return};busy=true
         Task { defer{busy=false};do {
             let receipt=try await store.decode(DeanSaveReceipt.self,"/v1/planning/weekly-draft/"+dayKey,method:"PUT",body:operation)
-            pending=nil;dirty=false;baseRevision=receipt.revision;recoverable();notice="Saved on your work Mac. Nothing has been sent."
+            pending=nil;dirty=false;baseRevision=receipt.revision;recoverable();notice="Saved on your work Mac."; editing = false
             do { saved=try await store.decode(SavedDeanDraft.self,"/v1/planning/weekly-draft/"+dayKey) } catch { notice="Saved on your work Mac, but the view could not refresh. Your text remains here." }
         } catch {
             if let problem=error as? APIProblem,(400..<500).contains(problem.status){pending=nil;notice=problem.message+" Use Compare saved copy; your writing remains here."}
@@ -564,44 +915,364 @@ struct WeeklyDeanEditor: View {
         } }
     }
     private func compare() {
-        busy=true;Task { defer{busy=false};do { comparison=try await store.decode(SavedDeanDraft.self,"/v1/planning/weekly-draft/"+dayKey) } catch { notice=(error as? APIProblem)?.message ?? "Could not read the saved copy." } }
+        busy=true;Task { defer{busy=false};do { comparison=try await store.decode(SavedDeanDraft.self,"/v1/planning/weekly-draft/"+dayKey); showFresh = false } catch { notice=(error as? APIProblem)?.message ?? "Could not read the saved copy." } }
     }
-    var body:some View {
-        VStack(alignment:.leading,spacing:14) {
-            Text("Weekly Dean draft").font(.title2.bold())
-            DatePicker("Seven days starting",selection:$day,displayedComponents:.date).disabled(dirty || busy || pending != nil)
-            Text("Confirmed diaries plus dated saved task context. Review sensitive details before copying. Juno does not send this draft.").foregroundStyle(.secondary)
-            ScrollView { VStack(alignment:.leading,spacing:12) {
-            if !notice.isEmpty { Text(notice).foregroundStyle(.orange).textSelection(.enabled) }
+    private var comparisonOpen: Bool { comparison != nil || showFresh }
+    private var hasWriting: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var statusLabel: String {
+        if dirty { return "Unsaved changes" }
+        if saved?.exists == true { return "Saved · Revision \(baseRevision)" }
+        return "No draft saved"
+    }
+
+    private var header: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Dean briefing").font(.headline)
+                if saved != nil { Text(statusLabel).font(.caption).foregroundStyle(.secondary) }
+            }
+            Spacer()
+            DatePicker("Week of", selection: $day, displayedComponents: .date)
+                .fixedSize()
+                .disabled(dirty || busy || pending != nil || editing)
             if let saved {
-                Text(saved.exists ? "Saved revision \(saved.revision)" : "No saved draft for this period")
-                if saved.sources_changed { Text("Evidence has changed since this draft's original preparation. Saved writing is preserved; prepare a fresh comparison if useful.").foregroundStyle(.orange) }
-                HStack { Button(saved.exists || dirty ? "Prepare fresh comparison" : "Prepare draft",action:prepare).disabled(busy || store.offline || pending != nil);Button("Compare saved copy",action:compare).disabled(busy || store.offline || pending != nil) }
-                if let basis { if basis.taskdock_uncertain { Text("TaskDock freshness needs review for this preparation; check current task status.").foregroundStyle(.orange) };Text("Original preparation: \(basis.diaries.count) confirmed diary day(s); \(7-basis.diaries.count) day(s) without a confirmed diary.").font(.caption) }
-                TextEditor(text:Binding(get:{text},set:{text=$0;dirty=true;recoverable()})).frame(minHeight:220).accessibilityLabel("Weekly Dean draft text").overlay(RoundedRectangle(cornerRadius:8).stroke(.quaternary)).disabled(busy || pending != nil)
-                if let prepared, saved.exists || prepared.text != text { DisclosureGroup("Fresh prepared comparison") { ScrollView { Text(prepared.text).textSelection(.enabled) }.frame(maxHeight:180) } }
-                if let comparison {
-                    GroupBox("Saved copy — revision \(comparison.revision)") {
-                        VStack(alignment:.leading) { ScrollView { Text(comparison.text.isEmpty ? "No saved text" : comparison.text).textSelection(.enabled) }.frame(maxHeight:150)
-                            HStack { Button("Keep my writing against this revision") { self.saved=comparison;baseRevision=comparison.revision;basis=comparison.basis;self.comparison=nil;dirty=true;recoverable();notice="Compare complete. Review your writing, then Save draft." };Button("Use saved text") { self.saved=comparison;baseRevision=comparison.revision;basis=comparison.basis;text=comparison.text;dirty=false;self.comparison=nil;recoverable();notice="Loaded the saved text. Local recovery has been cleared." } }
-                        }
+                Menu("Draft actions", systemImage: "ellipsis.circle") {
+                    Button(saved.basis.meeting_window != nil ? "Prepare seven-day comparison" :
+                            saved.exists || dirty ? "Prepare fresh comparison" : "Prepare draft", action: prepare)
+                        .disabled(busy || store.offline || pending != nil)
+                    Button("Compare saved copy", action: compare)
+                        .disabled(busy || store.offline || pending != nil)
+                    if prepared != nil && !showFresh {
+                        Button("Show prepared comparison") { comparison = nil; showFresh = true }
+                    }
+                    Divider()
+                    Button(showDetails ? "Hide source details" : "Show source details") { showDetails.toggle() }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+    }
+
+    @ViewBuilder
+    private var sourceDetails: some View {
+        if let basis, showDetails || saved?.sources_changed == true {
+            DisclosureGroup(isExpanded: $showDetails) {
+                VStack(alignment: .leading, spacing: 5) {
+                    if saved?.sources_changed == true { Text("Source data changed after this draft was prepared.") }
+                    if basis.taskdock_uncertain { Text("Check the freshness of the TaskDock copy used for this draft.") }
+                    Text("\(basis.diaries.count) confirmed check-ins in " +
+                         (basis.meeting_window == nil ? "the seven-day period." : "the meeting window."))
+                }
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 7)
+            } label: {
+                Label(saved?.sources_changed == true ? "Sources updated" : "Source details",
+                      systemImage: saved?.sources_changed == true ? "clock.arrow.circlepath" : "info.circle")
+            }
+            .font(.caption)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 10)
+        }
+    }
+
+    private func documentPage(_ content: String) -> some View {
+        ScrollView {
+            DeanDocumentPage(document: content)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 20)
+        }
+    }
+
+    @ViewBuilder
+    private var documentArea: some View {
+        if let comparison {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Saved copy · Revision \(comparison.revision)")
+                    .font(.subheadline.weight(.medium)).padding(.horizontal, 24).padding(.top, 12)
+                if comparison.text.isEmpty {
+                    Text("No saved writing for this week.")
+                        .foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else { documentPage(comparison.text).id("savedComparison") }
+            }
+        } else if showFresh, let prepared {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Prepared comparison").font(.subheadline.weight(.medium))
+                    .padding(.horizontal, 24).padding(.top, 12)
+                documentPage(prepared.text).id("preparedComparison")
+            }
+        } else if editing {
+            TextEditor(text: Binding(get: { text }, set: { text = $0; dirty = true; recoverable() }))
+                .font(.system(size: 15))
+                .lineSpacing(5)
+                .padding(20)
+                .accessibilityLabel("Dean briefing text")
+                .disabled(busy || pending != nil)
+                .frame(maxWidth: 660, maxHeight: .infinity)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary))
+                .padding(20)
+        } else if hasWriting {
+            documentPage(text).id(dayKey)
+        } else {
+            VStack(spacing: 12) {
+                if busy {
+                    ProgressView("Opening briefing…")
+                } else {
+                    Text(saved == nil ? "Briefing unavailable" : "No briefing for this week")
+                        .font(.title3.weight(.semibold))
+                    if saved != nil {
+                        Button("Prepare draft", action: prepare).disabled(store.offline)
+                    } else {
+                        Button("Try again") { Task { await load() } }
                     }
                 }
             }
-            } }
-            HStack {
-                Button("Close") { if dirty || pending != nil { confirmClose=true } else { dismiss() } }.keyboardShortcut(.cancelAction)
-                if pending != nil { Button("Retry same save",action:retry).disabled(busy || store.offline) }
-                Spacer()
-                Button("Copy reviewed draft") { NSPasteboard.general.clearContents();NSPasteboard.general.setString(text,forType:.string) }.disabled(text.isEmpty || busy)
-                Button("Save draft",action:save).disabled(!dirty || busy || store.offline || pending != nil || text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || text.count>60000)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func adoptSavedCopy(_ comparison: SavedDeanDraft, keepWriting: Bool) {
+        saved = comparison
+        baseRevision = comparison.revision
+        basis = comparison.basis
+        self.comparison = nil
+        dirty = keepWriting
+        if !keepWriting { text = comparison.text; editing = false }
+        recoverable()
+        notice = keepWriting ? "Review your writing and save it against the current revision." : ""
+    }
+
+    private var footer: some View {
+        HStack {
+            Button(comparisonOpen ? "Back to briefing" : "Close") {
+                if comparisonOpen { comparison = nil; showFresh = false }
+                else if dirty || pending != nil { confirmClose = true }
+                else { dismiss() }
+            }.keyboardShortcut(.cancelAction)
+            Spacer()
+            if let comparison {
+                Button("Keep my writing") { adoptSavedCopy(comparison, keepWriting: true) }.disabled(pending != nil)
+                Button("Use saved text") { adoptSavedCopy(comparison, keepWriting: false) }.disabled(pending != nil)
+            } else if !comparisonOpen {
+                Button("Copy briefing") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                }.disabled(!hasWriting || busy)
+                if pending != nil {
+                    Button("Retry save", action: retry).disabled(busy || store.offline)
+                } else if editing {
+                    Button("Preview") { editing = false }.disabled(busy)
+                } else if saved != nil {
+                    Button("Edit briefing") { editing = true }.disabled(busy)
+                }
+                if dirty && pending == nil {
+                    Button("Save draft", action: save)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(busy || store.offline || !hasWriting || text.count > 60000)
+                }
             }
-        }.padding(24).frame(width:780,height:760).environment(\.locale,Locale(identifier:"en_US"))
-        .task { day=initialDay;await load() }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 13)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            sourceDetails
+            if !notice.isEmpty {
+                Text(notice)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 10)
+            }
+            Divider()
+            documentArea
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: .windowBackgroundColor))
+            Divider()
+            footer
+        }
+        .frame(width: 780, height: 760)
+        .environment(\.locale, Locale(identifier: "en_US"))
+        .environment(\.timeZone,DeanMeetingSchedule.zone)
+        .task { await load() }
         .onChange(of:day) { _ in if !dirty && !busy { Task { await load() } } }
         .onChange(of:dirty) { value in if value { store.unsavedSections.insert("Dean draft") } else { store.unsavedSections.remove("Dean draft") } }
         .onDisappear { recoverable();store.unsavedSections.remove("Dean draft") }
         .interactiveDismissDisabled(dirty || pending != nil)
         .alert("Keep this unsaved writing for later?",isPresented:$confirmClose) { Button("Keep local recovery and close") { recoverable();dismiss() };Button("Return to draft",role:.cancel){} } message:{Text("Your work-Mac draft changes only after Save succeeds. A local recovery copy keeps this writing for the next time you open this period.")}
+    }
+}
+
+struct DeanMeetingSchedule {
+    static let zone = TimeZone(identifier:"America/Chicago")!
+    static var calendar:Calendar {
+        var calendar=Calendar(identifier:.iso8601);calendar.timeZone=zone;return calendar
+    }
+    let week:Date
+    let meeting:Date
+    let automaticAt:Date
+    let previous:Date
+    init(now:Date) {
+        let cal=Self.calendar
+        week=cal.dateInterval(of:.weekOfYear,for:now)!.start
+        let thursday=cal.date(byAdding:.day,value:3,to:week)!
+        meeting=cal.date(bySettingHour:10,minute:0,second:0,of:thursday)!
+        automaticAt=cal.date(bySettingHour:9,minute:0,second:0,of:thursday)!
+        previous=cal.date(byAdding:.day,value:-7,to:meeting)!
+    }
+    var key:String {
+        let formatter=DateFormatter()
+        formatter.locale=Locale(identifier:"en_US_POSIX");formatter.timeZone=Self.zone;formatter.dateFormat="yyyy-MM-dd"
+        return formatter.string(from:week)
+    }
+    func due(at now:Date) -> Bool { automaticAt<=now && now<meeting }
+}
+
+private struct DeanPrepareResult: Decodable { let created:Bool }
+
+extension JunoStore {
+    func startDeanMonitor() {
+        guard deanMonitor == nil else{return}
+        deanMonitor=Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.prepareDeanMeeting(automatic:true)
+                do { try await Task.sleep(nanoseconds:30_000_000_000) } catch { return }
+            }
+        }
+    }
+    func prepareDeanMeeting(automatic:Bool) async {
+        guard !deanPreparing, connected, sharedProfile == nil, !offline else {return}
+        let current=Date(), schedule=DeanMeetingSchedule(now:current)
+        guard current<schedule.meeting else {
+            if !automatic { deanNotice="This week’s meeting has passed. Open its saved draft or prepare next week’s draft on Monday." }
+            return
+        }
+        if automatic {
+            guard deanAutomatic, schedule.due(at:current), deanHandledWeek != schedule.key,
+                  deanLastAttempt.map({current.timeIntervalSince($0)>=300}) ?? true else {return}
+            deanLastAttempt=current
+        }
+        deanPreparing=true;deanNotice="Checking this week’s draft…"
+        defer { deanPreparing=false }
+        var source="Juno"
+        do {
+            let draft=try await decode(SavedDeanDraft.self,"/v1/planning/weekly-draft/"+schedule.key)
+            if draft.exists {
+                deanHandledWeek=schedule.key;deanNotice="This week’s Dean draft is already saved. Open it to review."
+                return
+            }
+            guard UserDefaults.standard.data(forKey:"deanDraft."+draft.owner_id+":"+schedule.key)==nil else {
+                deanNotice="Unsaved Dean draft writing is on this Mac. Open this week’s draft to review it."
+                return
+            }
+            source="TaskDock";deanNotice="Refreshing TaskDock…"
+            guard let task=try await decode(TaskDockState.self,"/v1/taskdock").snapshot else {
+                throw APIProblem(message:"Connect TaskDock on this Mac first.",status:0)
+            }
+            guard let taskToken=try await credentialWork({try TaskDockKeychain.read(task.origin)}),!taskToken.isEmpty else {
+                throw APIProblem(message:"The TaskDock token is missing. Reconnect TaskDock in Connections.",status:0)
+            }
+            let result=try await decode(TaskDockRefresh.self,"/v1/taskdock/refresh",method:"POST",
+                body:["base_url":task.origin,"token":taskToken,"expected_snapshot_id":task.id])
+            guard !result.review_required,let refreshed=result.snapshot else {
+                throw APIProblem(message:"Review the TaskDock workspace in Connections before continuing.",status:0)
+            }
+            if refreshed.info.capabilities["read_updates"] == true {
+                deanNotice="Reading shared TaskDock progress notes…"
+                let candidates=refreshed.items.filter{!($0.text("latest_update") ?? "").isEmpty}.sorted {
+                    ($0.text("last_changed_at") ?? "") > ($1.text("last_changed_at") ?? "")
+                }
+                for task in candidates.prefix(40) {
+                    guard Date()<schedule.meeting, sharedProfile == nil, !automatic || deanAutomatic else {return}
+                    var path=URLComponents();path.path="/v1/taskdock/history"
+                    path.queryItems=[URLQueryItem(name:"task_id",value:task.id),URLQueryItem(name:"kind",value:"updates")]
+                    guard let target=path.string else {continue}
+                    // A single unavailable timeline need not hide the remaining evidence. The draft reports coverage.
+                    _ = try? await request(target,method:"POST",body:["base_url":refreshed.origin,"token":taskToken,
+                        "expected_snapshot_id":refreshed.id])
+                }
+            }
+            source="Beacon";deanNotice="Refreshing Beacon…"
+            let savedBeacon=try await decode(EvidenceState.self,"/v1/integrations").items.first{$0.kind=="beacon"}
+            let origin=UserDefaults.standard.string(forKey:"beaconOrigin") ?? savedBeacon?.origin ?? "http://127.0.0.1:12108"
+            let (beaconToken,retainedToken)=try await credentialWork { (try BeaconKeychain.read(origin),try BeaconKeychain.read(origin+"/retained-issues")) }
+            guard let beaconToken,!beaconToken.isEmpty else {
+                throw APIProblem(message:"The Beacon key is missing. Connect Beacon in Work Evidence.",status:0)
+            }
+            var body:[String:Any]=["base_url":origin,"token":beaconToken,"include_issue_snapshot":UserDefaults.standard.bool(forKey:"beaconIncludeIssueSnapshot")]
+            if let savedBeacon { body["expected_id"]=savedBeacon.id }
+            if let retainedToken { body["retained_issue_token"]=retainedToken }
+            let beacon=try await decode(EvidenceSnapshot.self,"/v1/integrations/beacon/refresh",method:"POST",body:body)
+            guard sharedProfile == nil, !automatic || deanAutomatic,
+                  UserDefaults.standard.data(forKey:"deanDraft."+draft.owner_id+":"+schedule.key)==nil else {
+                deanNotice="Preparation stopped before saving. Any saved or unsaved writing has been kept."
+                return
+            }
+            source="Juno"
+            let override = deanOverrideWeek == schedule.key ? deanOverride : nil
+            let formatter=ISO8601DateFormatter()
+            let prepared=try await decode(DeanPrepareResult.self,"/v1/planning/dean-meeting/prepare",method:"POST",body:[
+                "previous":formatter.string(from:override ?? schedule.previous),"previous_confirmed":override != nil,
+                "meeting":formatter.string(from:schedule.meeting),"taskdock_id":refreshed.id,"beacon_id":beacon.id])
+            deanHandledWeek=schedule.key
+            deanNotice=prepared.created ? "This week’s Dean draft is ready to review." : "This week’s saved draft was kept."
+        } catch {
+            deanNotice=source+": "+((error as? APIProblem)?.message ?? "The draft could not be prepared. Try again from Plan.")
+        }
+    }
+}
+
+private struct DeanMeetingControls: View {
+    @ObservedObject var store:JunoStore
+    let open:()->Void
+    @State private var correcting=false
+    @State private var actual=Date()
+    var body: some View {
+        let current=Date(), schedule=DeanMeetingSchedule(now:current)
+        let overridden=store.deanOverrideWeek == schedule.key ? store.deanOverride : nil
+        GroupBox("Thursday Dean meeting") {
+            VStack(alignment:.leading,spacing:8) {
+                if store.sharedProfile == nil {
+                    Toggle("Prepare automatically at 9:00 AM Central on Thursdays",isOn:$store.deanAutomatic)
+                    Text("Juno refreshes TaskDock and Beacon and combines their shared updates with your confirmed check-ins. Keep Juno open and this Mac awake. Saved drafts stay available for review.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Text((overridden == nil ? "Previous scheduled meeting: " : "Last meeting: ") + (overridden ?? schedule.previous).formatted(.dateTime.month(.abbreviated).day().year().hour().minute().timeZone(.specificName(.short))))
+                        Button("Correct last meeting…") { actual=overridden ?? schedule.previous;correcting=true }.disabled(store.deanPreparing)
+                    }
+                }
+                HStack {
+                    Button("Open this week’s draft…") { open() }
+                    if store.sharedProfile == nil {
+                        Button("Refresh sources and prepare now") { Task { await store.prepareDeanMeeting(automatic:false) } }
+                            .disabled(store.deanPreparing || !store.connected || current>=schedule.meeting)
+                    }
+                }
+                if !store.deanNotice.isEmpty { Text(store.deanNotice).font(.callout).textSelection(.enabled) }
+            }.frame(maxWidth:.infinity,alignment:.leading)
+        }.environment(\.timeZone,DeanMeetingSchedule.zone)
+        .sheet(isPresented:$correcting) {
+            VStack(alignment:.leading,spacing:14) {
+                Text("When did the last meeting happen?").font(.headline)
+                Text("Choose the earlier meeting if a Thursday was skipped or rescheduled. This applies to this week’s draft. Times are Central.").foregroundStyle(.secondary)
+                DatePicker("Last meeting",selection:$actual,in:...Date(),displayedComponents:[.date,.hourAndMinute])
+                HStack {
+                    Button("Cancel",role:.cancel) { correcting=false }.keyboardShortcut(.cancelAction)
+                    if overridden != nil { Button("Use usual Thursday") { store.deanOverride=nil;store.deanOverrideWeek="";correcting=false } }
+                    Spacer()
+                    Button("Use this meeting") { store.deanOverride=actual;store.deanOverrideWeek=schedule.key;correcting=false }
+                        .keyboardShortcut(.defaultAction)
+                }
+            }.padding(20).frame(width:440).environment(\.timeZone,DeanMeetingSchedule.zone)
+        }
     }
 }

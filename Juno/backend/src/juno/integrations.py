@@ -222,10 +222,16 @@ def beacon_feed(feed):
         # Optional extensions are consumer support, not evidence that a producer supplies them.
         result.append({'id':row['id'],**{k:bounded_text(row.get(k,'')) for k in fields},'cartridges':safe,**metadata})
     details={'generated_at':stamp.isoformat(),'complete':True,'notice':bounded_text(feed.get('note',''),1000) or 'Cached observations; not an atomic physical-world snapshot or network probe.'}
+    if isinstance(feed.get('scope'),str):details['alert_scope']=bounded_text(feed['scope'],200)
     if 'instance_id' in feed:
         if not isinstance(feed['instance_id'],str) or not feed['instance_id'].strip() or len(feed['instance_id'])>500:raise IntegrationError('Invalid Beacon instance identity.')
         details['instance_id']=feed['instance_id']
     return result,details
+
+
+def uuid_text(value):
+    try:return str(UUID(value))==value
+    except (ValueError,TypeError,AttributeError):return False
 
 
 class BeaconReader:
@@ -253,6 +259,65 @@ class BeaconReader:
         except (ValueError,UnicodeError) as error:
             if isinstance(error,IntegrationError):raise
             raise IntegrationError('Beacon returned invalid JSON. The previous snapshot has been retained.') from None
+
+    def issue_snapshot(self,instance,active,links,previous):
+        result=self._get('/api/equipment/issues')
+        if (not isinstance(result,dict) or result.get('operational_contract_version')!='1'
+            or result.get('instance_id')!=instance or result.get('complete') is not True
+            or result.get('includes_resolved') is not True or type(result.get('total')) is not int
+            or not isinstance(result.get('rows'),list) or result['total']!=len(result['rows'])
+            or len(result['rows'])>MAX_ITEMS):
+            raise IntegrationError('Beacon did not return a complete retained issue snapshot for this instance.')
+        active_ids={row['id'] for row in active}
+        active_versions={(row.get('asset_id'),row.get('issue_id'),row.get('record_version')) for row in active}
+        old={}
+        for row in previous:
+            version=row.get('record_version')
+            if isinstance(version,str) and version.isascii() and version.isdecimal() and len(version)<=20:
+                key=(row.get('asset_id'),row.get('issue_id'))
+                old[key]=max(old.get(key,0),int(version))
+        reviewed={}
+        for link in links:
+            if link.get('beacon_origin')==self.origin and link.get('beacon_instance')==instance and link['alert_id'] not in active_ids:
+                reviewed.setdefault((link.get('asset_id'),link.get('issue_id')),[]).append(link['alert_id'])
+        rows=[];seen=set()
+        for issue in result['rows']:
+            if not isinstance(issue,dict) or issue.get('instance_id')!=instance:
+                raise IntegrationError('Beacon returned an issue from a different instance.')
+            issue_id=issue.get('issue_id');asset_id=issue.get('asset_id');version=issue.get('record_version')
+            if (not uuid_text(issue_id) or issue_id in seen
+                or not isinstance(asset_id,str) or not asset_id.isascii() or not asset_id.isdecimal() or not 0<len(asset_id)<=20 or int(asset_id)<1
+                or not isinstance(version,str) or not version.isascii() or not version.isdecimal() or not 0<len(version)<=20
+                or int(version)<max(1,old.get((asset_id,issue_id),0))):
+                raise IntegrationError('Beacon returned a duplicate, invalid or older retained issue.')
+            seen.add(issue_id)
+            ids=reviewed.get((asset_id,issue_id),[])
+            if not ids and (asset_id,issue_id,version) in active_versions:continue
+            for field in ('observed_at','updated_at'):
+                try:
+                    if datetime.fromisoformat(issue[field]).tzinfo is None:raise ValueError()
+                except (KeyError,TypeError,ValueError):
+                    raise IntegrationError('Beacon returned an invalid retained issue timestamp.') from None
+            proof=issue.get('verification_record')
+            if issue.get('verification_state')=='verified_recovered':
+                if (not isinstance(proof,dict) or proof.get('asset_id')!=asset_id
+                    or not uuid_text(proof.get('record_id')) or proof['record_id']!=issue.get('verification_id')
+                    or issue.get('issue_state')!='resolved'):
+                    raise IntegrationError('Beacon returned inconsistent retained recovery evidence.')
+            else:proof=None
+            row={k:issue[k] for k in ('asset_id','issue_id','record_version','observed_at','updated_at',
+                 'issue_state','verification_state','service_impact','decision_authority','url') if k in issue}
+            title=issue.get('title')
+            row.update(category='Equipment issue',item=title,problem=title,source='Beacon retained issue',
+                       evidence=issue.get('evidence'),action='Review the retained equipment issue in Beacon.')
+            if proof is not None:row['verification_record']=proof
+            for ident in ids or ['retained-issue:'+issue_id]:
+                rows.append({**row,'id':ident})
+        clean,details=beacon_feed({'schema_version':1,'complete':True,'total':len(rows),
+            'generated_at':result.get('generated_at'),'rows':rows})
+        if active_ids & {r['id'] for r in clean}:
+            raise IntegrationError('Beacon returned colliding active and retained alert IDs.')
+        return clean,result['total'],details['generated_at']
 
     def retained_issue(self,link,generated_at,previous):
         def record_path(prefix,value):
