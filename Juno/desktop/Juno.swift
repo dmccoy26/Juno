@@ -108,6 +108,13 @@ final class JunoStore: ObservableObject {
     var deanMonitor: Task<Void,Never>?
     var deanLastAttempt: Date?
     var deanHandledWeek: String?
+    @Published var chairsAutomatic = (UserDefaults.standard.object(forKey: "chairsAutomatic") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(chairsAutomatic, forKey: "chairsAutomatic") }
+    }
+    @Published var chairsPreparing = false
+    @Published var chairsNotice = ""
+    var chairsLastAttempt: Date?
+    var chairsHandledWeek: String?
     var startupTask: Task<Void, Never>?
     var selectedMemory: Memory? { items.first { $0.id == selected } }
 

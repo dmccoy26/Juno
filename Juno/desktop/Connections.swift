@@ -29,16 +29,19 @@ struct SavedConnection: Codable {
     var clientID = "";var clientSecret = "";var tenant = "organizations"
     var accessToken = "";var refreshToken = "";var expiry:Date?;var scope = ""
     var resources:[String] = [];var resourceLabels:[String:String] = [:]
+    var completionArchiveID = "";var completionDateColumn = ""
     var accountID = "";var accountLabel = ""
     var query = "in:inbox is:unread";var start = integrationDay(-30);var end = integrationDay(30);var zone = "America/Chicago"
     var includeThreads = true;var retryAt:Date?
     init() {}
-    enum CodingKeys:String,CodingKey { case clientID,clientSecret,tenant,accessToken,refreshToken,expiry,scope,resources,resourceLabels,accountID,accountLabel,query,start,end,zone,includeThreads,retryAt }
+    enum CodingKeys:String,CodingKey { case clientID,clientSecret,tenant,accessToken,refreshToken,expiry,scope,resources,resourceLabels,accountID,accountLabel,query,start,end,zone,includeThreads,retryAt,completionArchiveID,completionDateColumn }
     init(from decoder:Decoder) throws {
         self.init();let c = try decoder.container(keyedBy:CodingKeys.self)
         clientID = try c.decodeIfPresent(String.self,forKey:.clientID) ?? clientID;clientSecret = try c.decodeIfPresent(String.self,forKey:.clientSecret) ?? clientSecret;tenant = try c.decodeIfPresent(String.self,forKey:.tenant) ?? tenant
         accessToken = try c.decodeIfPresent(String.self,forKey:.accessToken) ?? accessToken;refreshToken = try c.decodeIfPresent(String.self,forKey:.refreshToken) ?? refreshToken;expiry = try c.decodeIfPresent(Date.self,forKey:.expiry);scope = try c.decodeIfPresent(String.self,forKey:.scope) ?? scope
         resources = try c.decodeIfPresent([String].self,forKey:.resources) ?? resources;resourceLabels = try c.decodeIfPresent([String:String].self,forKey:.resourceLabels) ?? resourceLabels
+        completionArchiveID = try c.decodeIfPresent(String.self,forKey:.completionArchiveID) ?? ""
+        completionDateColumn = try c.decodeIfPresent(String.self,forKey:.completionDateColumn) ?? ""
         accountID = try c.decodeIfPresent(String.self,forKey:.accountID) ?? accountID;accountLabel = try c.decodeIfPresent(String.self,forKey:.accountLabel) ?? accountLabel
         query = try c.decodeIfPresent(String.self,forKey:.query) ?? query;start = try c.decodeIfPresent(String.self,forKey:.start) ?? start;end = try c.decodeIfPresent(String.self,forKey:.end) ?? end;zone = try c.decodeIfPresent(String.self,forKey:.zone) ?? zone
         includeThreads = try c.decodeIfPresent(Bool.self,forKey:.includeThreads) ?? includeThreads;retryAt = try c.decodeIfPresent(Date.self,forKey:.retryAt)
@@ -118,6 +121,31 @@ extension ProviderVault {
     func readAsync(_ provider:WorkProvider) async throws -> SavedConnection? { try await credentialWork { try self.read(provider) } }
     func saveAsync(_ value:SavedConnection,provider:WorkProvider) async throws { try await credentialWork { try self.save(value,provider:provider) } }
     func forgetAsync(_ provider:WorkProvider) async throws { try await credentialWork { try self.forget(provider) } }
+}
+
+extension JunoStore {
+    func refreshCompletionArchive() async throws {
+        let sources = try JSONDecoder().decode(ConnectionSnapshots.self,
+            from: await localRequest("/v1/providers/state"))
+        guard let source = sources.items.first(where: { $0.kind == "smartsheet" }),
+              source.details.active != false, let archive = source.details.completion_archive,
+              let account = source.details.account, let resources = source.details.resources else { return }
+        guard let saved = try await ProviderVault().readAsync(.smartsheet),
+              saved.accountID == account.id, !saved.accessToken.isEmpty,
+              (saved.retryAt ?? .distantPast) <= Date() else {
+            throw APIProblem(message: "Review the saved Smartsheet connection before refreshing the archive.", status: 0)
+        }
+        let selection: [String: Any] = [
+            "resources": resources, "reviewed_account": account.id, "completion_archive_id": archive.sheet_id,
+            "completion_date_column": archive.requested_date_column ?? ""
+        ]
+        let data = try await localRequest("/v1/providers/smartsheet/refresh", method: "POST", body: [
+            "token": saved.accessToken, "selection": selection, "expected_id": source.id
+        ])
+        if try JSONDecoder().decode(ProviderRefreshReply.self, from: data).review_required {
+            throw APIProblem(message: "Review the Smartsheet account before refreshing the archive.", status: 0)
+        }
+    }
 }
 
 struct DirectProviderWorkspace: View {
@@ -275,9 +303,21 @@ struct DirectProviderWorkspace: View {
                     guard ids.count<=10,Set(ids).count == ids.count else { throw APIProblem(message:"Enter at most ten distinct resource IDs.",status:0) }
                     saved.resources = ids
                 }
-                guard provider == .gmail || !saved.resources.isEmpty else { throw APIProblem(message:"Choose at least one resource before refreshing.",status:0) }
+                var selectedResources = saved.resources
+                if provider == .smartsheet {
+                    saved.completionArchiveID = saved.completionArchiveID.trimmingCharacters(in:.whitespacesAndNewlines)
+                    if !saved.completionArchiveID.isEmpty && !selectedResources.contains(saved.completionArchiveID) {
+                        guard selectedResources.count < 10 else { throw APIProblem(message:"Leave room for the archive in the ten-sheet selection.",status:0) }
+                        selectedResources.append(saved.completionArchiveID)
+                    }
+                }
+                guard provider == .gmail || !selectedResources.isEmpty else { throw APIProblem(message:"Choose at least one resource before refreshing.",status:0) }
                 try await saveForm()
-                let selection:[String:Any] = ["resources":saved.resources,"query":saved.query,"start":saved.start,"end":saved.end,"timezone":saved.zone,"include_threads":saved.includeThreads,"reviewed_account":saved.accountID]
+                var selection:[String:Any] = ["resources":selectedResources,"query":saved.query,"start":saved.start,"end":saved.end,"timezone":saved.zone,"include_threads":saved.includeThreads,"reviewed_account":saved.accountID]
+                if provider == .smartsheet {
+                    selection["completion_archive_id"] = saved.completionArchiveID
+                    selection["completion_date_column"] = saved.completionDateColumn
+                }
                 let expectedID = current?.id
                 func fetch(_ credential:String) async throws -> Data {
                     var body:[String:Any] = ["token":credential,"selection":selection]
@@ -290,7 +330,7 @@ struct DirectProviderWorkspace: View {
                 try Task.checkCancellation()
                 let result = try JSONDecoder().decode(ProviderRefreshReply.self,from:data)
                 if result.review_required { reviewed = false;notice = "The provider account changed. Discover again and review the account before replacing the saved copy." }
-                else { saved.retryAt = nil;try await vault.saveAsync(saved,provider:provider);notice = "Read-only refresh complete. Open Evidence to review the dated copy; TaskDock tasks were not changed." }
+                else { saved.retryAt = nil;try await vault.saveAsync(saved,provider:provider);notice = "Read-only refresh complete. Open Evidence to review the dated copy." }
             } catch { record(error) }
             await loadState()
         }
@@ -354,6 +394,20 @@ struct DirectProviderWorkspace: View {
             Text("Choose a window of 1–366 days. Missing records do not prove free time, room access, employee availability or capability.").font(.caption).foregroundStyle(.secondary)
         }
         if provider == .slack { Toggle("Include readable replies to parents in this window",isOn:$saved.includeThreads);Text("Replies to older parents may be missing. Bot/user scope and provider retention limits still apply.").font(.caption) }
+        if provider == .smartsheet {
+            Text("Completed-task archive").font(.headline)
+            TextField("Archive sheet ID (optional)",text:$saved.completionArchiveID)
+                .onChange(of:saved.completionArchiveID) { _ in reviewed = false }
+            TextField("Exact completion-date column name (optional)",text:$saved.completionDateColumn)
+                .onChange(of:saved.completionDateColumn) { _ in reviewed = false }
+            Text("Juno adds this sheet to your selection and uses its dated closures in Dean briefings. Leave the column blank to look for a standard completion-date heading.")
+                .font(.caption).foregroundStyle(.secondary)
+            if let archive = current?.details.completion_archive {
+                Text(archive.completion_date_column.map { "Saved archive: \(archive.name) · Dates from \($0)" }
+                     ?? "Saved archive: \(archive.name) · Choose a completion-date column for dated reports.")
+                    .font(.caption).textSelection(.enabled)
+            }
+        }
         Toggle("I reviewed this account, resource selection and coverage.",isOn:$reviewed).toggleStyle(.checkbox).disabled(saved.accountID.isEmpty || busy || waiting)
         Button("Refresh read-only copy") { refresh() }.disabled(busy || waiting || !reviewed || cooldown)
         if let retry = saved.retryAt,retry > Date() { Text("Provider requested a pause. Retry after " + retry.formatted()).font(.caption).foregroundStyle(.orange) }

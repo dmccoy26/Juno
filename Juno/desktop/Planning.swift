@@ -63,12 +63,18 @@ struct WeeklyDiaryBasis: Codable, Equatable { var id:String; var revision:Int; v
 struct DeanMeetingWindow: Codable, Equatable {
     let previous:String;let meeting:String;let prepared:String;let previous_confirmed:Bool
 }
+struct CompletionArchiveBasis: Codable, Equatable {
+    let snapshot_id: String
+    let available: Bool
+    let uncertain: Bool
+}
 struct WeeklyBasis: Codable, Equatable {
     var operations_basis:OperationalSourceBasis?
     var meeting_window:DeanMeetingWindow?
+    var completion_archive: CompletionArchiveBasis?
     var diaries:[WeeklyDiaryBasis]; var snapshot_id:String?; var workspace_id:String?; var taskdock_saved_at:String?; var planning_revision:Int;var taskdock_uncertain:Bool
-    enum CodingKeys:String,CodingKey { case meeting_window,operations_basis,diaries,snapshot_id,workspace_id,taskdock_saved_at,planning_revision,taskdock_uncertain }
-    func encode(to encoder:Encoder) throws { var c=encoder.container(keyedBy:CodingKeys.self);try c.encodeIfPresent(meeting_window,forKey:.meeting_window);try c.encode(operations_basis,forKey:.operations_basis);try c.encode(diaries,forKey:.diaries);try c.encode(snapshot_id,forKey:.snapshot_id);try c.encode(workspace_id,forKey:.workspace_id);try c.encode(taskdock_saved_at,forKey:.taskdock_saved_at);try c.encode(planning_revision,forKey:.planning_revision);try c.encode(taskdock_uncertain,forKey:.taskdock_uncertain) }
+    enum CodingKeys:String,CodingKey { case meeting_window,completion_archive,operations_basis,diaries,snapshot_id,workspace_id,taskdock_saved_at,planning_revision,taskdock_uncertain }
+    func encode(to encoder:Encoder) throws { var c=encoder.container(keyedBy:CodingKeys.self);try c.encodeIfPresent(meeting_window,forKey:.meeting_window);try c.encodeIfPresent(completion_archive,forKey:.completion_archive);try c.encode(operations_basis,forKey:.operations_basis);try c.encode(diaries,forKey:.diaries);try c.encode(snapshot_id,forKey:.snapshot_id);try c.encode(workspace_id,forKey:.workspace_id);try c.encode(taskdock_saved_at,forKey:.taskdock_saved_at);try c.encode(planning_revision,forKey:.planning_revision);try c.encode(taskdock_uncertain,forKey:.taskdock_uncertain) }
 }
 struct WeeklyPlanningDraft: Decodable { var text:String; var notices:[String]; var basis:WeeklyBasis; var missing_diary_dates:[String] }
 struct SavedDeanDraft: Decodable {
@@ -525,7 +531,10 @@ struct PlanningWorkspace: View {
                     case .week: week
                     case .issues: issueList
                     case .scheduling: scheduling
-                    case .briefing: DeanMeetingControls(store: store) { showDeanDraft = true }
+                    case .briefing:
+                        DeanMeetingControls(store: store, open: { showDeanDraft = true },
+                                            refreshPlan: { Task { await load() } })
+                        ChairsReportControls(store: store)
                     }
                 }
                 .padding(24)
@@ -1139,18 +1148,111 @@ struct DeanMeetingSchedule {
 
 private struct DeanPrepareResult: Decodable { let created:Bool }
 
+private struct ChairEmail: Decodable {
+    let subject: String
+    let body: String
+    let coverage: [String]
+}
+
+private struct ChairsDraft: Decodable {
+    let emails: [String: ChairEmail]?
+    let exists: Bool
+    let subject: String
+    let body: String
+    let coverage: [String]
+    let revision: Int
+}
+
 extension JunoStore {
+    private func refreshReportingTasks() async throws -> (TaskDockSnapshot, String) {
+        guard let task=try await decode(TaskDockState.self,"/v1/taskdock").snapshot else {
+            throw APIProblem(message:"Connect TaskDock on this Mac first.",status:0)
+        }
+        guard let taskToken=try await credentialWork({try TaskDockKeychain.read(task.origin)}),!taskToken.isEmpty else {
+            throw APIProblem(message:"The TaskDock token is missing. Reconnect TaskDock in Connections.",status:0)
+        }
+        let result=try await decode(TaskDockRefresh.self,"/v1/taskdock/refresh",method:"POST",
+            body:["base_url":task.origin,"token":taskToken,"expected_snapshot_id":task.id])
+        guard !result.review_required,let refreshed=result.snapshot else {
+            throw APIProblem(message:"Review the TaskDock workspace in Connections before continuing.",status:0)
+        }
+        return (refreshed, taskToken)
+    }
+
+    private func refreshReportingBeacon() async throws -> EvidenceSnapshot {
+        let savedBeacon=try await decode(EvidenceState.self,"/v1/integrations").items.first{$0.kind=="beacon"}
+        let origin=UserDefaults.standard.string(forKey:"beaconOrigin") ?? savedBeacon?.origin ?? "http://127.0.0.1:12108"
+        let (beaconToken,retainedToken)=try await credentialWork { (try BeaconKeychain.read(origin),try BeaconKeychain.read(origin+"/retained-issues")) }
+        guard let beaconToken,!beaconToken.isEmpty else {
+            throw APIProblem(message:"The Beacon key is missing. Connect Beacon in Work Evidence.",status:0)
+        }
+        var body:[String:Any]=["base_url":origin,"token":beaconToken,"include_issue_snapshot":UserDefaults.standard.bool(forKey:"beaconIncludeIssueSnapshot")]
+        if let savedBeacon { body["expected_id"]=savedBeacon.id }
+        if let retainedToken { body["retained_issue_token"]=retainedToken }
+        return try await decode(EvidenceSnapshot.self,"/v1/integrations/beacon/refresh",method:"POST",body:body)
+    }
+
     func startDeanMonitor() {
         guard deanMonitor == nil else{return}
         deanMonitor=Task { [weak self] in
             while !Task.isCancelled {
                 await self?.prepareDeanMeeting(automatic:true)
+                await self?.prepareChairsDraft(automatic: true)
                 do { try await Task.sleep(nanoseconds:30_000_000_000) } catch { return }
             }
         }
     }
+
+    func prepareChairsDraft(automatic: Bool) async {
+        guard !chairsPreparing, !deanPreparing, connected, sharedProfile == nil, !offline else { return }
+        let current = Date()
+        let schedule = DeanMeetingSchedule(now: current)
+        let calendar = DeanMeetingSchedule.calendar
+        let friday = calendar.date(byAdding: .day, value: 4, to: schedule.week)!
+        let scheduledTime = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: friday)!
+        guard current >= friday else { return }
+        if automatic {
+            guard chairsAutomatic, current >= scheduledTime, chairsHandledWeek != schedule.key,
+                  chairsLastAttempt.map({ current.timeIntervalSince($0) >= 300 }) ?? true else { return }
+            chairsLastAttempt = current
+        }
+        chairsPreparing = true
+        chairsNotice = "Checking this week’s email draft…"
+        defer { chairsPreparing = false }
+        let path = "/v1/planning/chairs-draft/" + schedule.key
+        do {
+            let existing = try await decode(ChairsDraft.self, path)
+            if existing.exists {
+                chairsHandledWeek = schedule.key
+                chairsNotice = "This week’s draft is ready to review."
+                return
+            }
+            var unavailable: [String] = []
+            chairsNotice = "Refreshing TaskDock…"
+            do { _ = try await refreshReportingTasks() }
+            catch { unavailable.append("TaskDock") }
+            chairsNotice = "Refreshing Beacon…"
+            do { _ = try await refreshReportingBeacon() }
+            catch { unavailable.append("Beacon") }
+            chairsNotice = "Checking the Smartsheet archive…"
+            do { try await refreshCompletionArchive() }
+            catch { unavailable.append("Smartsheet") }
+            guard sharedProfile == nil, !automatic || chairsAutomatic else {
+                chairsNotice = "Draft preparation stopped."
+                return
+            }
+            let result = try await decode(ChairsDraft.self, path + "/prepare", method: "POST",
+                                          body: ["unavailable": unavailable])
+            chairsHandledWeek = schedule.key
+            chairsNotice = result.coverage.isEmpty ? "This week’s draft is ready to review."
+                : "This week’s draft is ready. Check source coverage before copying."
+        } catch {
+            chairsNotice = (error as? APIProblem)?.message ?? "Could not prepare the draft. Try again from Plan."
+        }
+    }
+
     func prepareDeanMeeting(automatic:Bool) async {
-        guard !deanPreparing, connected, sharedProfile == nil, !offline else {return}
+        guard !deanPreparing, !chairsPreparing, connected, sharedProfile == nil, !offline else {return}
         let current=Date(), schedule=DeanMeetingSchedule(now:current)
         guard current<schedule.meeting else {
             if !automatic { deanNotice="This week’s meeting has passed. Open its saved draft or prepare next week’s draft on Monday." }
@@ -1175,17 +1277,7 @@ extension JunoStore {
                 return
             }
             source="TaskDock";deanNotice="Refreshing TaskDock…"
-            guard let task=try await decode(TaskDockState.self,"/v1/taskdock").snapshot else {
-                throw APIProblem(message:"Connect TaskDock on this Mac first.",status:0)
-            }
-            guard let taskToken=try await credentialWork({try TaskDockKeychain.read(task.origin)}),!taskToken.isEmpty else {
-                throw APIProblem(message:"The TaskDock token is missing. Reconnect TaskDock in Connections.",status:0)
-            }
-            let result=try await decode(TaskDockRefresh.self,"/v1/taskdock/refresh",method:"POST",
-                body:["base_url":task.origin,"token":taskToken,"expected_snapshot_id":task.id])
-            guard !result.review_required,let refreshed=result.snapshot else {
-                throw APIProblem(message:"Review the TaskDock workspace in Connections before continuing.",status:0)
-            }
+            let (refreshed, taskToken) = try await refreshReportingTasks()
             if refreshed.info.capabilities["read_updates"] == true {
                 deanNotice="Reading shared TaskDock progress notes…"
                 let candidates=refreshed.items.filter{!($0.text("latest_update") ?? "").isEmpty}.sorted {
@@ -1202,16 +1294,11 @@ extension JunoStore {
                 }
             }
             source="Beacon";deanNotice="Refreshing Beacon…"
-            let savedBeacon=try await decode(EvidenceState.self,"/v1/integrations").items.first{$0.kind=="beacon"}
-            let origin=UserDefaults.standard.string(forKey:"beaconOrigin") ?? savedBeacon?.origin ?? "http://127.0.0.1:12108"
-            let (beaconToken,retainedToken)=try await credentialWork { (try BeaconKeychain.read(origin),try BeaconKeychain.read(origin+"/retained-issues")) }
-            guard let beaconToken,!beaconToken.isEmpty else {
-                throw APIProblem(message:"The Beacon key is missing. Connect Beacon in Work Evidence.",status:0)
-            }
-            var body:[String:Any]=["base_url":origin,"token":beaconToken,"include_issue_snapshot":UserDefaults.standard.bool(forKey:"beaconIncludeIssueSnapshot")]
-            if let savedBeacon { body["expected_id"]=savedBeacon.id }
-            if let retainedToken { body["retained_issue_token"]=retainedToken }
-            let beacon=try await decode(EvidenceSnapshot.self,"/v1/integrations/beacon/refresh",method:"POST",body:body)
+            let beacon = try await refreshReportingBeacon()
+            var archiveRefreshFailed = false
+            deanNotice = "Checking the completed-task archive…"
+            do { try await refreshCompletionArchive() }
+            catch { archiveRefreshFailed = true }
             guard sharedProfile == nil, !automatic || deanAutomatic,
                   UserDefaults.standard.data(forKey:"deanDraft."+draft.owner_id+":"+schedule.key)==nil else {
                 deanNotice="Preparation stopped before saving. Any saved or unsaved writing has been kept."
@@ -1222,9 +1309,11 @@ extension JunoStore {
             let formatter=ISO8601DateFormatter()
             let prepared=try await decode(DeanPrepareResult.self,"/v1/planning/dean-meeting/prepare",method:"POST",body:[
                 "previous":formatter.string(from:override ?? schedule.previous),"previous_confirmed":override != nil,
-                "meeting":formatter.string(from:schedule.meeting),"taskdock_id":refreshed.id,"beacon_id":beacon.id])
+                "meeting":formatter.string(from:schedule.meeting),"taskdock_id":refreshed.id,"beacon_id":beacon.id,
+                "archive_refresh_failed":archiveRefreshFailed])
             deanHandledWeek=schedule.key
             deanNotice=prepared.created ? "This week’s Dean draft is ready to review." : "This week’s saved draft was kept."
+            if prepared.created && archiveRefreshFailed { deanNotice += " Check Smartsheet archive coverage." }
         } catch {
             deanNotice=source+": "+((error as? APIProblem)?.message ?? "The draft could not be prepared. Try again from Plan.")
         }
@@ -1234,8 +1323,10 @@ extension JunoStore {
 private struct DeanMeetingControls: View {
     @ObservedObject var store:JunoStore
     let open:()->Void
+    let refreshPlan: () -> Void
     @State private var correcting=false
     @State private var actual=Date()
+    @State private var followUp = false
     var body: some View {
         let current=Date(), schedule=DeanMeetingSchedule(now:current)
         let overridden=store.deanOverrideWeek == schedule.key ? store.deanOverride : nil
@@ -1252,6 +1343,7 @@ private struct DeanMeetingControls: View {
                 }
                 HStack {
                     Button("Open this week’s draft…") { open() }
+                    Button("Meeting follow-up…") { followUp = true }
                     if store.sharedProfile == nil {
                         Button("Refresh sources and prepare now") { Task { await store.prepareDeanMeeting(automatic:false) } }
                             .disabled(store.deanPreparing || !store.connected || current>=schedule.meeting)
@@ -1260,6 +1352,7 @@ private struct DeanMeetingControls: View {
                 if !store.deanNotice.isEmpty { Text(store.deanNotice).font(.callout).textSelection(.enabled) }
             }.frame(maxWidth:.infinity,alignment:.leading)
         }.environment(\.timeZone,DeanMeetingSchedule.zone)
+        .sheet(isPresented: $followUp) { DeanFollowUpEditor(store: store, onSave: refreshPlan) }
         .sheet(isPresented:$correcting) {
             VStack(alignment:.leading,spacing:14) {
                 Text("When did the last meeting happen?").font(.headline)
@@ -1273,6 +1366,376 @@ private struct DeanMeetingControls: View {
                         .keyboardShortcut(.defaultAction)
                 }
             }.padding(20).frame(width:440).environment(\.timeZone,DeanMeetingSchedule.zone)
+        }
+    }
+}
+
+private struct DeanFollowUpCandidate: Decodable {
+    let title: String
+    let owner: String
+    let timing: String
+    let waiting_on: String
+    let quote: String
+}
+
+private struct DeanFollowUpItem: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var title = ""
+    var owner = ""
+    var timing = ""
+    var waiting_on = ""
+    var quote = ""
+    var task_id: String?
+    var workspace_id: String?
+    var closed = false
+}
+
+private struct DeanFollowUpRecord: Decodable {
+    let notes: String
+    let items: [DeanFollowUpItem]
+    let revision: Int
+}
+
+private struct DeanFollowUpExtraction: Decodable {
+    let items: [DeanFollowUpCandidate]
+}
+
+private struct DeanFollowUpEditor: View {
+    @ObservedObject var store: JunoStore
+    let onSave: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var day = Date()
+    @State private var saved: DeanFollowUpRecord?
+    @State private var snapshot: TaskDockSnapshot?
+    @State private var notes = ""
+    @State private var items: [DeanFollowUpItem] = []
+    @State private var working = false
+    @State private var confirmClose = false
+    @State private var notice = ""
+
+    private var path: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = DeanMeetingSchedule.zone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return "/v1/planning/dean-follow-up/" + formatter.string(from: day)
+    }
+    private var changed: Bool { notes != (saved?.notes ?? "") || items != (saved?.items ?? []) }
+    private var hasNotes: Bool { !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var canSave: Bool {
+        saved != nil && changed && hasNotes && items.allSatisfy {
+            !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !$0.quote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Dean meeting follow-up").font(.title2.weight(.semibold))
+                Spacer()
+                DatePicker("Meeting date", selection: $day, displayedComponents: .date)
+                    .fixedSize().disabled(changed || working)
+            }.padding(20)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Meeting notes").font(.headline)
+                    Text("Paste your notes or a list headed “From the Dean”. Review each request before saving it for the next briefing.")
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: $notes)
+                        .font(.body).frame(minHeight: 120)
+                        .accessibilityLabel("Dean meeting notes")
+                        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.quaternary))
+                    HStack {
+                        Button("Find Dean requests") { Task { await extract() } }
+                            .disabled(!hasNotes || !items.isEmpty || store.offline)
+                        Button("Add request") { items.append(DeanFollowUpItem()) }.disabled(items.count >= 24)
+                    }
+                    ForEach($items) { $item in
+                        DeanFollowUpRow(item: $item, snapshot: snapshot) {
+                            let id = item.id
+                            items.removeAll { $0.id == id }
+                        }
+                    }
+                }.padding(20).disabled(working || saved == nil || store.offline)
+            }
+            Divider()
+            HStack {
+                Button("Close") { if changed { confirmClose = true } else { dismiss() } }
+                    .keyboardShortcut(.cancelAction).disabled(working)
+                if working { ProgressView().controlSize(.small) }
+                Text(notice).font(.callout).foregroundStyle(.secondary)
+                Spacer()
+                Button("Save follow-up") { Task { await save() } }
+                    .keyboardShortcut(.defaultAction).disabled(!canSave || working || store.offline)
+            }.padding(20)
+        }
+        .frame(minWidth: 690, idealWidth: 760, minHeight: 510, idealHeight: 680)
+        .environment(\.timeZone, DeanMeetingSchedule.zone)
+        .interactiveDismissDisabled(changed || working)
+        .task(id: path) { await load() }
+        .confirmationDialog("Discard unsaved follow-up changes?", isPresented: $confirmClose) {
+            Button("Discard changes", role: .destructive) { dismiss() }
+            Button("Keep editing", role: .cancel) {}
+        }
+    }
+
+    private func apply(_ value: DeanFollowUpRecord) {
+        saved = value
+        notes = value.notes
+        items = value.items
+    }
+
+    private func load() async {
+        working = true
+        defer { working = false }
+        saved = nil
+        notes = ""
+        items = []
+        notice = ""
+        do {
+            apply(try await store.decode(DeanFollowUpRecord.self, path))
+            snapshot = (try? await store.decode(TaskDockState.self, "/v1/taskdock"))?.snapshot
+            if store.offline { notice = "Offline copy. Reconnect to save or find requests." }
+        } catch {
+            notice = (error as? APIProblem)?.message ?? "Could not open follow-up for this date."
+        }
+    }
+
+    private func extract() async {
+        working = true
+        defer { working = false }
+        do {
+            let result = try await store.decode(DeanFollowUpExtraction.self, path + "/extract",
+                                                method: "POST", body: ["notes": notes])
+            items = result.items.map {
+                DeanFollowUpItem(title: $0.title, owner: $0.owner, timing: $0.timing,
+                                 waiting_on: $0.waiting_on, quote: $0.quote)
+            }
+            notice = items.isEmpty ? "No requests found. You can add one manually." : "Review the requests before saving."
+        } catch {
+            notice = (error as? APIProblem)?.message ?? "Could not find requests. You can add one manually."
+        }
+    }
+
+    private func save() async {
+        guard let saved else { return }
+        working = true
+        defer { working = false }
+        do {
+            let encoded = try JSONEncoder().encode(items)
+            let payload = try JSONSerialization.jsonObject(with: encoded)
+            apply(try await store.decode(DeanFollowUpRecord.self, path, method: "PUT",
+                body: ["notes": notes, "expected_revision": saved.revision, "items": payload]))
+            notice = "Saved for future Dean briefings."
+            onSave()
+        } catch {
+            notice = (error as? APIProblem)?.message ?? "Could not save. Your edits are still here."
+        }
+    }
+}
+
+private struct DeanFollowUpRow: View {
+    @Binding var item: DeanFollowUpItem
+    let snapshot: TaskDockSnapshot?
+    let remove: () -> Void
+    @State private var search = ""
+
+    private var linkedTask: TaskDockTask? {
+        guard item.workspace_id == snapshot?.info.workspace_id else { return nil }
+        return snapshot?.items.first { $0.id == item.task_id }
+    }
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Request", text: $item.title)
+                HStack {
+                    TextField("Owner", text: $item.owner)
+                    TextField("Deadline or timing", text: $item.timing)
+                }
+                TextField("Waiting on", text: $item.waiting_on)
+                TextField("Exact quote from your notes", text: $item.quote, axis: .vertical)
+                    .lineLimit(1...3)
+                if let id = item.task_id {
+                    HStack {
+                        Label(linkedTask?.title ?? "TaskDock reference unavailable · \(id.suffix(8))",
+                              systemImage: "link")
+                        Spacer()
+                        Button("Unlink") { item.task_id = nil; item.workspace_id = nil }
+                    }
+                } else if let snapshot, snapshot.info.sharing_restricted != true {
+                    let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let matches = query.isEmpty ? [] : Array(snapshot.items.filter {
+                        $0.title.localizedCaseInsensitiveContains(query)
+                    }.prefix(15))
+                    HStack {
+                        TextField("Search existing TaskDock cards", text: $search)
+                        Menu(matches.isEmpty ? "Link card" : "Choose card") {
+                            ForEach(matches) { task in
+                                Button(task.title + " · " + task.id.suffix(8)) {
+                                    item.task_id = task.id
+                                    item.workspace_id = snapshot.info.workspace_id
+                                    search = ""
+                                }
+                            }
+                        }.disabled(matches.isEmpty)
+                    }
+                }
+                HStack {
+                    Toggle("Closed for briefing", isOn: $item.closed)
+                    Spacer()
+                    Button("Remove request", role: .destructive, action: remove)
+                }
+            }.textFieldStyle(.roundedBorder).padding(4)
+        }
+    }
+}
+
+private struct ChairsReportControls: View {
+    @ObservedObject var store: JunoStore
+    @State private var showDraft = false
+    private var weekClosed: Bool {
+        let now = Date()
+        let week = DeanMeetingSchedule(now: now).week
+        return now >= DeanMeetingSchedule.calendar.date(byAdding: .day, value: 4, to: week)!
+    }
+
+    var body: some View {
+        GroupBox("Department chairs email") {
+            VStack(alignment: .leading, spacing: 10) {
+                if store.sharedProfile == nil {
+                    Toggle("Prepare Fridays at 9:00 AM Central", isOn: $store.chairsAutomatic)
+                    Text("Covers Friday through Thursday. Keep Juno open on the work Mac. It can catch up through Sunday.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                HStack {
+                    Button("Review email draft…") { showDraft = true }
+                    if store.sharedProfile == nil {
+                        Button("Prepare this week’s draft") { Task { await store.prepareChairsDraft(automatic: false) } }
+                            .disabled(store.chairsPreparing || store.deanPreparing || !store.connected || store.offline || !weekClosed)
+                    }
+                }
+                if !store.chairsNotice.isEmpty { Text(store.chairsNotice).font(.callout) }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }.sheet(isPresented: $showDraft) { ChairsReportEditor(store: store) }
+    }
+}
+
+private struct ChairsReportEditor: View {
+    @ObservedObject var store: JunoStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var day = Date()
+    @State private var recipient = "lwr"
+    @State private var saved: ChairsDraft?
+    @State private var subject = ""
+    @State private var draftBody = ""
+    @State private var busy = false
+    @State private var notice = ""
+    @State private var confirmClose = false
+
+    private var path: String { "/v1/planning/chairs-draft/" + DeanMeetingSchedule(now: day).key }
+    private var selected: ChairEmail? {
+        guard let saved, saved.exists else { return nil }
+        if let emails = saved.emails, !emails.isEmpty { return emails[recipient] }
+        return ChairEmail(subject: saved.subject, body: saved.body, coverage: saved.coverage)
+    }
+    private var changed: Bool { subject != (selected?.subject ?? "") || draftBody != (selected?.body ?? "") }
+    private var ready: Bool {
+        saved?.exists == true && !subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !draftBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Department chairs email").font(.title2.bold())
+                Spacer()
+                DatePicker("Reporting week", selection: $day, in: ...Date(), displayedComponents: .date)
+                    .disabled(changed || busy)
+            }
+            if let emails = saved?.emails, !emails.isEmpty {
+                Picker("Recipient", selection: $recipient) {
+                    Text("Languages, Literatures and Cultures").tag("lwr")
+                    Text("Visual Studies").tag("visu")
+                    Text("Performing Arts").tag("performing")
+                }.disabled(changed || busy)
+                .onChange(of: recipient) { _ in populateEditor() }
+            }
+            if let selected {
+                if !selected.coverage.isEmpty {
+                    DisclosureGroup("Source coverage") {
+                        ForEach(Array(selected.coverage.enumerated()), id: \.offset) { _, line in
+                            Text(line).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                TextField("Subject", text: $subject).textFieldStyle(.roundedBorder).disabled(store.offline || busy)
+                TextEditor(text: $draftBody).font(.body).accessibilityLabel("Department chairs email body")
+                    .disabled(store.offline || busy)
+                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.quaternary))
+            } else {
+                Text(busy ? "Loading draft…" : "No saved draft for this week.").foregroundStyle(.secondary)
+                Spacer()
+            }
+            if !notice.isEmpty { Text(notice).font(.callout).foregroundStyle(.secondary) }
+            HStack {
+                Button("Close") { if changed { confirmClose = true } else { dismiss() } }
+                    .keyboardShortcut(.cancelAction).disabled(busy)
+                Spacer()
+                Button("Copy email") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString("Subject: " + subject + "\n\n" + draftBody, forType: .string)
+                    notice = "Subject and email body copied."
+                }.disabled(!ready || busy)
+                Button("Save edits") { Task { await save() } }
+                    .keyboardShortcut(.defaultAction).disabled(!ready || !changed || busy || store.offline)
+            }
+        }
+        .padding(22).frame(minWidth: 700, idealWidth: 800, minHeight: 540, idealHeight: 680)
+        .environment(\.timeZone, DeanMeetingSchedule.zone)
+        .interactiveDismissDisabled(changed || busy)
+        .confirmationDialog("Discard unsaved email edits?", isPresented: $confirmClose) {
+            Button("Discard edits", role: .destructive) { dismiss() }
+            Button("Keep editing", role: .cancel) {}
+        }
+        .task(id: path) { await load() }
+    }
+
+    private func apply(_ draft: ChairsDraft) {
+        saved = draft
+        populateEditor()
+    }
+
+    private func populateEditor() {
+        subject = selected?.subject ?? ""
+        draftBody = selected?.body ?? ""
+        notice = ""
+    }
+
+    private func load() async {
+        busy = true
+        defer { busy = false }
+        saved = nil
+        subject = ""
+        draftBody = ""
+        notice = ""
+        do { apply(try await store.decode(ChairsDraft.self, path)) }
+        catch { notice = (error as? APIProblem)?.message ?? "Could not open this draft." }
+    }
+
+    private func save() async {
+        guard let saved else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            var payload: [String: Any] = ["expected_revision": saved.revision, "subject": subject, "body": draftBody]
+            if saved.emails?[recipient] != nil { payload["recipient"] = recipient }
+            apply(try await store.decode(ChairsDraft.self, path, method: "PUT", body: payload))
+            notice = "Edits saved."
+        } catch {
+            notice = (error as? APIProblem)?.message ?? "Could not save your edits."
         }
     }
 }

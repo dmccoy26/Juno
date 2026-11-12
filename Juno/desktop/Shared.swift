@@ -386,6 +386,9 @@ extension JunoStore {
     func wire(_ path:String,endpoint:URL,token:String,session:URLSession,method:String,body:[String:Any]?) async throws -> Data {
         guard let url = URL(string:path,relativeTo:endpoint)?.absoluteURL else { throw APIProblem(message:"Invalid request.",status:0) }
         var request = URLRequest(url:url); request.httpMethod = method; request.timeoutInterval = path.contains("/messages") && method == "POST" ? 100 : (path.hasPrefix("/v1/taskdock/") ? 300 : (path.hasPrefix("/v1/providers/") ? 120 : 30))
+        if method == "POST", path.hasPrefix("/v1/planning/chairs-draft/"), path.hasSuffix("/prepare") {
+            request.timeoutInterval = 100
+        }
         request.setValue("Bearer " + token,forHTTPHeaderField:"Authorization"); request.cachePolicy = .reloadIgnoringLocalCacheData
         if let body { request.httpBody = try JSONSerialization.data(withJSONObject:body);request.setValue("application/json",forHTTPHeaderField:"Content-Type") }
         let (data,response) = try await session.data(for:request)

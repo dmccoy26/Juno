@@ -1,12 +1,36 @@
 # Build status
 
-Updated: November 11, 2026.
+Updated: November 12, 2026.
 
-## Current release — preview.27 Plan workspace
+## Current release — preview.29 weekly department email routing
+
+On Fridays at 9:00 AM Central, Juno prepares separate drafts for Languages, Literatures and Cultures, Visual Studies, and Performing Arts while it is open on the work Mac. The reporting period runs Friday through Thursday. In **Plan → Dean briefing → Department chairs email → Review email draft**, choose a recipient to review, edit, and copy the email for manual sending.
+
+Sorin Hall printer issues go to Languages, Literatures and Cultures. Visual Studies receives VISU, GDES, VGAM, and ANIM work, including the Flextight scanner and Ali Rex posters. Performing Arts receives ARTS 140 and the East Hall 140 Music printer. The Dean’s briefing uses talking points and includes the Holy Cross 203 and 326 printer follow-ups. Juno uses LM Studio to write the chair emails when the local model is available and provides editable text from the saved records when it is unavailable. The archive’s Modified timestamp appears as the last update when a completion date is unavailable.
+
+Preview.29 is installed on the work Mac. The November 13 drafts covering November 6–12 were saved for all three recipients, and the installed review window showed the recipient picker and Visual Studies draft. The routing, independent recipient edits, and schema migration tests passed, along with all 15 installer check groups. The workspace comparison matched the other existing work records and paired device identities after the intended draft update. The first scheduled run with these routing rules is pending.
+
+## Preview.28 department chairs email
+
+**Plan → Dean briefing → Department chairs email** prepares a reviewable draft on Friday at 9:00 AM Central while Juno is open on the work Mac. It covers Friday through Thursday. Juno refreshes TaskDock, Beacon and the configured Smartsheet completion archive, and shows coverage gaps beside the draft. The review window shows the six departments, supports saved edits and copies the subject and body for manual sending.
+
+Preview.28 was installed and verified on the work Mac. All 15 installer check groups passed, and the before-and-after comparison matched the existing records and paired device identities. The installed app showed the enabled schedule and all six departments in the review window. Juno subsequently read 1,265 rows across the two selected Smartsheet sheets.
+
+## Smartsheet completed-task archive
+
+An explicitly selected Smartsheet archive feeds dated closure bullets into new Dean drafts and their weekly comparisons when a completion-date column is available. The scheduled draft attempts a refresh and identifies coverage gaps when the archive is stale or unavailable. The work Mac connected the archive and the active technology task list. The archive’s Complete Time column contains durations or formula errors, so the completion-date mapping is blank.
+
+## Dean meeting follow-up
+
+Open **Plan → Dean briefing → Meeting follow-up** and select the meeting date. Paste notes, find requests, then review each item and its supporting quote. A list headed “From the Dean” works without a model. The approved local model can extract requests from prose or fill in details from the notes. Link a request to an existing TaskDock card to give it Dean priority in Plan. Open requests carry forward as separate bullets in newly prepared Dean briefings. Reviewed follow-ups are saved per meeting and can be opened on paired Macs.
+
+TaskDock still needs a separately authorized card-creation interface for Juno to create reviewed requests automatically. See [TaskDock card creation handoff](missions/taskdock-dean-follow-up.md).
+
+## Preview.27 Plan workspace
 
 Plan opens to a weekly overview showing hours available and suggested work times. Separate Issues, Scheduling and Dean briefing views provide the relevant controls. Issues can be searched by title or room and filtered by the status shown on each row. Scheduling uses the same start date as the weekly plan.
 
-Preview.27 is installed in `/Applications/Juno.app`. Native planning and all 15 installer check groups passed. Live checks covered opening a suggested issue, filtering by search, the shared scheduling date and reopening the saved November 12 briefing. The upgrade preserved the workspace, pairing and local drafts, and backup restore checks passed.
+Preview.27 was installed in `/Applications/Juno.app`. Native planning and all 15 installer check groups passed. Live checks covered opening a suggested issue, filtering by search, the shared scheduling date and reopening the saved November 12 briefing. The upgrade preserved the workspace, pairing and local drafts, and backup restore checks passed.
 
 ## Preview.26 Dean briefing layout
 

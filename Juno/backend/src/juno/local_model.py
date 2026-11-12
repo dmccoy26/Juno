@@ -2,7 +2,7 @@
 import json
 import re
 from urllib.parse import urlsplit
-from urllib.request import Request, build_opener
+from urllib.request import ProxyHandler, Request, build_opener
 from urllib.error import URLError, HTTPError
 from .taskdock import _NoRedirect
 
@@ -27,15 +27,15 @@ class LocalModel:
     def __init__(self, base_url):
         self.base_url = validate_origin(base_url)
 
-    def request(self, path, body=None):
+    def request(self, path, body=None, *, origin=None):
         headers = {'Accept': 'application/json'}
         data = None
         if body is not None:
             data = json.dumps(body).encode()
             headers['Content-Type'] = 'application/json'
         try:
-            request = Request(self.base_url+path, data=data, headers=headers)
-            with build_opener(_NoRedirect).open(request, timeout=65) as response:
+            request = Request((origin or self.base_url)+path, data=data, headers=headers)
+            with build_opener(ProxyHandler({}), _NoRedirect).open(request, timeout=65) as response:
                 raw = response.read(1_000_001)
                 if len(raw)>1_000_000: raise ModelError('The model response was too large.')
                 return json.loads(raw)
@@ -48,6 +48,23 @@ class LocalModel:
             raise ModelError('The local server returned an invalid model list.')
         return [r['id'] for r in value['data'] if isinstance(r, dict) and isinstance(r.get('id'), str)
                 and len(r['id'])<=200 and 'embed' not in r['id'].lower()][:100]
+
+    def compose_email(self, messages, model):
+        if 'qwen3' not in model.casefold():
+            return self.complete(messages, model)
+        try:
+            result = self.request('/api/v1/chat', {
+                'model': model, 'system_prompt': messages[0]['content'], 'input': messages[1]['content'],
+                'reasoning': 'off', 'store': False, 'max_output_tokens': 2048,
+            }, origin=self.base_url.removesuffix('/v1'))
+        except ModelError:
+            return self.complete(messages, model)
+        output = result.get('output') if isinstance(result, dict) else None
+        if not isinstance(output, list):
+            raise ModelError('LM Studio did not return a complete email.')
+        return '\n'.join(item['content'] for item in output
+                         if isinstance(item, dict) and item.get('type') == 'message'
+                         and isinstance(item.get('content'), str)).strip()
 
     def complete(self, messages, model):
         value = self.request('/chat/completions', {'model': model, 'messages': messages,

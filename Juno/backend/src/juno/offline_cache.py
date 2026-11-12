@@ -71,6 +71,14 @@ def install(app,db,device,lock_owner):
         from .planning_continuity import dean_view
         for draft in bounded(select(DeanDraft).where(DeanDraft.owner_id==actor.owner_id),1000):
             add('/v1/planning/weekly-draft/'+str(draft.week_start),dean_view(session,actor.owner_id,draft.week_start))
+        from .models import ChairsDraft
+        from .chairs_report import view as chairs_view
+        for draft in bounded(select(ChairsDraft).where(ChairsDraft.owner_id==actor.owner_id),1000):
+            add('/v1/planning/chairs-draft/'+str(draft.week_start),chairs_view(draft))
+        from .models import DeanFollowUp
+        from .dean_follow_up import view as follow_up_view
+        for follow_up in bounded(select(DeanFollowUp).where(DeanFollowUp.owner_id==actor.owner_id),1000):
+            add('/v1/planning/dean-follow-up/'+str(follow_up.meeting_day),follow_up_view(follow_up))
         state=session.get(TaskDockState,actor.owner_id);snapshot=active_snapshot(session,actor.owner_id)
         add('/v1/taskdock',{'snapshot':snapshot_view(snapshot,state.error) if snapshot else None,'error':state.error if state else None})
         if snapshot:

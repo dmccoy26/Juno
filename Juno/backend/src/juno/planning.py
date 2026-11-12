@@ -164,6 +164,17 @@ def build_plan(session, owner, day, *, horizon_days=7, reserve_override=None):
     if not work: notices.append('No confirmed work windows in this seven-day horizon. Availability is unknown.')
     if not busy: notices.append('No recorded busy intervals; this does not establish a complete calendar.')
     facts = {t['task_id']: t for t in state['tasks']}
+    if snapshot and not snapshot.info.get('sharing_restricted'):
+        from .dean_follow_up import reviewed_requests
+
+        workspace = snapshot.info.get('workspace_id')
+        for _, request in reviewed_requests(session, owner, day):
+            if request['workspace_id'] != workspace or not request['task_id']:
+                continue
+            task_facts = facts.setdefault(request['task_id'], {})
+            task_facts['dean'] = True
+            if request['waiting_on'] and not task_facts.get('blocker'):
+                task_facts['blocker'] = 'Waiting on ' + request['waiting_on']
     rows = []
     from .operations import briefing as operational_briefing
     operations = operational_briefing(session, owner)
@@ -302,18 +313,25 @@ def allocate_proposal(rows, windows, capacity, schedule_state):
 
 
 def weekly_draft(session, owner, day):
+    from .planning_continuity import dean_check_in_lines, weekly_basis
+    from .dean_follow_up import briefing_lines
+    from .completion_archive import report_lines
+
     plan = build_plan(session, owner, day)
     rows = session.scalars(select(CheckIn).where(CheckIn.owner_id==owner, CheckIn.local_date>=day,
         CheckIn.local_date<day+timedelta(days=7), CheckIn.status=='confirmed').order_by(CheckIn.local_date)).all()
     lines = ['Weekly Dean update — draft', f'{day} through {day+timedelta(days=6)}', '', 'Confirmed daily records']
-    for row in rows: lines.extend([str(row.local_date), row.diary_text])
+    for row in rows: lines.extend(dean_check_in_lines(row))
     if not rows: lines.append('No confirmed diary entries for this period; accomplishments are unknown.')
+    follow_ups = briefing_lines(session, owner, day+timedelta(days=6))
+    if follow_ups: lines.extend(['', 'Open requests from the Dean', *follow_ups])
+    lines.extend(report_lines(session, owner, day, day+timedelta(days=6)))
     lines.extend(['', 'Priorities and blockers from the current saved task copy'])
     for t in plan['tasks'][:20]:
-        lines.append(t['title'] + (': waiting on '+t['blocker'] if t['blocker'] else ': completion not established'))
-        if t['next_action']: lines.append('Next action: '+t['next_action'])
+        entry = t['title'] + (' — waiting on '+t['blocker'] if t['blocker'] else ' — completion not established')
+        if t['next_action']: entry += '. Next action: '+t['next_action']
+        lines.append('• '+entry)
     lines.extend(['', 'Review dates, sensitive employee details and current status before sharing. This draft has not been sent.'])
-    from .planning_continuity import weekly_basis
     basis=weekly_basis(session,owner,day)
     missing=[str(day+timedelta(days=n)) for n in range(7) if str(day+timedelta(days=n)) not in {str(r.local_date) for r in rows}]
     lines.extend(['',str(len(rows))+' confirmed diary day(s); '+str(len(missing))+' date(s) without a confirmed diary. Missing dates do not establish inactivity.'])
@@ -323,16 +341,16 @@ def weekly_draft(session, owner, day):
     lines.extend(['','Decisions and meeting agenda'])
     decisions=[c for c in operations['cards'] if c['decision_authority']=='department_lead']
     if not decisions:lines.append('No explicit department-lead decision requirement is established in the shared operational records; confirm missing authority.')
-    for card in decisions:lines.append(card['title']+': '+card['recommendation']+' [Beacon alert '+card['id']+']')
+    for card in decisions:lines.append('• '+card['title']+': '+card['recommendation']+' [Beacon alert '+card['id']+']')
     lines.extend(['','Unresolved operational issues and source evidence'])
     for card in operations['cards'][:20]:
-        lines.append(card['title']+': '+card['next_action']+' [Beacon alert '+card['id']+']')
-        for task in card['tasks']:lines.append('TaskDock record '+task['task_id']+': '+task['title']+'; recorded completion does not verify equipment recovery.')
-        for conflict in card['conflicts']:lines.append('Review contradiction: '+conflict)
+        lines.append('• '+card['title']+': '+card['next_action']+' [Beacon alert '+card['id']+']')
+        for task in card['tasks']:lines.append('• TaskDock record '+task['task_id']+': '+task['title']+'; recorded completion does not verify equipment recovery.')
+        for conflict in card['conflicts']:lines.append('• Review contradiction: '+conflict)
     lines.extend(operations['notices'])
     lines.extend(['','Milestones and next-week priorities','Milestone/project data is not supplied by the current TaskDock Juno contract. Review recorded due dates; no milestone completion is inferred.'])
     for task in plan['tasks'][:10]:
-        lines.append(task['title']+'; due '+str(task['due_date'] or 'unknown')+'; '+task['reason']+' [TaskDock record '+task['task_id']+']')
+        lines.append('• '+task['title']+'; due '+str(task['due_date'] or 'unknown')+'; '+task['reason']+' [TaskDock record '+task['task_id']+']')
     lines.append('Discussion agenda: review explicit decisions, confirm blockers and missing evidence, then agree next-week priorities. Nothing has been sent.')
     return {'basis':basis,'missing_diary_dates':missing,'text':'\n'.join(lines),'diary_dates':[str(r.local_date) for r in rows], 'notices':plan['notices']}
 

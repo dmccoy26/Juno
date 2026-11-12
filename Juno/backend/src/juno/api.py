@@ -46,7 +46,7 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
     from fastapi.responses import JSONResponse
     @app.exception_handler(RequestValidationError)
     async def safe_connection_validation(request,error):
-        if request.url.path.startswith(('/worker','/v1/workers','/v1/providers','/v1/taskdock','/v1/integrations/beacon','/v1/operations')):
+        if request.url.path.startswith(('/worker','/v1/workers','/v1/providers','/v1/taskdock','/v1/integrations/beacon','/v1/operations','/v1/planning/dean-follow-up/')):
             return JSONResponse({'detail':'Check the required fields and allowed values. Private input is not echoed.'},status_code=422,headers={'Cache-Control':'no-store'})
         from fastapi.exception_handlers import request_validation_exception_handler
         return await request_validation_exception_handler(request,error)
@@ -186,6 +186,10 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
     planning.install(app, db, device, lock_owner)
     from . import planning_continuity
     planning_continuity.install(app, db, device, lock_owner)
+    from . import chairs_report
+    chairs_report.install(app, db, device, lock_owner, model_factory)
+    from . import dean_follow_up
+    dean_follow_up.install(app, db, device, lock_owner, model_factory)
     from . import workers
     workers.install(app, db, device, lock_owner, worker_manager)
     schedules.install(app, db, device, lock_owner)

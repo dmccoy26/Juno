@@ -1,6 +1,6 @@
 """Explicit-resource Slack, Smartsheet and Microsoft calendar reads; no write methods."""
 import re
-from datetime import datetime
+from datetime import date,datetime
 from urllib.parse import quote
 from .http import ReadError
 from .common import required,text,identity,finish,selected,dates,timestamp,graph_pages,BoundedRows,UTC,busy_summary
@@ -117,9 +117,37 @@ def discover_smart(http):
     raise ReadError('Smartsheet sheet-list page limit reached.',413)
 
 
+def archive_column(titles, requested):
+    aliases = {'completion date', 'date completed', 'completed date', 'completed at',
+               'closed date', 'date closed', 'closed at'}
+    matches = [key for key, title in titles.items() if (
+        title.strip().casefold() == requested.casefold() if requested else title.strip().casefold() in aliases)]
+    if requested and len(matches) != 1:
+        raise ReadError('The archive completion-date column was missing or ambiguous. Check its exact name.',422)
+    return matches[0] if len(matches) == 1 else None
+
+
+def archive_date(value):
+    if not isinstance(value,str):
+        return None
+    try:
+        if re.fullmatch(r'\d{4}-\d{2}-\d{2}',value):
+            return date.fromisoformat(value).isoformat()
+        stamp = datetime.fromisoformat(value.replace('Z','+00:00'))
+        return stamp.isoformat() if stamp.tzinfo is not None else None
+    except ValueError:
+        return None
+
+
 def read_smart(http,config,account):
     result=BoundedRows()
-    for sheet in selected(config,r'[1-9][0-9]{0,19}'):
+    sheets = selected(config,r'[1-9][0-9]{0,19}')
+    archive_id = config.get('completion_archive_id')
+    requested_column = config.get('completion_date_column','').strip()
+    archive = None
+    if archive_id and archive_id not in sheets:
+        raise ReadError('Select the completed-task archive sheet before using it in reports.',422)
+    for sheet in sheets:
         version=None;total=None;seen=set();count=0
         for page in range(1,51):
             data=http.get(SMARTSHEET,'/2.0/sheets/'+sheet,{'page':page,'pageSize':100})
@@ -136,29 +164,44 @@ def read_smart(http,config,account):
                 titles[ident]=text(column.get('title') or ident,300)
                 if column.get('primary') is True:primary.append(ident)
             if len(primary)!=1:raise ReadError('Smartsheet did not identify one primary column.')
+            completion_column = archive_column(titles,requested_column) if sheet == archive_id else None
+            if sheet == archive_id:
+                archive = {'sheet_id':sheet,'name':text(data.get('name') or sheet,300),
+                           'completion_date_column':titles.get(completion_column),'requested_date_column':requested_column,
+                           'row_count':total}
             for row in values:
                 ident=str(row.get('id',''));cells=row.get('cells')
                 if not ident.isdigit() or ident in seen or not isinstance(cells,list):raise ReadError('Smartsheet repeated or returned an invalid row.')
                 seen.add(ident);count+=1;parts=[];heading='';cell_ids=set()
+                completed_on = None
+                outcome = ''
                 for cell in cells:
                     column=str(cell.get('columnId',''))
                     if column not in titles or column in cell_ids:raise ReadError('Smartsheet returned inconsistent row cells.')
+                    if column == completion_column:
+                        completed_on = archive_date(cell.get('value'))
                     cell_ids.add(column);value=cell.get('displayValue',cell.get('value',''))
                     if value is None:value=''
                     if isinstance(value,(dict,list)):value='[Structured value omitted]'
                     value=text(str(value),2000)
                     if column==primary[0]:heading=value
+                    if sheet == archive_id and value and titles[column].strip().casefold() in {
+                            'completion notes','resolution','outcome','notes'} and not outcome:
+                        outcome = value
                     if value:parts.append(titles[column]+': '+value)
                 raw='\n'.join(parts)
                 result.append({'id':'smartsheet:'+sheet+':'+ident,'kind':'sheet_row','title':heading[:300] or 'Row '+str(row.get('rowNumber') or ident),
                     'notes':raw[:20000],'location':text(data.get('name') or sheet,300),'source':'smartsheet','content_truncated':len(raw)>20000,
-                    'provider_ids':{'sheet_id':sheet,'row_id':ident,'parent_row_id':str(row['parentId']) if row.get('parentId') else None},'sheet_version':version})
+                    'provider_ids':{'sheet_id':sheet,'row_id':ident,'parent_row_id':str(row['parentId']) if row.get('parentId') else None},'sheet_version':version,
+                    **({'archive_completed_on':completed_on,'archive_notes':outcome} if sheet == archive_id else {})})
             if count==total:break
             if not values or count>total:raise ReadError('Smartsheet returned partial or inconsistent rows.')
         else:raise ReadError('Smartsheet page limit reached. Select a smaller sheet.',413)
         check=http.get(SMARTSHEET,'/2.0/sheets/'+sheet,{'page':1,'pageSize':1})
         if check.get('version')!=version or check.get('totalRowCount')!=total:raise ReadError('The sheet changed before the read completed. Refresh again.',409)
-    return finish(result,{'account':account,'resources':config['resources'],'notice':'Selected Smartsheet rows with primary-column titles and readable cell excerpts. No row/status/checkbox changes, attachments or comments are requested. Per-sheet versions are checked; separate sheets are not one atomic snapshot. TaskDock remains authoritative for consolidated tasks.'})
+    return finish(result,{'account':account,'resources':config['resources'],
+        **({'completion_archive':archive} if archive else {}),
+        'notice':'Selected Smartsheet rows with primary-column titles and readable cell excerpts. No row/status/checkbox changes, attachments or comments are requested. Per-sheet versions are checked; separate sheets are not one atomic snapshot. TaskDock remains authoritative for consolidated tasks.'})
 
 
 def discover_microsoft(http):

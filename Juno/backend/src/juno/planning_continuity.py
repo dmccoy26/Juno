@@ -3,6 +3,7 @@ from datetime import date,datetime,timedelta
 from zoneinfo import ZoneInfo
 from hashlib import sha256
 import json
+import re
 from uuid import UUID
 from fastapi import Depends,HTTPException,Query
 from pydantic import AwareDatetime,Field
@@ -88,6 +89,7 @@ class MeetingPrepare(Strict):
     previous_confirmed:bool=False
     taskdock_id:str=Field(min_length=1,max_length=36)
     beacon_id:str=Field(min_length=1,max_length=36)
+    archive_refresh_failed:bool=False
 
 
 def meeting_diaries(session,owner,start,end):
@@ -104,8 +106,10 @@ def weekly_basis(session,owner,day,window=None):
     planning=session.get(PlanningState,owner)
     status=session.get(TaskDockState,owner)
     from .operations import source_basis
+    from .completion_archive import archive_basis
     operational_basis=source_basis(session,owner)
-    return {**({'meeting_window':window} if window else {}),'operations_basis':operational_basis,'diaries':[{'id':r.id,'revision':r.revision,'day':str(r.local_date)} for r in diaries],
+    archive = archive_basis(session, owner)
+    return {**({'meeting_window':window} if window else {}),**({'completion_archive':archive} if archive else {}),'operations_basis':operational_basis,'diaries':[{'id':r.id,'revision':r.revision,'day':str(r.local_date)} for r in diaries],
             'snapshot_id':snapshot.id if snapshot else None,'workspace_id':snapshot.info.get('workspace_id') if snapshot else None,
             'taskdock_saved_at':snapshot.fetched_at.isoformat() if snapshot else None,'planning_revision':planning.revision if planning else 0,'taskdock_uncertain':not snapshot or bool(status and status.error) or (now()-snapshot.fetched_at).total_seconds()>86400}
 
@@ -121,10 +125,39 @@ def dean_view(session,owner,day):
             'sources_changed':bool(row and normalized_basis(row.basis)!=basis),'updated_at':row.updated_at if row else None,
             'notice':'Saved reviewed writing, not a live report. Changes to evidence do not overwrite this text. Nothing is sent automatically.'}
 
-def meeting_text(session,owner,previous,cutoff,meeting,td,beacon,beacon_stale,previous_confirmed):
+def dean_check_in_lines(row, *, character_limit=None):
+    from .companion import LABELS
+
+    lines = [f'### {row.local_date:%a, %b %d}']
+    category = ''
+    used = 0
+    omitted = 0
+    for raw in row.diary_text.splitlines():
+        item = raw.strip()
+        if not item:
+            continue
+        if item in LABELS.values():
+            category = item
+            continue
+        item = re.sub(r'^(?:[•*-]|[0-9]{1,3}[.)])\s+', '', item)
+        entry = f'• {category} — {item}' if category else f'• {item}'
+        if character_limit is not None and used + len(entry) + 1 > character_limit:
+            omitted += 1
+            continue
+        lines.append(entry)
+        used += len(entry) + 1
+    if omitted:
+        lines.append(f'{omitted} more in the saved check-in.')
+    return lines
+
+
+def meeting_text(session,owner,previous,cutoff,meeting,td,beacon,beacon_stale,previous_confirmed,archive_refresh_failed=False):
     from .planning import stamp
     from .taskdock_planning import provided,request_overview
     from .operations import briefing
+    from .dean_follow_up import briefing_lines
+    from .completion_archive import report_lines
+    from .chairs_routing import recipient
     def dated(value):
         try:
             parsed=stamp(value)
@@ -145,9 +178,24 @@ def meeting_text(session,owner,previous,cutoff,meeting,td,beacon,beacon_stale,pr
            f'From {show(previous)} through {show(cutoff)} Central.']
     lines.append('Start: last meeting as confirmed in Juno.' if previous_confirmed else
                  'Start: previous scheduled Thursday meeting. If it was skipped or moved, review the reporting window.')
+    follow_ups = briefing_lines(session, owner, cutoff.date())
+    if follow_ups:
+        lines.extend(['', 'Open requests from the Dean', *follow_ups])
+    dean_items = []
+    for row in beacon.items:
+        title, location = row.get('item') or '', row.get('location') or ''
+        if row.get('issue_state') != 'resolved' and recipient(title, room=location) == 'dean':
+            dean_items.append(f"• {brief(title,140)} — {brief(row.get('problem'))}")
+    if dean_items:
+        lines.extend(['', 'Items for the Dean', *dict.fromkeys(dean_items)])
     diaries=meeting_diaries(session,owner,previous.date(),cutoff.date())
-    notes=[f'{r.local_date}: '+brief(r.diary_text,900) for r in reversed(diaries)]
-    section(lines,'Confirmed check-ins (day-level records)',notes,18,'No confirmed check-ins in this window.')
+    lines.extend(['','Confirmed check-ins (day-level records)'])
+    for row in reversed(diaries[-18:]):
+        lines.extend(dean_check_in_lines(row, character_limit=900))
+    if not diaries:
+        lines.append('No confirmed check-ins in this window.')
+    if len(diaries)>18:
+        lines.append(f'{len(diaries)-18} more check-ins in the source records.')
     if any(r.local_date==previous.date() for r in diaries):
         lines.append('The prior meeting day’s check-in may include work from earlier that day.')
     completed=[];updates=[];open_items=[]
@@ -181,6 +229,9 @@ def meeting_text(session,owner,previous,cutoff,meeting,td,beacon,beacon_stale,pr
                 (f'; blocker: {blocker}' if blocker else '')+(f'; latest note (date unverified): {latest}' if latest else '')))
     section(lines,'TaskDock: completions recorded since the meeting',
             [entry for _,entry in sorted(completed,reverse=True)],24,'No shared completion timestamps in this window.')
+    lines.extend(report_lines(session, owner, previous, cutoff))
+    if archive_refresh_failed:
+        lines.append('Smartsheet archive refresh did not complete. Review archive coverage before sharing.')
     section(lines,'TaskDock: dated progress notes',
             list(dict.fromkeys(entry for _,entry in sorted(updates,reverse=True))),20,'No dated notes available from the shared records.')
     section(lines,'TaskDock: current open work and blockers',
@@ -285,7 +336,7 @@ def install(app,db,device,lock_owner):
             raise HTTPException(409,'Beacon did not supply a current copy. Refresh it again before preparing this draft.')
         window={'previous':previous.isoformat(),'meeting':meeting.isoformat(),'prepared':cutoff.isoformat(),'previous_confirmed':value.previous_confirmed}
         basis=weekly_basis(session,actor.owner_id,day,window)
-        content=meeting_text(session,actor.owner_id,previous,cutoff,meeting,td,beacon,beacon_stale,value.previous_confirmed)
+        content=meeting_text(session,actor.owner_id,previous,cutoff,meeting,td,beacon,beacon_stale,value.previous_confirmed,value.archive_refresh_failed)
         session.add(DeanDraft(owner_id=actor.owner_id,week_start=day,text=content,basis=basis))
         session.commit()
         return {'created':True,'week_start':str(day)}
@@ -304,8 +355,13 @@ def install(app,db,device,lock_owner):
         row=session.scalar(select(DeanDraft).where(DeanDraft.owner_id==actor.owner_id,DeanDraft.week_start==day))
         if (row.revision if row else 0)!=value.expected_revision:raise HTTPException(409,'This Dean draft changed on another device. Reload and compare; your writing has not been replaced.')
         if row:
-            if value.basis!=normalized_basis(row.basis):raise HTTPException(409,'The saved source basis changed. Reload and compare the draft.')
-            row.text=value.text;row.basis=normalized_basis(row.basis);row.revision+=1;row.updated_at=now()
+            saved_basis = normalized_basis(row.basis)
+            supplied_basis = value.basis
+            # Older paired clients omit this field when editing an existing revision.
+            if 'completion_archive' in saved_basis and 'completion_archive' not in supplied_basis:
+                supplied_basis = {**supplied_basis, 'completion_archive': saved_basis['completion_archive']}
+            if supplied_basis!=saved_basis:raise HTTPException(409,'The saved source basis changed. Reload and compare the draft.')
+            row.text=value.text;row.basis=saved_basis;row.revision+=1;row.updated_at=now()
         else:
             current_basis=weekly_basis(session,actor.owner_id,day)
             if value.basis!=current_basis:raise HTTPException(409,'Evidence changed after preparation. Prepare a fresh draft and compare before saving.')

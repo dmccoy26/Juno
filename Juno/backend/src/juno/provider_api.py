@@ -18,6 +18,8 @@ class Strict(BaseModel):model_config=ConfigDict(extra='forbid')
 class Credential(Strict):token:SecretStr
 class Selection(Strict):
     resources:list[str]=Field(default_factory=list,max_length=10)
+    completion_archive_id:str=Field(default='',pattern=r'^(?:[1-9][0-9]{0,19})?$')
+    completion_date_column:str=Field(default='',max_length=300)
     query:str=Field(default='in:inbox is:unread',max_length=500)
     start:str=Field(default='',max_length=10)
     end:str=Field(default='',max_length=10)

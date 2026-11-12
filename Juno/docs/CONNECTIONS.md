@@ -60,6 +60,8 @@ Typical scopes depend on conversation type: `channels:read`/`channels:history`, 
 
 ### Smartsheet setup
 
+To use a completed-task archive in Dean briefings, open **Connections → Direct programs → Smartsheet** and enter its numeric ID under **Completed-task archive**. Review the account and selection, then refresh. Juno looks for a single standard completion-date heading. If your sheet uses a different heading, enter the exact column name and refresh. Rows without a usable completion date remain in Evidence and are excluded from the dated report. The scheduled Dean preparation refreshes the reviewed archive on the work Mac and labels a saved copy when it may be out of date.
+
 Enter your approved API token, discover account/sheet labels, and select up to ten sheets or enter exact numeric sheet IDs. Juno only performs GET `/2.0/users/me`, `/2.0/sheets` and `/2.0/sheets/{id}`. No task-column mappings are required for this evidence reader; it uses the sheet's primary column and readable cell labels. A sheet changing between pages rejects the new copy. Use a smaller sheet if the row/request bound is exceeded. [Official sheet API](https://developers.smartsheet.com/api/smartsheet/openapi/sheets/getsheet).
 
 ### Microsoft setup

@@ -99,6 +99,35 @@ class ProviderReaderTests(unittest.TestCase):
         with self.assertRaises(ReadError):read('smartsheet',TOKEN,config('smartsheet'),fixture)
         fixture=ProviderFixture();fixture.unsafe_next=True
         with self.assertRaises(ReadError):read('outlook_calendar',TOKEN,config('outlook_calendar'),fixture)
+    def test_archive_uses_only_completion_dates_from_the_selected_sheet(self):
+        fixture = ProviderFixture()
+
+        def transport(method, url, headers, body):
+            data = fixture(method, url, headers, body)
+            if 'rows' in data:
+                data['columns'].extend([
+                    {'id': 2003, 'title': 'Closed Date'},
+                    {'id': 2004, 'title': 'Modified'},
+                    {'id': 2005, 'title': 'Resolution'},
+                ])
+                data['rows'][0]['cells'].extend([
+                    {'columnId': 2003, 'value': '2026-10-30', 'displayValue': '10/30/26'},
+                    {'columnId': 2004, 'value': '2026-11-12'},
+                    {'columnId': 2005, 'value': 'Replaced the fictional cable.'},
+                ])
+            return data
+
+        ordinary = read('smartsheet', TOKEN, config('smartsheet'), transport)
+        self.assertNotIn('archive_completed_on', ordinary['items'][0])
+        setup = config('smartsheet') | {'completion_archive_id': '1001'}
+        archive = read('smartsheet', TOKEN, setup, transport)
+        self.assertEqual(archive['items'][0]['archive_completed_on'], '2026-10-30')
+        self.assertEqual(archive['items'][0]['archive_notes'], 'Replaced the fictional cable.')
+        self.assertEqual(archive['details']['completion_archive']['completion_date_column'], 'Closed Date')
+        with self.assertRaises(ReadError):
+            read('smartsheet', TOKEN, setup | {'completion_date_column': 'Missing column'}, transport)
+        with self.assertRaises(ReadError):
+            read('smartsheet', TOKEN, setup | {'completion_archive_id': '1002'}, transport)
     def test_fixed_destinations_deny_writes_token_leaks_and_arbitrary_urls(self):
         for method,url in [('POST','https://gmail.googleapis.com/gmail/v1/users/me/messages/send'),('GET','https://example.invalid/'),('GET','http://slack.com/api/auth.test'),('GET','https://token@slack.com/api/auth.test'),('GET','https://slack.com/api/chat.postMessage'),('POST','https://example.invalid/token')]:
             with self.assertRaises(ReadError):validate_request(method,url)

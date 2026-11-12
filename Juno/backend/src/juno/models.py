@@ -293,6 +293,26 @@ class DeanDraftOperation(Base):
     receipt: Mapped[dict] = mapped_column(JSONB)
 
 
+class DeanFollowUp(Base):
+    __tablename__ = 'dean_follow_ups'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    meeting_day: Mapped[date] = mapped_column(Date, primary_key=True)
+    notes: Mapped[str] = mapped_column(Text)
+    items: Mapped[list] = mapped_column(JSONB)
+    revision: Mapped[int] = mapped_column(Integer)
+
+
+class ChairsDraft(Base):
+    __tablename__ = 'chairs_drafts'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    week_start: Mapped[date] = mapped_column(Date, primary_key=True)
+    subject: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text)
+    coverage: Mapped[list] = mapped_column(JSONB)
+    emails: Mapped[dict] = mapped_column(JSONB, default=dict, server_default='{}')
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+
+
 class OperationalState(Base):
     """Reviewed source references and proposal feedback; never owning-app records."""
     __tablename__ = 'operational_state'

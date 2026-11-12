@@ -18,8 +18,17 @@ struct BusyDay: Decodable, Identifiable {
     let date: String; let busy_minutes: Double; let all_day_event: Bool
     var id: String { date }
 }
+struct CompletionArchiveDetails: Decodable {
+    let sheet_id: String
+    let name: String
+    let completion_date_column: String?
+    let requested_date_column: String?
+}
 struct EvidenceDetails: Decodable {
     let notice: String?; let start: String?; let end: String?; let timezone: String?; let generated_at: String?; let issue_snapshot_count: Int?; let active: Bool?; let tombstone: Bool?; let route: String?; let busy_days: [BusyDay]?
+    let completion_archive: CompletionArchiveDetails?
+    let resources: [String]?
+    let account: ProviderAccount?
 }
 struct EvidenceSnapshot: Decodable, Identifiable {
     let id: String; let kind: String; let origin: String; let count: Int; let items: [EvidenceRow]
