@@ -1,6 +1,42 @@
 # Build status
 
-Updated: November 12, 2026.
+Updated: November 13, 2026.
+
+## In development — Mission 15 native Mac design
+
+Preview.43 is installed and running on the work Mac. It reports missing or disconnected Smartsheet archive configuration as a refresh coverage gap in automated Dean and chair reports. The native refresh cases and Friday scheduler sequence passed with fixtures. The Apple Silicon package passed all 15 installer check groups, including 187 bundled tests. The work Mac retained its saved records and paired devices and restarted the sync listener. The package and checksum are in `~/Downloads/Juno-0.1.0-preview.43/`.
+
+Preview.42 is installed and connected on the work Mac. It uses Qwen3.5-9B GGUF through LM Studio with reasoning disabled for private chat and Meeting mode. New chair drafts attribute Smartsheet only when a recipient’s draft includes saved archive records. The work-Mac upgrade preserved saved records and paired devices. All 282 backend tests and 15 installer check groups passed. See the [preview.42 verification and open items](missions/2026-11-12-15-native-design-review.md#preview42-verification).
+
+Preview.40 is installed and connected on the work Mac. Preview.39 repaired the PostgreSQL chat message counter and refined the private chat voice. Preview.40 limits the work context sent to LM Studio, preserves a compact planning summary and retries once on a reported context overflow. The original greeting completed in the installed app on retry. LM Studio also returned understated private replies and a professional meeting reply in fictional tests. The backup passed its restore check, and the saved workspace and Air pairing matched the pre-upgrade baseline. All 33 focused chat and planning tests and 15 installer check groups passed, including 187 bundled tests.
+
+Preview.38 is installed and connected on the work Mac. It adds Juno’s private chat voice and leaves earlier private replies out of the Meeting mode prompt. All 15 installer check groups passed, including 187 bundled tests. The encrypted backup passed its restore check. Saved work records, the Air’s pairing credential, and the work Mac’s HTTPS identity matched the pre-upgrade baseline. In an isolated conversation, LM Studio completed both test turns. The private reply was playful but announced the flirtation. The meeting reply used professional language and kept the requested verification step.
+
+Preview.37 is installed and running on the work Mac. Reports shows how each new chair draft was written and puts Smartsheet Modified dates in review notes. The installed app opened the existing Dean briefing and all three chair drafts. All workspace record fingerprints matched the pre-upgrade baseline. The Air credential and host certificate, key and settings matched, and the HTTPS listener responded. The encrypted backup passed its restore check. The final package passed 15 installer check groups including 187 bundled tests. All 38 focused chair and Dean tests passed. [Mission 15 keyboard walkthrough](missions/2026-11-12-15-native-design-review.md#november-13-keyboard-walkthrough)
+
+Preview.36 previously passed all 15 installer check groups, including 187 bundled tests. The encrypted pre-upgrade backup passed its restore check. The saved workspace records matched the pre-upgrade baseline. The MacBook Air device remained enrolled and the HTTPS host restarted with the same certificate and settings.
+
+After the November 13 restart, the installed host was reachable and the existing Dean and chair drafts and Air pairing matched the pre-upgrade baseline. LM Studio composed all three new Friday drafts in an isolated workspace using refreshed TaskDock, Beacon and Smartsheet snapshots. Each used the expected greeting and signature, and none mentioned Holy Cross 203 or 326. The live-source test invoked the draft preparation endpoint directly. The native Friday scheduler was verified separately with synthetic data. Smartsheet had no configured completion-date column.
+
+The Friday scheduler generated three chair emails for review in two empty preview.35 lab workspaces. Both Holy Cross fixtures appeared in the separately prepared Dean draft. A source fix also excludes Dean items from the older combined chair draft. [Fresh Friday results](missions/2026-11-12-15-native-design-review.md#fresh-friday-chair-drafts)
+
+The three hands-on preview.35 checks passed on the M5 Air. Juno delivered the test notification after the user enabled permission in macOS, refreshed its offline copy with no queued edits, and announced “Offline copy synced” through VoiceOver. The follow-up source separates notification permission from the weekday reminder toggle and explains what to do when macOS leaves permission undecided. The broader Mission 15 acceptance checklist is still in progress.
+
+Preview.35 puts reconnect feedback beside the sync button, announces the result of a manual sync for accessibility, and reports when pairing is needed. Opening Daily check-in or dismissing its reminder clears the matching macOS notification. The isolated sync walkthrough and all 15 installer checks passed, including 187 bundled tests and upgrade data preservation. The package and checksum are in `~/Downloads/Juno-0.1.0-preview.35/`. [Mission 15 acceptance results](missions/2026-11-12-15-native-design-review.md#preview35-sync-and-reminder-acceptance)
+
+Preview.34 opens confirmed diaries in a reading view, adds an explicit correction workflow, and shows macOS notification permission and test controls in reminder settings. The native walkthrough, 63 focused tests, and all 15 installer checks passed. The package and checksum are in `~/Downloads/Juno-0.1.0-preview.34/`. [Mission 15 walkthrough](missions/2026-11-12-15-native-design-review.md#preview34-diary-review-and-notification-setup)
+
+Preview.33 opens chair drafts directly by department, refreshes the subject list after edits, and returns keyboard focus to the next daily check-in answer. The native walkthrough, 60 focused tests, and all 15 installer checks passed. The package and checksum are in `~/Downloads/Juno-0.1.0-preview.33/`. [Mission 15 walkthrough](missions/2026-11-12-15-native-design-review.md#preview33-report-navigation-and-check-in-flow)
+
+The native test build adds a Reports destination, a Plan issue inspector, document preview for chair emails, check-in progress, and a responsive room/person comparison. Synthetic native checks verified navigation, draft save and cancel, restart recovery, and the wide and narrow schedule layouts. The 45 focused PostgreSQL integration tests passed. Preview.29 remains the installed release. [Mission progress and remaining acceptance checks](missions/2026-11-12-15-native-design-review.md#november-12-implementation-and-verification)
+
+The preview.30 candidate adds source selection and search in Evidence, clearer laptop sync status, standard Edit and Window menu changes, and keyboard focus through worker report review and receipts. The worker browser walkthrough, 21 worker tests and a native offline outage and recovery test passed. The M5 Air confirmed a fresh copy on preview.29 at 7:40 PM Central. Physical acceptance of preview.30 and VoiceOver speech checks are pending.
+
+The preview.30 Apple Silicon installer passed all 15 package verification groups, including 187 bundled tests, restart persistence and an upgrade with a readable backup. The verified installer and SHA-256 checksum are in `~/Downloads/Juno-0.1.0-preview.30/` on the work Mac.
+
+Preview.31 adds a daily recall card, a configurable weekday check-in reminder and source-labeled memory suggestions for saved reports and documented repair outcomes. The reminder and all four suggestion paths passed native fixture checks. Notification Center delivery and acceptance on the M5 Air remain open.
+
+Preview.32 improves Today’s filter navigation and keyboard search, clarifies the TaskDock inspector, and restores Plan loading for saved Dean follow-ups without optional TaskDock links. The native walkthrough, 52 focused integration tests and all 15 installer checks passed, including 187 bundled tests and upgrade data preservation. The package and checksum are in `~/Downloads/Juno-0.1.0-preview.32/`. [Mission 15 walkthrough](missions/2026-11-12-15-native-design-review.md#preview32-today-and-taskdock-walkthrough)
 
 ## Current release — preview.29 weekly department email routing
 

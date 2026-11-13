@@ -169,12 +169,14 @@ def build_plan(session, owner, day, *, horizon_days=7, reserve_override=None):
 
         workspace = snapshot.info.get('workspace_id')
         for _, request in reviewed_requests(session, owner, day):
-            if request['workspace_id'] != workspace or not request['task_id']:
+            task_id = request.get('task_id')
+            if not workspace or request.get('workspace_id') != workspace or not task_id:
                 continue
-            task_facts = facts.setdefault(request['task_id'], {})
+            task_facts = facts.setdefault(task_id, {})
             task_facts['dean'] = True
-            if request['waiting_on'] and not task_facts.get('blocker'):
-                task_facts['blocker'] = 'Waiting on ' + request['waiting_on']
+            waiting_on = request.get('waiting_on')
+            if waiting_on and not task_facts.get('blocker'):
+                task_facts['blocker'] = 'Waiting on ' + waiting_on
     rows = []
     from .operations import briefing as operational_briefing
     operations = operational_briefing(session, owner)

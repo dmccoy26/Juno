@@ -129,7 +129,9 @@ extension JunoStore {
             from: await localRequest("/v1/providers/state"))
         guard let source = sources.items.first(where: { $0.kind == "smartsheet" }),
               source.details.active != false, let archive = source.details.completion_archive,
-              let account = source.details.account, let resources = source.details.resources else { return }
+              let account = source.details.account, let resources = source.details.resources else {
+            throw APIProblem(message: "Connect and review the Smartsheet completion archive in Connections.", status: 0)
+        }
         guard let saved = try await ProviderVault().readAsync(.smartsheet),
               saved.accountID == account.id, !saved.accessToken.isEmpty,
               (saved.retryAt ?? .distantPast) <= Date() else {
@@ -370,14 +372,21 @@ struct DirectProviderWorkspace: View {
             Text("Select resources (up to ten)").font(.headline)
             if !resources.isEmpty {
                 TextField("Filter discovered resources",text:$resourceFilter)
-                ForEach(Array(resources.filter { resourceFilter.isEmpty || $0.label.localizedCaseInsensitiveContains(resourceFilter) || $0.id.localizedCaseInsensitiveContains(resourceFilter) }.prefix(100))) { resource in
+                let matches = resources.filter { resourceFilter.isEmpty || $0.label.localizedCaseInsensitiveContains(resourceFilter) || $0.id.localizedCaseInsensitiveContains(resourceFilter) }
+                ScrollView {
+                  LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(matches) { resource in
                     Toggle(resource.label,isOn:Binding(get:{ saved.resources.contains(resource.id) },set:{ yes in
                         if yes { if !saved.resources.contains(resource.id),saved.resources.count<10 { saved.resources.append(resource.id);saved.resourceLabels[resource.id] = resource.label } }
                         else { saved.resources.removeAll { $0 == resource.id } }
                         reviewed = false
                     })).toggleStyle(.checkbox)
+                    }
+                    if matches.isEmpty { Text("No resources match your search.").foregroundStyle(.secondary) }
+                  }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
-                if resources.count>100 { Text("Filter to find resources beyond the first 100 matches.").font(.caption) }
+                .frame(height: 170)
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
             }
             if !saved.resources.isEmpty { Text("Selected: " + saved.resources.map { saved.resourceLabels[$0] ?? $0 }.joined(separator:", ")).font(.caption).textSelection(.enabled) }
             DisclosureGroup("Enter exact resource IDs instead") {
@@ -408,12 +417,10 @@ struct DirectProviderWorkspace: View {
                     .font(.caption).textSelection(.enabled)
             }
         }
-        Toggle("I reviewed this account, resource selection and coverage.",isOn:$reviewed).toggleStyle(.checkbox).disabled(saved.accountID.isEmpty || busy || waiting)
-        Button("Refresh read-only copy") { refresh() }.disabled(busy || waiting || !reviewed || cooldown)
-        if let retry = saved.retryAt,retry > Date() { Text("Provider requested a pause. Retry after " + retry.formatted()).font(.caption).foregroundStyle(.orange) }
     }
     var body:some View {
-        ScrollView {
+        VStack(spacing: 0) {
+          ScrollView {
             VStack(alignment:.leading,spacing:15) {
                 Text("Direct program connections").font(.title2.bold())
                 Text("Credentials stay in this Mac's Keychain. Juno's saved evidence is separate from TaskDock's task records. Sign-in and reads start only when you choose them.").foregroundStyle(.secondary)
@@ -430,6 +437,22 @@ struct DirectProviderWorkspace: View {
                 if let notice { Text(notice).foregroundStyle(.secondary).textSelection(.enabled) }
                 Button("Disconnect and forget this Mac's credential…",role:.destructive) { forget = true }.disabled(busy || waiting)
             }.padding(28).frame(maxWidth:.infinity,alignment:.leading)
+          }
+          Divider()
+          VStack(alignment: .leading, spacing: 7) {
+              HStack {
+                  Toggle("I reviewed the account, selection and coverage", isOn: $reviewed)
+                      .toggleStyle(.checkbox).disabled(saved.accountID.isEmpty || busy || waiting)
+                  Spacer()
+                  Button("Refresh read-only copy") { refresh() }
+                      .buttonStyle(.borderedProminent).disabled(busy || waiting || !reviewed || cooldown)
+              }
+              if let retry = saved.retryAt, retry > Date() {
+                  Text("Retry after " + retry.formatted()).font(.caption).foregroundStyle(.secondary)
+              } else if saved.accountID.isEmpty {
+                  Text("Discover your account to review its resources.").font(.caption).foregroundStyle(.secondary)
+              }
+          }.padding(.horizontal, 20).padding(.vertical, 12)
         }.task { await loadSaved();await loadState() }
         .onChange(of:saved.retryAt) { _ in scheduleCooldown() }
         .onChange(of:saved.start) { _ in reviewed = false }

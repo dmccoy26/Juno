@@ -55,7 +55,8 @@ def main():
     app=root/'Juno Lab.app';shutil.copytree(args.app.resolve(),app,symlinks=True)
     info_path=app/'Contents/Info.plist';info=plistlib.loads(info_path.read_bytes())
     assert info.get('JunoPackaged') is not True,'Lab requires a development app.'
-    info.update(CFBundleIdentifier='com.dmccoy.juno.lab.'+args.name,CFBundleName='Juno Lab',CFBundleDisplayName='Juno Lab',JunoTestDataRoot=str(state),JunoReleaseVersion='0.1.0-preview.12-lab')
+    release = info.get('JunoReleaseVersion', info.get('CFBundleShortVersionString', 'unknown'))
+    info.update(CFBundleIdentifier='com.dmccoy.juno.lab.'+args.name,CFBundleName='Juno Lab',CFBundleDisplayName='Juno Lab',JunoTestDataRoot=str(state),JunoReleaseVersion=f'{release}-lab')
     info_path.write_bytes(plistlib.dumps(info))
     subprocess.run(['codesign','--force','--deep','--sign','-',str(app)],check=True)
     print('Isolated native lab: '+str(app))

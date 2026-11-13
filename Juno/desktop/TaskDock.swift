@@ -128,6 +128,7 @@ struct TaskDockWorkspace: View {
         }
     }
     var tasks: [TaskDockTask] { (state?.snapshot?.items ?? []).filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) } }
+    private var visibleTask: TaskDockTask? { tasks.first { $0.id == selected } }
     func load() async {
         do {
             let loaded = try await store.decode(TaskDockState.self, "/v1/taskdock")
@@ -232,14 +233,26 @@ struct TaskDockWorkspace: View {
                                 VStack(alignment: .leading) { Text(task.title); Text(task.text("status_name") ?? task.text("behavior") ?? "Status unknown").font(.caption).foregroundStyle(.secondary) }.tag(task.id)
                             }
                         }
+                        if tasks.isEmpty {
+                            Text(search.isEmpty ? "No tasks in this saved copy." : "No tasks match your search.")
+                                .font(.callout).foregroundStyle(.secondary)
+                            if !search.isEmpty { Button("Clear search") { search = ""; searchFocused = true } }
+                        }
                     }.frame(minWidth: 240, idealWidth: 300)
                     ScrollView {
                         VStack(alignment: .leading, spacing: 12) {
-                            if let task = snapshot.items.first(where: { $0.id == selected }) {
-                                Text(task.title).font(.headline)
-                                Text("Recorded TaskDock fields · unknown values stay unknown · source content is displayed as plain text").font(.caption).foregroundStyle(.secondary)
-                                Button("Request worker update…") {store.workerTaskID=task.id;store.section="Workers"}.disabled(store.sharedProfile != nil)
-                                Button("Plan this task in Juno") { store.planningTaskID = task.id; store.section = "Plan" }.disabled(["completed","archived","done"].contains(task.text("behavior") ?? ""))
+                            if let task = visibleTask {
+                                Text(task.title).font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                                if taskIsUnfinished(task) {
+                                    ViewThatFits(in: .horizontal) {
+                                        HStack { taskActions(task) }
+                                        VStack(alignment: .leading) { taskActions(task) }
+                                    }
+                                } else if let update = task.text("latest_update"),
+                                   !update.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    MemorySuggestionButton(store: store, source: "TaskDock · " + snapshot.info.workspace_id + " · " + task.id,
+                                        text: task.title + "\n\nLatest saved update: " + update)
+                                }
                                 TaskDockDetails(task: task, info: snapshot.info)
                                 HStack {
                                     if snapshot.info.capabilities["read_updates"] == true { Button("Read updates") { readHistory(task: task, kind: "updates") }.disabled(busy) }
@@ -269,6 +282,14 @@ struct TaskDockWorkspace: View {
                 Task { defer { busy = false };do { try await credentialWork { try TaskDockKeychain.forget(address) };token = "";reviewing = nil;notice = "Saved token removed. TaskDock records and Juno’s saved copies are unchanged." } catch { notice = (error as? APIProblem)?.message ?? "The token could not be removed." } }
             }
         } message: { Text("Juno will need a dedicated token to refresh again. Saved task copies remain. This does not revoke access in TaskDock.") }.padding(22).onChange(of:store.section) { key in if key == "TaskDock",!busy { Task { await load() } } }.task { await load();if state?.snapshot == nil { settingsExpanded = true } }.onChange(of:reviewing?.workspace_id) { id in if id != nil { settingsExpanded = true } }.onChange(of: selected) { _ in Task { await loadSavedHistory() } }
+    }
+
+    @ViewBuilder private func taskActions(_ task: TaskDockTask) -> some View {
+        Button("Plan this task in Juno") { store.planningTaskID = task.id; store.section = "Plan" }
+            .buttonStyle(.borderedProminent)
+        if store.sharedProfile == nil {
+            Button("Request worker update…") { store.workerTaskID = task.id; store.section = "Workers" }
+        }
     }
 }
 

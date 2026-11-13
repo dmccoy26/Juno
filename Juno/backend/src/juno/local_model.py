@@ -11,6 +11,10 @@ class ModelError(RuntimeError):
     pass
 
 
+class ModelContextError(ModelError):
+    pass
+
+
 def validate_origin(value):
     p = urlsplit(value)
     if (p.scheme != 'http' or p.hostname not in ('127.0.0.1', 'localhost', '::1')
@@ -39,7 +43,22 @@ class LocalModel:
                 raw = response.read(1_000_001)
                 if len(raw)>1_000_000: raise ModelError('The model response was too large.')
                 return json.loads(raw)
-        except (HTTPError, URLError, OSError, ValueError, UnicodeError):
+        except HTTPError as error:
+            if error.code in (400, 413, 422):
+                try:
+                    detail = json.loads(error.read(8192)).get('error')
+                except (ValueError, OSError, AttributeError):
+                    detail = None
+                if isinstance(detail, dict) and (
+                    detail.get('type') == 'exceed_context_size_error'
+                    or detail.get('code') == 'context_length_exceeded'
+                    or 'exceeds the available context size' in str(detail.get('message', '')).lower()
+                ):
+                    raise ModelContextError(
+                        'This message exceeds the loaded model’s context window. Shorten it or load the model with a larger context in LM Studio.'
+                    ) from None
+            raise ModelError('LM Studio rejected the request. Check that the selected model is loaded.') from None
+        except (URLError, OSError, ValueError, UnicodeError):
             raise ModelError('Could not reach the local model. Check that its server is running and the selected model is available.') from None
 
     def models(self):
@@ -67,8 +86,11 @@ class LocalModel:
                          and isinstance(item.get('content'), str)).strip()
 
     def complete(self, messages, model):
-        value = self.request('/chat/completions', {'model': model, 'messages': messages,
-                                                  'temperature': .3, 'max_tokens': 4096, 'stream': False})
+        body = {'model': model, 'messages': messages,
+                'temperature': .3, 'max_tokens': 4096, 'stream': False}
+        if 'qwen3' in model.casefold():
+            body['reasoning_effort'] = 'none'
+        value = self.request('/chat/completions', body)
         try:
             if value['choices'][0].get('finish_reason') == 'length':
                 raise ValueError('Incomplete final answer')

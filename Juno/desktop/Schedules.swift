@@ -107,10 +107,11 @@ struct SchedulesWorkspace: View {
         } catch { issue = (error as? APIProblem)?.message ?? "Could not save. Your draft remains here." }
     }
     var body: some View {
+        GeometryReader { geometry in
         ScrollView {
             VStack(alignment:.leading,spacing:16) {
-                Text("Schedules & people").font(.title2.bold())
-                Text("Recurring schedules, semester dates and daily exceptions. Building access excludes classes; staff shifts do not establish capability. All schedule times use the stated timezone.").foregroundStyle(.secondary)
+                Text("Schedules & people").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                Text("Compare room access, staff shifts and possible work times.").foregroundStyle(.secondary)
                 HStack {
                     Button("Reload saved schedules") { Task { await load() } }.disabled(dirty || busy)
                     Button("Save schedules") { Task { await save() } }.disabled(!dirty || busy || store.offline)
@@ -135,13 +136,19 @@ struct SchedulesWorkspace: View {
                                 Button("Today") { comparisonDate = Date() }
                                 Button("Next day") { moveComparisonDay(1) }
                             }
-                            ScrollView(.horizontal) { HStack(alignment:.top,spacing:12) {
-                                ScheduleWeekView(record:record,byRoom:true,comparisonDate:comparisonDate,selectionBinding:$comparisonRoom).frame(width:245,alignment:.leading)
-                                Divider()
-                                ScheduleWeekView(record:record,byRoom:false,comparisonDate:comparisonDate,selectionBinding:$comparisonPerson).frame(width:245,alignment:.leading)
-                                Divider()
-                                RoomPersonWindows(store:store,day:comparisonDate,room:comparisonRoom,person:comparisonPerson,revision:record.revision,dirty:dirty).frame(width:260,alignment:.leading)
-                            } }
+                            Text(comparisonDate.formatted(Date.FormatStyle(date: .complete, time: .omitted, timeZone: TimeZone(identifier: "America/Chicago")!)) + " · Central time")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            let comparisonLayout = geometry.size.width >= 790
+                                ? AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+                                : AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
+                            comparisonLayout {
+                                ScheduleWeekView(record:record,byRoom:true,comparisonDate:comparisonDate,selectionBinding:$comparisonRoom)
+                                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                                ScheduleWeekView(record:record,byRoom:false,comparisonDate:comparisonDate,selectionBinding:$comparisonPerson)
+                                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                                RoomPersonWindows(store:store,day:comparisonDate,room:comparisonRoom,person:comparisonPerson,revision:record.revision,dirty:dirty)
+                                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                            }
                             RoomTaskDockIssues(store:store,room:comparisonRoom,person:comparisonPerson)
                         } else {
                             ScheduleWeekView(record:record, byRoom:scheduleView == "Week by room",selectionBinding:scheduleView == "Week by room" ? $comparisonRoom : $comparisonPerson,weekBinding:$comparisonDate).id(scheduleView)
@@ -187,6 +194,7 @@ struct SchedulesWorkspace: View {
                     }
                 }
             }.padding(24).disabled(busy)
+        }
         }.task { comparisonDate = Date(); await load() }.onChange(of:store.section) { key in if key == "Schedules",!dirty,!ruleEditor,!personEditor,!exceptionEditor { Task { await load() } } }
         .onChange(of:dirty) { value in if value { store.unsavedSections.insert("Schedules") } else { store.unsavedSections.remove("Schedules") } }
         .sheet(isPresented:$ruleEditor) { ruleForm }
@@ -394,41 +402,50 @@ struct ScheduleWeekView: View {
             if comparisonDate == nil {
             DatePicker("Week containing",selection:Binding(get:{weekBinding?.wrappedValue ?? anchor},set:{anchor = $0;weekBinding?.wrappedValue = $0}),displayedComponents:.date).environment(\.timeZone,calendar.timeZone)
             Text(format(week[0],"MMM d") + " – " + format(week[6],"MMM d, yyyy") + " • America/Chicago").font(.headline)
+            }
+            if comparisonDate == nil {
+                Text(byRoom ? "Building access, classes, planning holds and daily exceptions" : "Work hours, planning holds and daily exceptions").font(.caption).foregroundStyle(.secondary)
+            }
+            if let comparisonDate {
+                dayCard(comparisonDate, compact: true)
             } else {
-                Text(format(comparisonDate!,"EEEE MMM d, yyyy") + " • America/Chicago").font(.headline)
+                ScrollView(.horizontal) {
+                    HStack(alignment: .top, spacing: 8) {
+                        ForEach(displayedDates, id: \.self) { date in
+                            dayCard(date, compact: false)
+                        }
+                    }.padding(.bottom, 4)
+                }
             }
             if !byRoom, let p = record.people.first(where: { $0.name == selection }) {
-                Text(p.name + " • " + p.status + " • funded limit " + String(p.weekly_limit_minutes / 60) + "h/week").font(.headline)
+                Text(p.status.capitalized + " · funded limit " + String(p.weekly_limit_minutes / 60) + " hours per week").font(.caption).foregroundStyle(.secondary)
                 if !p.notes.isEmpty { DisclosureGroup("Schedule notes") { Text(p.notes).font(.caption).foregroundStyle(.secondary) } }
                 if p.status != "active" { Text("Availability is unconfirmed; this person is excluded from confirmed capacity.").foregroundStyle(.orange) }
-            }
-            Text(byRoom ? "Blue: building access • Orange: classes (unavailable) • Purple: local holds • Red: daily exceptions" : "Blue: work hours • Purple: local holds • Red: daily exceptions").font(.caption)
-            ScrollView(.horizontal) {
-                HStack(alignment:.top,spacing:8) {
-                    ForEach(displayedDates,id:\.self) { date in
-                        VStack(alignment:.leading,spacing:8) {
-                            Text(format(date,"EEE MMM d")).font(.headline)
-                            let entries = items(date)
-                            if entries.isEmpty { Text("No saved hours or events").font(.caption).foregroundStyle(.secondary) }
-                            ForEach(entries) { item in
-                                VStack(alignment:.leading,spacing:4) {
-                                    Text(item.time).font(.headline).monospacedDigit()
-                                    Text(item.title).font(.subheadline.bold())
-                                    if !item.detail.isEmpty { Text(item.detail).font(.caption) }
-                                }.frame(maxWidth:.infinity,alignment:.leading).padding(8)
-                                    .background(color(item.kind).opacity(0.12)).overlay(alignment:.leading) { Rectangle().fill(color(item.kind)).frame(width:3) }
-                                    .accessibilityElement(children:.combine)
-                            }
-                            Spacer(minLength:0)
-                        }.padding(10).frame(width:comparisonDate == nil ? 170 : nil,alignment:.topLeading).frame(maxWidth:comparisonDate == nil ? nil : .infinity).frame(minHeight:230,alignment:.topLeading)
-                            .background(Color.secondary.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius:8))
-                    }
-                }.padding(.bottom,4)
             }
             if comparisonDate == nil { Text("Saved schedules, not confirmed free time. Use Plan to review task requirements and possible repair windows.").font(.caption).foregroundStyle(.secondary) }
             if let notice = record.reservation_notice, !notice.isEmpty { Text(notice).foregroundStyle(.orange) }
             if choices.isEmpty { Text("Add room schedules in List & edit to start this view.").foregroundStyle(.secondary) }
         }.onAppear { anchor = weekBinding?.wrappedValue ?? Date(); if let selectionBinding, selectionBinding.wrappedValue != selection { selectionBinding.wrappedValue = selection } }
+    }
+
+    private func dayCard(_ date: Date, compact: Bool) -> some View {
+        let entries = items(date)
+        return VStack(alignment: .leading, spacing: 8) {
+            if !compact { Text(format(date, "EEE MMM d")).font(.headline) }
+            if entries.isEmpty { Text("No saved hours or events").font(.caption).foregroundStyle(.secondary) }
+            ForEach(entries) { item in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.time).font(.headline).monospacedDigit()
+                    Text(item.title).font(.subheadline.bold())
+                    if !item.detail.isEmpty && (!compact || item.detail != "America/Chicago") { Text(item.detail).font(.caption) }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+                    .background(color(item.kind).opacity(0.12))
+                    .overlay(alignment: .leading) { Rectangle().fill(color(item.kind)).frame(width: 3) }
+                    .accessibilityElement(children: .combine)
+            }
+        }.padding(10).frame(width: compact ? nil : 170, alignment: .topLeading)
+            .frame(maxWidth: compact ? .infinity : nil, minHeight: compact ? nil : 230, alignment: .topLeading)
+            .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -473,7 +490,6 @@ struct RoomPersonWindows: View {
         VStack(alignment:.leading,spacing:12) {
             Text("Possible work times").font(.title3.bold())
             Text((person == "My work" ? "Me" : person) + " in " + room).font(.headline)
-            Text(dayKey + " • America/Chicago").foregroundStyle(.secondary)
             if loading { ProgressView().controlSize(.small) }
             if let issue { Text(issue).foregroundStyle(.orange) }
             if let result, loadedSignature == signature {

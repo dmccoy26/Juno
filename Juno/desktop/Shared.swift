@@ -400,7 +400,9 @@ extension JunoStore {
         return data
     }
     func syncOfflineCopy() async throws {
-        guard let profile = sharedProfile, let endpoint, let hostSession, let copy = offlineCopy else { return }
+        guard let profile = sharedProfile, let endpoint, let hostSession, let copy = offlineCopy, !token.isEmpty else {
+            throw APIProblem(message: "Pair this laptop with the work Mac to synchronize.", status: 0)
+        }
         if let block = copy.archive.block {
             do { _ = try await wire("/v1/ping",endpoint:endpoint,token:token,session:hostSession,method:"GET",body:nil) }
             catch { if (error as? APIProblem)?.status == 401 { sharedRevoked() };throw error }
@@ -435,17 +437,30 @@ extension JunoStore {
         token = ""
     }
     func reconnectShared() {
-        guard !syncing else { return }; syncing = true; syncIssue = nil
+        guard sharedProfile != nil, !syncing else { return }
+        syncing = true
+        syncIssue = nil
         Task {
             defer { syncing = false }
-            do { try await syncOfflineCopy(); try await load(); await loadCompanion(); syncIssue = "Offline copy refreshed. All queued changes are synchronized." }
-            catch { syncIssue = (error as? APIProblem)?.message ?? "Could not reconnect. Your saved copy and queued edits remain on this laptop." }
+            do {
+                try await syncOfflineCopy()
+                syncIssue = pendingEdits.isEmpty ? "Offline copy refreshed. No queued edits." : "Offline copy refreshed. Some edits are still queued."
+                do { try await load(); await loadCompanion() }
+                catch { problem = "The offline copy was refreshed. Some views could not reload." }
+            } catch {
+                if error is URLError {
+                    offline = true
+                    status = sharedLabel
+                }
+                syncIssue = (error as? APIProblem)?.message ?? "Could not reconnect. Your saved copy and queued edits remain on this laptop."
+            }
         }
     }
 }
 
 struct ComputersWorkspace: View {
     @ObservedObject var store: JunoStore
+    @State private var announceSyncResult = false
     @State private var host: HostStatus?
     @State private var devices: [PairedDevice] = []
     @State private var busy = false
@@ -546,13 +561,27 @@ struct ComputersWorkspace: View {
     var body: some View {
         ScrollView {
             VStack(alignment:.leading,spacing:18) {
-                Text("Your Juno computers").font(.title2.bold())
+                Text("Computers & sync").font(.title2.bold()).accessibilityAddTraits(.isHeader)
                 if let profile = store.sharedProfile {
-                    Text("This Mac uses the work Mac at \(profile.address). Its credential is stored in Keychain.")
-                    Text("Memory and diary edits save on this laptop when offline. AI replies need the work Mac. Conflicts keep your queued version until you resolve them.").foregroundStyle(.secondary)
+                    GroupBox("Work Mac connection") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label(store.syncing ? "Synchronizing…" : store.offline ? "Offline" : store.connected ? "Connected" : "Disconnected",
+                                  systemImage: store.offline || !store.connected ? "wifi.slash" : "wifi")
+                                .font(.headline)
+                            Text(profile.address).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                            if let date = store.offlineDate { Text("Last complete offline copy: " + date.formatted()).font(.callout) }
+                            Text(store.pendingEdits.isEmpty ? "No queued edits" : "Queued edits: \(store.pendingEdits.count)").font(.callout)
+                            Button("Reconnect and synchronize") {
+                                announceSyncResult = true
+                                store.reconnectShared()
+                            }
+                                .buttonStyle(.borderedProminent).disabled(busy || store.syncing)
+                                .accessibilityHint("Refresh the offline copy and send queued edits to the work Mac.")
+                            if let result = store.syncIssue { Text(result).font(.callout).textSelection(.enabled) }
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(4)
+                    }
+                    Text("Memory and diary edits save on this laptop when offline. AI replies need the work Mac.").foregroundStyle(.secondary)
                     Button("Import a new pairing file…") { importInvitation() }.disabled(busy || store.syncing)
-                    Button(store.syncing ? "Synchronizing…" : "Reconnect and synchronize") { store.reconnectShared() }.disabled(store.syncing)
-                    if let date = store.offlineDate { Text("Last complete offline copy: " + date.formatted()).font(.caption) }
                     if !store.pendingEdits.isEmpty {
                         if let block = store.offlineCopy?.archive.block, let edit = store.pendingEdits.first(where: { $0.id == block.operationID }) {
                             Text("A queued edit needs your decision").font(.headline)
@@ -627,6 +656,13 @@ struct ComputersWorkspace: View {
                 if busy { ProgressView() }
             }.padding(30).frame(maxWidth:.infinity,alignment:.leading)
         }.task { await loadHost() }
+        .onChange(of: store.syncing) { syncing in
+            guard !syncing, announceSyncResult else { return }
+            announceSyncResult = false
+            guard let result = store.syncIssue, NSApp.isActive, NSApp.keyWindow?.title == "Juno Settings" else { return }
+            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                                 userInfo: [.announcement: result, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        }
         .alert("Use the work Mac version for this record?",isPresented:$discardRecord) {
             Button("Keep laptop edits",role:.cancel) {}
             Button("Use work Mac version",role:.destructive) {

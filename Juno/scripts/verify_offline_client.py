@@ -111,6 +111,10 @@ import Foundation
         store.prepareChat("Synthetic planning question")
         precondition(store.chatDraft == "Synthetic planning question" && store.section == "Chat")
         store.chatDraft = ""; store.sharedProfile = profile;store.endpoint = try validatedHost(profile.address);store.token = "synthetic-never-transmitted";store.offlineCopy = copy;store.offline = true
+        do {
+            try await store.syncOfflineCopy()
+            fatalError("A missing pinned session was reported as a successful refresh")
+        } catch is APIProblem {}
         do { _ = try await store.request("/v1/memories?offset=0");fatalError("Missing pinned session used another connection") } catch is APIProblem {}
         store.hostSession = PinnedHostSession(profile.certificate_sha256).session()
         defer { store.hostSession?.invalidateAndCancel() }

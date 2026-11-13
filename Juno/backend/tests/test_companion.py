@@ -1,12 +1,13 @@
 import threading
 import unittest
 import uuid
+from unittest.mock import patch
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 import test_memory_api as memory_tests
 from juno.api import create_app
 from juno.auth import provision
-from juno.local_model import ModelError, validate_origin
+from juno.local_model import ModelContextError, ModelError, validate_origin
 from juno.models import Message
 
 
@@ -205,9 +206,57 @@ class CompanionTests(memory_tests.MemoryTests):
         self.assertNotIn('Synthetic answer',str(self.client.get(self.path).json()))
 
     def test_meeting_mode_changes_prompt_and_is_recorded(self):
+        private_message = 'Fictional conversation before the meeting.'
+        with patch.object(FakeModel, 'complete', return_value='A private joke for this fixture.'):
+            private = self.turn(private_message)
+        self.assertFalse(private.json()['meeting_mode'])
+
         response=self.turn(meeting_mode=True)
         self.assertTrue(response.json()['meeting_mode'])
-        self.assertIn('No flirting',FakeModel.calls[-1][0]['content'])
+        messages = FakeModel.calls[-1]
+        self.assertIn('No flirting', messages[0]['content'])
+        self.assertIn({'role': 'user', 'content': private_message}, messages)
+        self.assertNotIn({'role': 'assistant', 'content': 'A private joke for this fixture.'}, messages)
+        self.assertEqual(self.client.get(self.path).json()['items'][1]['text'], 'A private joke for this fixture.')
+
+        self.turn()
+        self.assertIn('brief, understated compliment', FakeModel.calls[-1][0]['content'])
+        self.assertIn({'role': 'assistant', 'content': 'A private joke for this fixture.'}, FakeModel.calls[-1])
+
+    def test_message_order_repair_preserves_existing_chat(self):
+        from importlib import import_module
+        from alembic.migration import MigrationContext
+        from alembic.operations import Operations
+
+        previous = self.turn().json()
+        migration = import_module('migrations.versions.0017_chat_message_order')
+        with self.engine.begin() as connection:
+            connection.execute(text('ALTER TABLE messages ALTER COLUMN order_key RESTART WITH 1'))
+            with Operations.context(MigrationContext.configure(connection)):
+                migration.upgrade()
+        current = self.turn('Another fictional message').json()
+        self.assertEqual(current['status'], 'complete')
+        self.assertGreater(current['order_key'], previous['order_key'])
+        self.assertEqual(self.client.get(self.path).json()['items'][1], previous)
+
+    def test_context_overflow_retries_without_duplicating_the_turn(self):
+        self.turn('Prior chat ' + 'word ' * 200)
+        attempts = []
+
+        def complete(messages, _model):
+            attempts.append(messages)
+            if len(attempts) == 1:
+                raise ModelContextError('Fixture exceeds the context window')
+            return 'Shorter prompt accepted'
+
+        with patch.object(FakeModel, 'complete', side_effect=complete):
+            reply = self.turn('One more question').json()
+
+        self.assertEqual(reply['status'], 'complete')
+        self.assertEqual(len(attempts), 2)
+        self.assertLess(len(attempts[1]), len(attempts[0]))
+        self.assertEqual(attempts[1][-1], attempts[0][-1])
+        self.assertEqual(len(self.client.get(self.path).json()['items']), 4)
 
     def test_remote_endpoints_rejected_before_model_use(self):
         for value in ['https://example.com/v1','http://192.168.1.2:1234/v1','http://user:secret@localhost:1234/v1']:

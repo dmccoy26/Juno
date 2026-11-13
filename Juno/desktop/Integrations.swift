@@ -10,6 +10,7 @@ struct EvidenceRow: Decodable, Identifiable {
     let sender: String?; let status: String?; let due_date: String?; let unread: Bool?; let content_truncated: Bool?
     let worker: String?; let minutes: Double?; let amount_cents: Double?; let work_date: String?
     let date: String?; let start_date: String?; let end_date: String?; let start_time: String?; let end_time: String?
+    let archive_notes: String?
     let frequency: String?; let interval: Int?; let anchor_date: String?; let paused: Bool?
     var kindLabel: String { ["classroom_busy":"Classroom occupied", "staff_available":"Employee scheduled availability; capability unknown", "meeting":"Meeting", "calendar_event":"Calendar event", "event":"TaskDock event", "event_session":"TaskDock scheduled session", "event_recurrence":"TaskDock recurrence definition; not expanded", "note":"Notebook note", "time":"Reported work time", "expense":"Recorded expense; currency unknown", "message":"Message", "email":"Email", "task":"Provider task", "external_task":"Provider task", "sheet_row":"Smartsheet row"][kind ?? ""] ?? (kind ?? "Recorded evidence").replacingOccurrences(of:"_",with:" ").capitalized }
     var heading: String { title ?? item ?? "Recorded item" }
@@ -81,13 +82,19 @@ struct IntegrationsWorkspace: View {
     @State private var retainedIssueToken = ""
     @AppStorage("beaconIncludeIssueSnapshot") private var includeIssueSnapshot = false
     @State private var search = ""
+    @FocusState private var searchFocused: Bool
+    @State private var selectedSource: String?
     @State private var busy = false
     @State private var notice: String?
     @State private var deleting: EvidenceSnapshot?
     @State private var forgettingKey = false
     func snapshot(_ kind:String) -> EvidenceSnapshot? { state?.items.first { $0.kind == kind } }
     func load() async {
-        do { state = try JSONDecoder().decode(EvidenceState.self,from:await store.request("/v1/integrations")) }
+        do {
+            let updated = try JSONDecoder().decode(EvidenceState.self,from:await store.request("/v1/integrations"))
+            state = updated
+            if !updated.items.contains(where: { $0.kind == selectedSource }) { selectedSource = updated.items.first?.kind }
+        }
         catch { notice = (error as? APIProblem)?.message ?? "The saved integration evidence could not be loaded." }
     }
     func importFile() {
@@ -146,11 +153,14 @@ struct IntegrationsWorkspace: View {
     func timestamp(_ value:String) -> String {
         providerDate(value)?.formatted(date:.abbreviated,time:.shortened) ?? value
     }
+    private func sourceLabel(_ source: EvidenceSnapshot) -> String {
+        WorkProvider(rawValue:source.kind)?.label ?? source.kind.replacingOccurrences(of:"_",with:" ").capitalized
+    }
     var body: some View {
         ScrollView {
             LazyVStack(alignment:.leading,spacing:16) {
-                Text("Work evidence").font(.title2.bold())
-                Text("Connected programs, Beacon observations and manually imported schedules help Juno understand your day. Configure direct readers and TaskDock sharing in Connections. TaskDock remains your task hub.").foregroundStyle(.secondary)
+                Text("Evidence").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                Text("Review saved observations, schedules and records from your connected programs.").foregroundStyle(.secondary)
                 if store.sharedProfile == nil {
                     DisclosureGroup("Import a dated copy") {
                         VStack(alignment:.leading,spacing:12) {
@@ -169,10 +179,10 @@ struct IntegrationsWorkspace: View {
                     }
                     DisclosureGroup("Beacon connection & refresh") {
                         VStack(alignment:.leading,spacing:10) {
-                            TextField("Loopback API address",text:$origin)
-                            SecureField("Dedicated read-only integration key (blank uses Keychain)",text:$token)
+                            LabeledContent("Beacon API address") { TextField("API address",text:$origin) }
+                            LabeledContent("Beacon integration key") { SecureField("Leave empty to use Keychain",text:$token) }
                             DisclosureGroup("Retained equipment issues") {
-                                SecureField("Asset-scoped issue key (blank uses Keychain)",text:$retainedIssueToken)
+                                LabeledContent("Equipment issue key") { SecureField("Leave empty to use Keychain",text:$retainedIssueToken) }
                                 Toggle("Include the authorized inventory’s retained issues",isOn:$includeIssueSnapshot)
                                 Text("Use the separate Beacon issue key to include open and resolved records for its authorized assets. With this off, Juno checks reviewed repair links only.").font(.caption).foregroundStyle(.secondary)
                             }
@@ -189,15 +199,23 @@ struct IntegrationsWorkspace: View {
                 if busy { ProgressView() }
                 if let notice { Text(notice).foregroundStyle(.orange).textSelection(.enabled) }
                 if let state {
-                    Text(state.notice).font(.caption).foregroundStyle(.secondary)
-                    if state.items.isEmpty { Text("No sources imported yet. Start with a calendar export or your semester schedule.").padding(.vertical) }
-                    TextField("Filter saved items",text:$search)
-                    ForEach(state.items) { source in
+                    if state.items.isEmpty {
+                        Label("No saved evidence yet", systemImage: "tray").font(.headline)
+                    } else {
+                        Picker("Saved source", selection: $selectedSource) {
+                            ForEach(state.items) { source in
+                                Text(sourceLabel(source) + (source.count == 1 ? " · 1 record" : " · \(source.count) records"))
+                                    .tag(Optional(source.kind))
+                            }
+                        }.frame(maxWidth: 480, alignment: .leading)
+                        TextField("Filter records in this source",text:$search).textFieldStyle(.roundedBorder).focused($searchFocused)
+                    }
+                    if let selectedSource, let source = snapshot(selectedSource) {
                         VStack(alignment:.leading,spacing:8) {
                             Divider()
                             VStack(alignment:.leading,spacing:10) {
                                 HStack {
-                                    Text(WorkProvider(rawValue:source.kind)?.label ?? source.kind.replacingOccurrences(of:"_",with:" ").capitalized).font(.headline);Text("\(source.count) records").foregroundStyle(.secondary)
+                                    Text(sourceLabel(source)).font(.headline).accessibilityAddTraits(.isHeader)
                                     Spacer()
                                     if store.sharedProfile == nil { Button("Remove copy…",role:.destructive) { deleting = source }.disabled(busy) }
                                 }
@@ -215,6 +233,7 @@ struct IntegrationsWorkspace: View {
                                     }
                                 }
                                 let filtered = source.items.filter { search.isEmpty || [$0.heading,$0.location ?? "",$0.problem ?? "",$0.notes ?? "",$0.sender ?? "",$0.worker ?? ""].joined(separator:" ").localizedCaseInsensitiveContains(search) }
+                                if filtered.isEmpty { Text(search.isEmpty ? "No records in this saved source." : "No records match this search.").foregroundStyle(.secondary) }
                                 ForEach(Array(filtered.prefix(100))) { row in
                                     DisclosureGroup(row.heading + (row.location?.isEmpty == false ? " · " + row.location! : "")) {
                                         VStack(alignment:.leading,spacing:6) {
@@ -239,6 +258,11 @@ struct IntegrationsWorkspace: View {
                                             if let observed = row.observed_at,!observed.isEmpty { Text("Observed " + timestamp(observed)).font(.caption) }
                                             if let detail = row.detail,!detail.isEmpty { Text(detail) }
                                             if let notes = row.notes,!notes.isEmpty { Text(notes) }
+                                            if source.kind == "smartsheet", let outcome = row.archive_notes,
+                                               !outcome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                                MemorySuggestionButton(store: store, source: "Smartsheet archive · " + row.id,
+                                                    text: row.heading + "\n\nArchive outcome: " + outcome)
+                                            }
                                         }.textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading).padding(8)
                                     }
                                 }
@@ -246,9 +270,14 @@ struct IntegrationsWorkspace: View {
                             }.padding(8).frame(maxWidth:.infinity,alignment:.leading)
                         }
                     }
+                    Text(state.notice).font(.caption).foregroundStyle(.secondary)
                 }
             }.padding(26).frame(maxWidth:.infinity,alignment:.leading)
-        }.alert("Forget Beacon access on this Mac?",isPresented:$forgettingKey) {
+        }.onChange(of: selectedSource) { _ in search = "" }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("JunoFind"))) { _ in
+            if store.section == "Evidence" { searchFocused = true }
+        }
+        .alert("Forget Beacon access on this Mac?",isPresented:$forgettingKey) {
             Button("Cancel",role:.cancel) { }
             Button("Forget keys",role:.destructive) { let address = origin;busy = true;Task { defer { busy = false };do { try await credentialWork { try BeaconKeychain.forget(address);try BeaconKeychain.forget(address + "/retained-issues") };token = "";retainedIssueToken = "";notice = "Saved keys removed. Imported evidence remains." } catch { notice = "The key could not be removed." } } }
         } message: { Text("You will need the integration key to refresh again. Beacon records and Juno’s imported evidence are unchanged.") }.task { await load() }.onChange(of:store.section) { key in if key == "Evidence",!busy { Task { await load() } } }

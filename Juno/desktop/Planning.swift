@@ -355,7 +355,7 @@ struct PlanningWorkspace: View {
         taskFilter = .all
     }
 
-    private var issueList: some View {
+    private func issueList(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("TaskDock issues").font(.headline).accessibilityAddTraits(.isHeader)
@@ -381,8 +381,19 @@ struct PlanningWorkspace: View {
                     Text(plan.tasks.isEmpty ? "No issues in this plan." : "No issues match your search and status.")
                         .foregroundStyle(.secondary)
                 }
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(tasks) { task in issueRow(task, recommended: plan.recommended_task_id == task.id) }
+                if !tasks.isEmpty {
+                    if width >= 760 {
+                        HStack(alignment: .top, spacing: 16) {
+                            issueResults(tasks).frame(width: min(330, width * 0.37))
+                            Divider()
+                            issueInspector(tasks, recommended: plan.recommended_task_id)
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 16) {
+                            issueResults(tasks)
+                            issueInspector(tasks, recommended: plan.recommended_task_id)
+                        }
+                    }
                 }
             } else { planUnavailable }
         }
@@ -393,36 +404,60 @@ struct PlanningWorkspace: View {
         return task.actionable && (task.request_questions ?? []).isEmpty ? .ready : .details
     }
 
-    private func issueRow(_ task: PlanningTask, recommended: Bool) -> some View {
-        let expanded = inspected == task.id
+    private func issueResults(_ tasks: [PlanningTask]) -> some View {
+        ScrollViewReader { reader in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    ForEach(tasks) { task in issueRow(task).id(task.id) }
+                }.padding(6)
+            }.frame(height: 250)
+                .background(.background, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary))
+                .accessibilityLabel("Issue results")
+                .onAppear { if let inspected { reader.scrollTo(inspected) } }
+                .onChange(of: inspected) { id in if let id { reader.scrollTo(id) } }
+        }
+    }
+
+    @ViewBuilder
+    private func issueInspector(_ tasks: [PlanningTask], recommended: String?) -> some View {
+        if let task = tasks.first(where: { $0.id == inspected }) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(task.title).font(.title3.bold()).accessibilityAddTraits(.isHeader)
+                issueDetails(task, recommended: recommended == task.id)
+            }.id(task.id).frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Label("Select an issue to review its details.", systemImage: "sidebar.right")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 12)
+        }
+    }
+
+    private func issueRow(_ task: PlanningTask) -> some View {
+        let selected = inspected == task.id
         let status = taskStatus(task)
         let location = task.roomSummary
         let metadata = [location == "Unknown" || location == "Not supplied / unknown" ? nil : location,
                         task.priority_label.flatMap { $0 == "Unknown" ? nil : $0 + " priority" },
                         task.due_date.map { "Due " + scheduleDate($0) }].compactMap { $0 }
 
-        return GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
-                Button { inspected = expanded ? nil : task.id } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                            .font(.caption.weight(.semibold))
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(task.title).font(.headline)
-                            if !metadata.isEmpty {
-                                Text(metadata.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer()
-                        Label(status.rawValue, systemImage: status.icon)
-                            .font(.caption)
-                            .foregroundStyle(status == .blocked ? Color.orange : Color.secondary)
-                    }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel("Inspect " + task.title)
-                    .accessibilityValue(status.rawValue + (expanded ? ", expanded" : ", collapsed"))
-                if expanded { issueDetails(task, recommended: recommended) }
-            }.frame(maxWidth: .infinity, alignment: .leading)
+        return Button { inspected = task.id } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(task.title).font(.headline)
+                if !metadata.isEmpty {
+                    Text(metadata.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                }
+                Label(status.rawValue, systemImage: status.icon).font(.caption).foregroundStyle(.secondary)
+            }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                .background(selected ? Color.accentColor.opacity(0.15) : .clear,
+                            in: RoundedRectangle(cornerRadius: 6))
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Inspect " + task.title)
+        .accessibilityValue(status.rawValue)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func issueDetails(_ task: PlanningTask, recommended: Bool) -> some View {
@@ -525,11 +560,12 @@ struct PlanningWorkspace: View {
         VStack(spacing: 0) {
             header
             Divider()
-            ScrollView {
+            GeometryReader { geometry in
+              ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     switch page {
                     case .week: week
-                    case .issues: issueList
+                    case .issues: issueList(width: geometry.size.width)
                     case .scheduling: scheduling
                     case .briefing:
                         DeanMeetingControls(store: store, open: { showDeanDraft = true },
@@ -540,7 +576,8 @@ struct PlanningWorkspace: View {
                 .padding(24)
                 .frame(maxWidth: 1100, alignment: .leading)
                 .frame(maxWidth: .infinity)
-            }.id(page)
+              }.id(page)
+            }
         }
         .environment(\.locale, Locale(identifier: "en_US"))
         .environment(\.timeZone, DeanMeetingSchedule.zone)
@@ -1152,6 +1189,108 @@ private struct ChairEmail: Decodable {
     let subject: String
     let body: String
     let coverage: [String]
+    var composition: String? = nil
+
+    var compositionLabel: String? {
+        switch composition {
+        case "lm_studio": return "Written with LM Studio"
+        case "built_in": return "Written from saved records"
+        case "fallback": return "Written from saved records after LM Studio could not complete the email"
+        default: return nil
+        }
+    }
+}
+
+struct ReportsWorkspace: View {
+    @ObservedObject var store: JunoStore
+    @State private var showDeanDraft = false
+    @State private var deanStatus = "Checking saved briefing…"
+    @State private var chairStatus = "Checking saved emails…"
+    @State private var chairDraft: ChairsDraft?
+    @State private var chairEditor: ChairDraftSelection?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Reports").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                DeanMeetingControls(store: store, open: { showDeanDraft = true }, refreshPlan: {}, summary: deanStatus)
+                ChairsReportControls(store: store, summary: chairStatus,
+                                     showsRecipientList: chairDraft?.emails?.isEmpty == false,
+                                     hasSavedDraft: chairDraft?.exists == true,
+                                     onReviewDismiss: { Task { await refreshStatus() } })
+                if let emails = chairDraft?.emails, !emails.isEmpty {
+                    GroupBox("Review by department") {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(ChairDraftSelection.recipients) { recipient in
+                                if let email = emails[recipient.id] {
+                                    Button {
+                                        chairEditor = recipient
+                                    } label: {
+                                        HStack {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(recipient.name).font(.headline)
+                                                Text(email.subject).font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                                                if let label = email.compositionLabel {
+                                                    Text(label).font(.caption).foregroundStyle(.secondary)
+                                                }
+                                            }
+                                            Spacer()
+                                            Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                                        }.frame(maxWidth: .infinity, alignment: .leading).padding(10).contentShape(Rectangle())
+                                    }.buttonStyle(.plain)
+                                        .accessibilityLabel("Review " + recipient.name + " email")
+                                        .accessibilityHint([email.subject, email.compositionLabel].compactMap { $0 }.joined(separator: ". "))
+                                    Divider()
+                                }
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 880, alignment: .leading)
+            .frame(maxWidth: .infinity)
+        }
+        .task(id: store.section + "|" + String(store.connected) + "|" + String(store.chairsPreparing) + "|" + String(store.deanPreparing)) {
+            guard store.section == "Reports" else { return }
+            await refreshStatus()
+        }
+        .sheet(isPresented: $showDeanDraft) {
+            WeeklyDeanEditor(store: store, initialDay: DeanMeetingSchedule(now: Date()).week)
+        }
+        .sheet(item: $chairEditor, onDismiss: { Task { await refreshStatus() } }) { recipient in
+            ChairsReportEditor(store: store, initialRecipient: recipient.id)
+        }
+    }
+
+    private func refreshStatus() async {
+        let key = DeanMeetingSchedule(now: Date()).key
+        do {
+            let draft = try await store.decode(SavedDeanDraft.self, "/v1/planning/weekly-draft/" + key)
+            deanStatus = draft.exists ? "Talking points saved for this week" : "No talking points saved this week"
+        } catch { deanStatus = "Saved briefing status unavailable" }
+        do {
+            let draft = try await store.decode(ChairsDraft.self, "/v1/planning/chairs-draft/" + key)
+            guard !Task.isCancelled else { return }
+            chairDraft = draft
+            let count = draft.emails?.count ?? 0
+            chairStatus = count > 0 ? "\(count) drafts ready to review" : draft.exists ? "Weekly draft ready to review" : "No email draft saved this week"
+        } catch {
+            guard !Task.isCancelled else { return }
+            chairDraft = nil
+            chairStatus = "Saved email status unavailable"
+        }
+    }
+}
+
+private struct ChairDraftSelection: Identifiable {
+    let id: String
+    let name: String
+    static let recipients = [
+        Self(id: "lwr", name: "Languages, Literatures and Cultures"),
+        Self(id: "visu", name: "Visual Studies"),
+        Self(id: "performing", name: "Performing Arts")
+    ]
 }
 
 private struct ChairsDraft: Decodable {
@@ -1241,13 +1380,13 @@ extension JunoStore {
                 chairsNotice = "Draft preparation stopped."
                 return
             }
-            let result = try await decode(ChairsDraft.self, path + "/prepare", method: "POST",
-                                          body: ["unavailable": unavailable])
+            chairsNotice = "Writing the department emails…"
+            _ = try await decode(ChairsDraft.self, path + "/prepare", method: "POST",
+                                 body: ["unavailable": unavailable])
             chairsHandledWeek = schedule.key
-            chairsNotice = result.coverage.isEmpty ? "This week’s draft is ready to review."
-                : "This week’s draft is ready. Check source coverage before copying."
+            chairsNotice = "This week’s draft is ready to review."
         } catch {
-            chairsNotice = (error as? APIProblem)?.message ?? "Could not prepare the draft. Try again from Plan."
+            chairsNotice = (error as? APIProblem)?.message ?? "Could not prepare the draft. Try again from Reports."
         }
     }
 
@@ -1324,6 +1463,7 @@ private struct DeanMeetingControls: View {
     @ObservedObject var store:JunoStore
     let open:()->Void
     let refreshPlan: () -> Void
+    var summary: String? = nil
     @State private var correcting=false
     @State private var actual=Date()
     @State private var followUp = false
@@ -1332,6 +1472,7 @@ private struct DeanMeetingControls: View {
         let overridden=store.deanOverrideWeek == schedule.key ? store.deanOverride : nil
         GroupBox("Thursday Dean meeting") {
             VStack(alignment:.leading,spacing:8) {
+                if let summary { Text(summary).font(.headline) }
                 if store.sharedProfile == nil {
                     Toggle("Prepare automatically at 9:00 AM Central on Thursdays",isOn:$store.deanAutomatic)
                     Text("Juno refreshes TaskDock and Beacon and combines their shared updates with your confirmed check-ins. Keep Juno open and this Mac awake. Saved drafts stay available for review.")
@@ -1451,6 +1592,13 @@ private struct DeanFollowUpEditor: View {
                         Button("Find Dean requests") { Task { await extract() } }
                             .disabled(!hasNotes || !items.isEmpty || store.offline)
                         Button("Add request") { items.append(DeanFollowUpItem()) }.disabled(items.count >= 24)
+                    }
+                    if !changed, let saved, !saved.items.isEmpty {
+                        MemorySuggestionButton(store: store, source: "Dean meeting · " + CheckInReminder.day(day) + " · revision \(saved.revision)",
+                            text: saved.items.map { item in
+                                ["Dean meeting follow-up: " + item.title, item.timing.isEmpty ? "" : "Timing: " + item.timing, item.quote.isEmpty ? "" : "Meeting note: " + item.quote]
+                                    .filter { !$0.isEmpty }.joined(separator: "\n")
+                            }.joined(separator: "\n\n"))
                     }
                     ForEach($items) { $item in
                         DeanFollowUpRow(item: $item, snapshot: snapshot) {
@@ -1595,6 +1743,10 @@ private struct DeanFollowUpRow: View {
 
 private struct ChairsReportControls: View {
     @ObservedObject var store: JunoStore
+    var summary: String? = nil
+    var showsRecipientList = false
+    var hasSavedDraft = false
+    var onReviewDismiss: () -> Void = {}
     @State private var showDraft = false
     private var weekClosed: Bool {
         let now = Date()
@@ -1605,21 +1757,26 @@ private struct ChairsReportControls: View {
     var body: some View {
         GroupBox("Department chairs email") {
             VStack(alignment: .leading, spacing: 10) {
+                if let summary { Text(summary).font(.headline) }
                 if store.sharedProfile == nil {
                     Toggle("Prepare Fridays at 9:00 AM Central", isOn: $store.chairsAutomatic)
                     Text("Covers Friday through Thursday. Keep Juno open on the work Mac. It can catch up through Sunday.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack {
-                    Button("Review email draft…") { showDraft = true }
-                    if store.sharedProfile == nil {
+                    Button(showsRecipientList ? "Browse draft weeks…" : "Review email draft…") { showDraft = true }
+                    if store.sharedProfile == nil && !hasSavedDraft {
                         Button("Prepare this week’s draft") { Task { await store.prepareChairsDraft(automatic: false) } }
                             .disabled(store.chairsPreparing || store.deanPreparing || !store.connected || store.offline || !weekClosed)
                     }
                 }
-                if !store.chairsNotice.isEmpty { Text(store.chairsNotice).font(.callout) }
+                if store.chairsPreparing {
+                    ProgressView(store.chairsNotice).controlSize(.small)
+                } else if !hasSavedDraft && !store.chairsNotice.isEmpty {
+                    Text(store.chairsNotice).font(.callout)
+                }
             }.frame(maxWidth: .infinity, alignment: .leading)
-        }.sheet(isPresented: $showDraft) { ChairsReportEditor(store: store) }
+        }.sheet(isPresented: $showDraft, onDismiss: onReviewDismiss) { ChairsReportEditor(store: store) }
     }
 }
 
@@ -1627,13 +1784,19 @@ private struct ChairsReportEditor: View {
     @ObservedObject var store: JunoStore
     @Environment(\.dismiss) private var dismiss
     @State private var day = Date()
-    @State private var recipient = "lwr"
+    @State private var recipient: String
     @State private var saved: ChairsDraft?
     @State private var subject = ""
     @State private var draftBody = ""
     @State private var busy = false
     @State private var notice = ""
     @State private var confirmClose = false
+    @State private var editing = false
+
+    init(store: JunoStore, initialRecipient: String = "lwr") {
+        self.store = store
+        _recipient = State(initialValue: initialRecipient)
+    }
 
     private var path: String { "/v1/planning/chairs-draft/" + DeanMeetingSchedule(now: day).key }
     private var selected: ChairEmail? {
@@ -1657,24 +1820,39 @@ private struct ChairsReportEditor: View {
             }
             if let emails = saved?.emails, !emails.isEmpty {
                 Picker("Recipient", selection: $recipient) {
-                    Text("Languages, Literatures and Cultures").tag("lwr")
-                    Text("Visual Studies").tag("visu")
-                    Text("Performing Arts").tag("performing")
+                    ForEach(ChairDraftSelection.recipients) { recipient in
+                        if emails[recipient.id] != nil { Text(recipient.name).tag(recipient.id) }
+                    }
                 }.disabled(changed || busy)
                 .onChange(of: recipient) { _ in populateEditor() }
             }
             if let selected {
+                if let label = selected.compositionLabel {
+                    Text(label).font(.callout).foregroundStyle(.secondary)
+                }
                 if !selected.coverage.isEmpty {
-                    DisclosureGroup("Source coverage") {
+                    DisclosureGroup("Source coverage and review notes") {
                         ForEach(Array(selected.coverage.enumerated()), id: \.offset) { _, line in
                             Text(line).frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
-                TextField("Subject", text: $subject).textFieldStyle(.roundedBorder).disabled(store.offline || busy)
-                TextEditor(text: $draftBody).font(.body).accessibilityLabel("Department chairs email body")
-                    .disabled(store.offline || busy)
-                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.quaternary))
+                if editing {
+                    TextField("Subject", text: $subject).textFieldStyle(.roundedBorder).disabled(store.offline || busy)
+                    TextEditor(text: $draftBody).font(.body).accessibilityLabel("Department chairs email body")
+                        .disabled(store.offline || busy)
+                        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.quaternary))
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text(subject).font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                            Text(draftBody).font(.body).lineSpacing(4)
+                        }.textSelection(.enabled).frame(maxWidth: 620, alignment: .leading).padding(20)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary))
+                }
             } else {
                 Text(busy ? "Loading draft…" : "No saved draft for this week.").foregroundStyle(.secondary)
                 Spacer()
@@ -1689,8 +1867,17 @@ private struct ChairsReportEditor: View {
                     NSPasteboard.general.setString("Subject: " + subject + "\n\n" + draftBody, forType: .string)
                     notice = "Subject and email body copied."
                 }.disabled(!ready || busy)
-                Button("Save edits") { Task { await save() } }
-                    .keyboardShortcut(.defaultAction).disabled(!ready || !changed || busy || store.offline)
+                if editing {
+                    Button("Save edits") { Task { await save() } }
+                        .keyboardShortcut(.defaultAction).disabled(!ready || !changed || busy || store.offline)
+                    Button("Cancel edits") { populateEditor() }.disabled(busy)
+                } else {
+                    if let selected, ready {
+                        MemorySuggestionButton(store: store, source: "Department chair draft · " + DeanMeetingSchedule(now: day).key + " · " + recipient,
+                            text: "Saved department chair draft: " + selected.subject + "\n\n" + selected.body)
+                    }
+                    Button("Edit email") { editing = true }.disabled(!ready || busy || store.offline)
+                }
             }
         }
         .padding(22).frame(minWidth: 700, idealWidth: 800, minHeight: 540, idealHeight: 680)
@@ -1705,24 +1892,36 @@ private struct ChairsReportEditor: View {
 
     private func apply(_ draft: ChairsDraft) {
         saved = draft
+        if let emails = draft.emails, !emails.isEmpty, emails[recipient] == nil,
+           let available = ChairDraftSelection.recipients.first(where: { emails[$0.id] != nil }) {
+            recipient = available.id
+        }
         populateEditor()
     }
 
     private func populateEditor() {
+        editing = false
         subject = selected?.subject ?? ""
         draftBody = selected?.body ?? ""
         notice = ""
     }
 
     private func load() async {
+        let requestedPath = path
         busy = true
-        defer { busy = false }
+        defer { if requestedPath == path { busy = false } }
         saved = nil
         subject = ""
         draftBody = ""
         notice = ""
-        do { apply(try await store.decode(ChairsDraft.self, path)) }
-        catch { notice = (error as? APIProblem)?.message ?? "Could not open this draft." }
+        do {
+            let draft = try await store.decode(ChairsDraft.self, requestedPath)
+            guard !Task.isCancelled, requestedPath == path else { return }
+            apply(draft)
+        } catch {
+            guard !Task.isCancelled, requestedPath == path else { return }
+            notice = (error as? APIProblem)?.message ?? "Could not open this draft."
+        }
     }
 
     private func save() async {

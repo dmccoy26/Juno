@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 import test_daily_brief as daily_tests
 
 from juno.dean_follow_up import extract
+from juno.models import DeanFollowUp
 from juno.shared_host import LANBoundary
 
 
@@ -55,6 +56,17 @@ class ExtractionTests(unittest.TestCase):
 
 class FollowUpTests(daily_tests.DailyBriefTests):
     path = '/v1/planning/dean-follow-up/2030-01-06'
+
+    def test_plan_accepts_saved_follow_up_without_optional_link_fields(self):
+        with self.factory() as session:
+            session.add(DeanFollowUp(owner_id=self.actor.owner_id, meeting_day=date(2030, 1, 6),
+                                     notes=NOTES, revision=1,
+                                     items=[{'id': str(uuid4()), 'title': 'Unlinked request', 'closed': False,
+                                             'quote': '-Schedule a budget discussion before break'}]))
+            session.commit()
+        plan = self.client.get('/v1/planning/next?day=2030-01-07')
+        self.assertEqual(plan.status_code, 200, plan.text)
+        self.assertTrue(plan.json()['tasks'])
 
     def test_review_is_owner_scoped_replay_safe_and_carries_into_plan_and_briefing(self):
         suggestion = self.client.post(self.path + '/extract', json={'notes': NOTES})

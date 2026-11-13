@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 struct Memory: Codable, Identifiable, Equatable {
     let id: String
@@ -302,12 +303,12 @@ struct Editor: View {
     @State private var base:Memory?
     @State private var conflict = false
     @State private var comparison:Memory?
-    init(store: JunoStore, original: Memory?, initialText: String = "", sourceMessageID: String? = nil, onSaved: ((Memory) -> Void)? = nil) {
+    init(store: JunoStore, original: Memory?, initialText: String = "", initialSource: String = "Manual entry", initialConfidence: String = "confirmed", sourceMessageID: String? = nil, onSaved: ((Memory) -> Void)? = nil) {
         self.store = store; self.original = original;self.onSaved = onSaved;self.sourceMessageID = sourceMessageID
         _base = State(initialValue:original)
         _text = State(initialValue: original?.text ?? initialText)
-        _source = State(initialValue: original?.source ?? "Manual entry")
-        _confidence = State(initialValue: original?.confidence ?? "confirmed")
+        _source = State(initialValue: original?.source ?? initialSource)
+        _confidence = State(initialValue: original?.confidence ?? initialConfidence)
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -369,7 +370,7 @@ struct MemoryWorkspace: View {
         VStack(spacing: 0) {
             HSplitView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("MEMORY").font(.caption.bold()).foregroundStyle(.secondary)
+                    Text("Memories").font(.title2.bold()).accessibilityAddTraits(.isHeader)
                     TextField("Search memories", text: $store.query).focused($searchFocused).onReceive(NotificationCenter.default.publisher(for:Notification.Name("JunoFind"))) { _ in if store.section == "Memories" { searchFocused = true } }.textFieldStyle(.roundedBorder).onSubmit { store.refresh() }.disabled(!store.connected)
                     HStack { Button("Search") { store.refresh() }; Button("Clear") { store.query = ""; store.refresh() } }.disabled(!store.connected || store.busy)
                     List(selection: $store.selected) {
@@ -382,7 +383,7 @@ struct MemoryWorkspace: View {
                     }.listStyle(.sidebar)
                     if store.hasMore { Button("Load more") { store.refresh(more: true) }.disabled(store.busy) }
                     Button { editRequest = MemoryEditRequest(original:nil) } label: { Label("Add memory", systemImage: "plus") }.disabled(!store.connected || store.busy)
-                }.padding(16).frame(minWidth: 250, idealWidth: 300, maxWidth: 370)
+                }.padding(16).frame(minWidth: 210, idealWidth: 280, maxWidth: 340)
                 VStack(alignment: .leading, spacing: 20) {
                     if let row = store.selectedMemory {
                         Label(row.confidence == "confirmed" ? "Confirmed by you" : row.confidence == "observed" ? "Observed in a source" : "Assumption · needs verification", systemImage: row.confidence == "inferred" ? "questionmark.circle" : "checkmark.circle").font(.subheadline).foregroundStyle(.secondary)
@@ -397,13 +398,13 @@ struct MemoryWorkspace: View {
                     } else {
                         Spacer()
                         Image(systemName: "book.closed").font(.system(size: 42)).foregroundStyle(.purple)
-                        Text(!store.query.isEmpty && store.items.isEmpty ? "No matching memories" : store.meeting ? "Your work memory" : "A little less to keep in your head.").font(.title2.bold())
+                        Text(!store.query.isEmpty && store.items.isEmpty ? "No matching memories" : store.items.isEmpty ? "No saved memories" : "Select a memory").font(.title2.bold())
                         Text(!store.query.isEmpty && store.items.isEmpty ? "Try another search, or clear the search to see all your memories." : store.items.isEmpty ? "Save something you want Juno to remember. You can review, correct or delete it anytime." : "Choose a memory to see what Juno knows and where it came from.").foregroundStyle(.secondary).frame(maxWidth: 440, alignment: .leading)
                         Spacer()
                     }
-                }.padding(32).frame(minWidth: 400, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }.padding(24).frame(minWidth: 290, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-        }.frame(minWidth: 850, minHeight: 570)
+        }
         .sheet(item:$editRequest) { request in Editor(store:store,original:request.original).id(request.id) }
         .alert("Delete this memory?", isPresented: $deleting) {
             Button("Cancel", role: .cancel) { deleteTarget = nil }
@@ -416,13 +417,14 @@ struct MemoryWorkspace: View {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, UNUserNotificationCenterDelegate {
     let store = JunoStore()
     var window: NSWindow?
     var settingsWindow: NSWindow?
     var helpWindow: NSWindow?
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        UNUserNotificationCenter.current().delegate = self
         let menu = NSMenu(); let appItem = NSMenuItem(); menu.addItem(appItem)
         let appMenu = NSMenu(); appItem.submenu = appMenu
         appMenu.addItem(withTitle: "About Juno", action: #selector(about), keyEquivalent: "").target = self
@@ -431,16 +433,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         appMenu.addItem(withTitle: "Hide Juno", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(withTitle: "Quit Juno", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let editItem = NSMenuItem(); menu.addItem(editItem); let edit = NSMenu(title: "Edit"); editItem.submenu = edit
-        for (name, action, key) in [("Undo", "undo:", "z"), ("Cut", "cut:", "x"), ("Copy", "copy:", "c"), ("Paste", "paste:", "v"), ("Select All", "selectAll:", "a")] { edit.addItem(withTitle: name, action: Selector(action), keyEquivalent: key) }
-        let find = edit.addItem(withTitle:"Find…",action:#selector(findInWorkspace),keyEquivalent:"f");find.target = self
+        edit.addItem(withTitle:"Undo",action:Selector(("undo:")),keyEquivalent:"z")
         let redo = edit.addItem(withTitle:"Redo",action:Selector(("redo:")),keyEquivalent:"z");redo.keyEquivalentModifierMask = [.command,.shift]
+        edit.addItem(.separator())
+        for (name, action, key) in [("Cut", "cut:", "x"), ("Copy", "copy:", "c"), ("Paste", "paste:", "v"), ("Select All", "selectAll:", "a")] { edit.addItem(withTitle: name, action: Selector(action), keyEquivalent: key) }
+        edit.addItem(.separator())
+        edit.addItem(withTitle:"Find…",action:#selector(findInWorkspace),keyEquivalent:"f").target = self
         let viewItem = NSMenuItem();menu.addItem(viewItem);let view = NSMenu(title:"View");viewItem.submenu = view
         for (index,title) in ["Today","Chat","Plan","Schedules","Check-in","Memories","TaskDock","Evidence","Workers"].enumerated() {
             let item = view.addItem(withTitle:title == "Check-in" ? "Daily check-in" : title == "Workers" ? "Worker updates" : title,action:#selector(navigate(_:)),keyEquivalent:String(index+1));item.representedObject = title;item.target = self
         }
+        let reports = view.addItem(withTitle:"Reports",action:#selector(navigate(_:)),keyEquivalent:"")
+        reports.representedObject = "Reports"
+        reports.target = self
+        view.addItem(.separator())
+        view.addItem(withTitle:"Toggle Sidebar",action:#selector(toggleSidebar),keyEquivalent:"s").keyEquivalentModifierMask = [.command,.option]
+        view.items.last?.target = self
         let windowItem = NSMenuItem(); menu.addItem(windowItem); let windows = NSMenu(title: "Window"); windowItem.submenu = windows; NSApp.windowsMenu = windows
         windows.addItem(withTitle: "Minimize", action: #selector(minimizeCurrent(_:)), keyEquivalent: "m").target = self
         windows.addItem(withTitle: "Close Window", action: #selector(closeCurrent(_:)), keyEquivalent: "w").target = self
+        windows.addItem(withTitle: "Zoom", action: #selector(zoomCurrent(_:)), keyEquivalent: "").target = self
+        windows.addItem(.separator())
         windows.addItem(withTitle:"Bring All to Front",action:#selector(NSApplication.arrangeInFront(_:)),keyEquivalent:"").target = NSApp
         let helpItem = NSMenuItem();menu.addItem(helpItem);let help = NSMenu(title:"Help");helpItem.submenu = help;NSApp.helpMenu = help
         help.addItem(withTitle:"Juno Help",action:#selector(showHelp),keyEquivalent:"?").target = self
@@ -453,13 +466,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         store.start()
     }
     private var activeWindow:NSWindow? { NSApp.keyWindow ?? NSApp.mainWindow ?? window }
+    @objc func toggleSidebar() { NotificationCenter.default.post(name: Notification.Name("JunoToggleSidebar"), object: nil) }
     func validateMenuItem(_ item:NSMenuItem) -> Bool {
-        if item.action == #selector(findInWorkspace) { return ["Plan","Memories","TaskDock"].contains(store.section) && (NSApp.keyWindow == nil || NSApp.keyWindow === window) }
+        if item.action == #selector(findInWorkspace) { return ["Today","Plan","Memories","TaskDock","Evidence"].contains(store.section) && NSApp.keyWindow === window && window?.attachedSheet == nil }
+        if item.action == #selector(toggleSidebar) { return NSApp.keyWindow === window && window?.attachedSheet == nil }
+        if item.action == #selector(zoomCurrent(_:)) { return activeWindow?.isVisible == true && activeWindow?.styleMask.contains(.resizable) == true }
         if item.action == #selector(minimizeCurrent(_:)) { return activeWindow?.isVisible == true && activeWindow?.isMiniaturized == false }
         if item.action == #selector(closeCurrent(_:)) { return activeWindow?.isVisible == true }
         return true
     }
     @objc func minimizeCurrent(_ sender:Any?) { activeWindow?.miniaturize(sender) }
+    @objc func zoomCurrent(_ sender:Any?) { activeWindow?.performZoom(sender) }
     @objc func closeCurrent(_ sender:Any?) { activeWindow?.performClose(sender) }
     @objc func navigate(_ item:NSMenuItem) { NSApp.unhide(nil);NSApp.activate(ignoringOtherApps:true); if let key = item.representedObject as? String { store.section = key };window?.deminiaturize(nil);window?.makeKeyAndOrderFront(nil) }
     @objc func showSettings() {
@@ -478,6 +495,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         helpWindow?.makeKeyAndOrderFront(nil)
     }
     @objc func findInWorkspace() { window?.makeKeyAndOrderFront(nil);NotificationCenter.default.post(name:Notification.Name("JunoFind"),object:nil) }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        switch notification.request.identifier {
+        case CheckInReminder.testIdentifier: return [.banner, .list]
+        case CheckInReminder.identifier: return [.list]
+        default: return []
+        }
+    }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        guard response.notification.request.identifier == CheckInReminder.identifier,
+              response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
+        await MainActor.run {
+            store.section = "Check-in"
+            NSApp.activate(ignoringOtherApps: true)
+            window?.deminiaturize(nil)
+            window?.makeKeyAndOrderFront(nil)
+        }
+    }
     @objc func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Juno", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "JunoReleaseVersion") as? String ?? "Development", .credits: NSAttributedString(string: "Native Mac work companion\nChat, check-ins and memory · local shared host\nEncrypted work-Mac connection with offline memory and diary edits")]) }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { window?.makeKeyAndOrderFront(nil); return true }
     func applicationShouldTerminate(_ sender:NSApplication) -> NSApplication.TerminateReply {
