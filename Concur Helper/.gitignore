@@ -1,0 +1,6 @@
+__pycache__/
+*.eml
+local/
+.venv/
+.build/
+.swiftpm/
