@@ -151,3 +151,5 @@ The archive refresh used to return successfully when no reviewed archive was con
 The native scheduler fixture verified the 9 AM Central gate, TaskDock → Beacon → Smartsheet refresh order, preservation of an existing draft, repeat suppression, and a draft request that accurately lists a failed source refresh. The scheduler fixture substituted the connector responses. Live refresh and automatic draft creation with work credentials in the same run are still unverified.
 
 On the work Mac, Juno Help opened from the Help menu, Command-W returned to Today, and the standard zoom control expanded and restored the window. Native credential tests also passed a blocked read without blocking the main actor, provider isolation, and credential persistence across a process restart. All 15 preview.43 package verification groups passed.
+
+Dan reported that the M5 Air sync worked. The work Mac did not have the new test memory under the requested text or a recent offline memory receipt, so delivery of that specific queued edit remains unverified.

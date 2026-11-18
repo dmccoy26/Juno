@@ -18,8 +18,19 @@ from .models import OfflineOperation, Memory, Conversation, Message, CheckIn, Mo
 from .companion import message_view, conversation_view, checkin_view, saved_memory_links
 from .taskdock_api import active_snapshot, snapshot_view
 
+def latest_confirmed(session, owner):
+    from zoneinfo import ZoneInfo
+    day = now().astimezone(ZoneInfo('America/Chicago')).date()
+    row = session.scalar(select(CheckIn).where(CheckIn.owner_id == owner,
+        CheckIn.status == 'confirmed', CheckIn.local_date <= day).order_by(CheckIn.local_date.desc()).limit(1))
+    return {'record': checkin_view(row) if row else None}
+
 
 def install(app,db,device,lock_owner):
+    @app.get('/v1/check-ins/latest-confirmed')
+    def recent_diary(actor=Depends(device),session=Depends(db)):
+        return latest_confirmed(session, actor.owner_id)
+
     @app.get('/v1/check-ins/by-date/{day}')
     def checkin(day:str,actor=Depends(device),session=Depends(db)):
         from datetime import date
@@ -59,6 +70,7 @@ def install(app,db,device,lock_owner):
                 add(path,{'items':[message_view(r,links.get(r.id)) for r in reversed(rows[offset:offset+100])],'has_more':offset+100<len(rows)})
         diaries=bounded(select(CheckIn).where(CheckIn.owner_id==actor.owner_id),10000)
         for row in diaries:add('/v1/check-ins/by-date/'+str(row.local_date),checkin_view(row))
+        add('/v1/check-ins/latest-confirmed',latest_confirmed(session,actor.owner_id))
         config=session.get(ModelConnection,actor.owner_id)
         add('/v1/model',{'base_url':'http://127.0.0.1:1234/v1','model':config.model if config else '', 'configured':config is not None})
         from .integrations_api import state_view
@@ -67,14 +79,31 @@ def install(app,db,device,lock_owner):
         add('/v1/schedules',schedules_view(session,actor.owner_id))
         from .planning import state_view
         add('/v1/planning',state_view(session,actor.owner_id))
+        from .work_support import state as support_state
+        add('/v1/work-support',support_state(session,actor.owner_id))
+        from .recurring import state as recurring_state
+        add('/v1/recurring',recurring_state(session,actor.owner_id))
+        from .purchasing import state as purchasing_state
+        add('/v1/purchasing',purchasing_state(session,actor.owner_id))
         from .models import DeanDraft
         from .planning_continuity import dean_view
         for draft in bounded(select(DeanDraft).where(DeanDraft.owner_id==actor.owner_id),1000):
             add('/v1/planning/weekly-draft/'+str(draft.week_start),dean_view(session,actor.owner_id,draft.week_start))
+            from .report_history import review_state
+            add('/v1/reports/dean/'+str(draft.week_start)+'/review',review_state(session,actor.owner_id,'dean',draft.week_start))
         from .models import ChairsDraft
         from .chairs_report import view as chairs_view
         for draft in bounded(select(ChairsDraft).where(ChairsDraft.owner_id==actor.owner_id),1000):
             add('/v1/planning/chairs-draft/'+str(draft.week_start),chairs_view(draft))
+            from .report_history import review_state
+            add('/v1/reports/chairs/'+str(draft.week_start)+'/review',review_state(session,actor.owner_id,'chairs',draft.week_start))
+        from .report_history import library
+        report_offset = 0
+        while True:
+            page = library(session,actor.owner_id,report_offset)
+            add('/v1/reports/index?offset='+str(report_offset),page)
+            if not page['has_more']: break
+            report_offset = page['next_offset']
         from .models import DeanFollowUp
         from .dean_follow_up import view as follow_up_view
         for follow_up in bounded(select(DeanFollowUp).where(DeanFollowUp.owner_id==actor.owner_id),1000):

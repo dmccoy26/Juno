@@ -118,6 +118,11 @@ import Foundation
         do { _ = try await store.request("/v1/memories?offset=0");fatalError("Missing pinned session used another connection") } catch is APIProblem {}
         store.hostSession = PinnedHostSession(profile.certificate_sha256).session()
         defer { store.hostSession?.invalidateAndCancel() }
+        copy.archive.pages[OfflineCopy.key("/v1/work-support")] = try JSONSerialization.data(withJSONObject:["owner_id":profile.owner_id,"revision":0,"current":NSNull(),"parked":[],"recent_finished":[],"updated_at":NSNull(),"notice":"Synthetic saved bookmark"])
+        let support = try await store.decode(WorkSupportState.self,"/v1/work-support")
+        precondition(support.owner_id == profile.owner_id && support.current == nil)
+        do { _ = try await store.request("/v1/work-support/actions",method:"POST",body:["command":"interrupt"]);fatalError("Offline bookmark mutation must not queue or contact a host") } catch is APIProblem {}
+        precondition(store.pendingEdits.isEmpty,"An offline bookmark action entered the memory/diary queue")
         store.chatDraft = "Remember that the fictional cutter is TEST-42"
         store.sendChat()
         precondition(store.memoryReviewText == "the fictional cutter is TEST-42" && !store.chatSending)
@@ -152,7 +157,7 @@ def main():
         subprocess.run([str(path/'check')],check=True)
         (path/'Juno.swift').write_text((ROOT/'desktop/Juno.swift').read_text().split('@main\nstruct JunoApplication',1)[0])
         (path/'StoreCheck.swift').write_text(STORE_TEST)
-        subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-target','arm64-apple-macosx13.5',str(path/'Juno.swift'),str(ROOT/'desktop/Companion.swift'),str(ROOT/'desktop/TaskDock.swift'),str(ROOT/'desktop/Shared.swift'),str(ROOT/'desktop/Integrations.swift'),str(ROOT/'desktop/Connections.swift'),str(ROOT/'desktop/Planning.swift'),str(ROOT/'desktop/Schedules.swift'),str(ROOT/'desktop/Workers.swift'),str(path/'StoreCheck.swift'),'-o',str(path/'store-check')],check=True)
+        subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-target','arm64-apple-macosx13.5',str(path/'Juno.swift'),str(ROOT/'desktop/Companion.swift'),str(ROOT/'desktop/TaskDock.swift'),str(ROOT/'desktop/Shared.swift'),str(ROOT/'desktop/Integrations.swift'),str(ROOT/'desktop/Connections.swift'),str(ROOT/'desktop/Planning.swift'),str(ROOT/'desktop/Schedules.swift'),str(ROOT/'desktop/Workers.swift'),str(ROOT/'desktop/Routines.swift'),str(ROOT/'desktop/WorkSupport.swift'),str(path/'StoreCheck.swift'),'-o',str(path/'store-check')],check=True)
         subprocess.run([str(path/'store-check')],check=True,timeout=20)
 
 if __name__=='__main__':main()

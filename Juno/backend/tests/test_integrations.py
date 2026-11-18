@@ -124,6 +124,7 @@ class IntegrationAPITests(memory_tests.MemoryTests):
         self.assertEqual(bad.status_code,422)
         state=self.client.get('/v1/integrations').json()['items'][0]
         self.assertEqual(state['id'],identity);self.assertEqual(state['count'],5);self.assertTrue(state['error'])
+        self.assertEqual(datetime.fromisoformat(state['fetched_at']), datetime.fromisoformat(first.json()['fetched_at']))
         self.assertEqual(self.client.get('/v1/integrations',headers={'Authorization':'Bearer '+self.other_token}).json()['items'],[])
         pages=self.client.get('/v1/cache').json()['pages']
         self.assertTrue(next(p['body'] for p in pages if p['path']=='/v1/integrations')['items'])

@@ -1,17 +1,39 @@
 import SwiftUI
 import UserNotifications
 
-struct ConversationRecord: Decodable, Identifiable { let id: String; let title: String }
+struct ConversationRecord: Decodable, Identifiable { let id: String; let title: String; var meeting_mode: Bool? = nil }
 struct ConversationPage: Decodable { let items: [ConversationRecord]; let has_more: Bool }
 struct ChatMessage: Decodable, Identifiable {
     let id: String; let role: String; let text: String; let request_id: String
     let status: String; let order_key: Int64; let model_name: String?; let meeting_mode: Bool
     var saved_memory_id: String? = nil
 }
+struct ChatDisplayEntry: Identifiable {
+    let id: String
+    var message: ChatMessage?
+    var invalidatedCount = 0
+    var question: String?
+}
+func chatDisplayEntries(_ messages: [ChatMessage]) -> [ChatDisplayEntry] {
+    var entries: [ChatDisplayEntry] = []
+    var question: String?
+    for message in messages {
+        if message.role == "user" { question = message.text }
+        if message.status == "invalidated" {
+            if let last = entries.indices.last, entries[last].message == nil {
+                entries[last].invalidatedCount += 1
+            } else {
+                entries.append(ChatDisplayEntry(id: message.id, message: nil, invalidatedCount: 1, question: question))
+            }
+        } else { entries.append(ChatDisplayEntry(id: message.id, message: message)) }
+    }
+    return entries
+}
 struct MessagePage: Decodable { let items: [ChatMessage]; let has_more: Bool }
 struct ModelSettings: Decodable { let base_url: String; let model: String; let configured: Bool }
 struct ModelOptions: Decodable { let items: [String] }
-struct CheckQuestion: Decodable { let key: String; let text: String }
+struct CheckQuestion: Decodable, Identifiable { let key: String; let text: String; var id: String { key } }
+struct LatestConfirmedCheckIn: Decodable { let record: CheckInRecord? }
 struct CheckInRecord: Decodable {
     let id: String; let local_date: String; let answers: [String: String]; let diary_text: String
     let status: String; let revision: Int; let questions: [CheckQuestion]; let next_key: String?; let source_notice: String
@@ -104,8 +126,9 @@ extension JunoStore {
             modelBase = config.base_url; modelName = config.model; modelConfigured = config.configured
             try await loadConversations()
             let remembered = UserDefaults.standard.string(forKey: "conversationID")
-            let newDraft = UserDefaults.standard.string(forKey: "chatDraft.new") ?? ""
-            let identity = conversations.first { $0.id == remembered }?.id ?? (newDraft.isEmpty ? conversations.first?.id : nil)
+            let newDraft = UserDefaults.standard.string(forKey: "chatDraft." + (meeting ? "new.meeting" : "new")) ?? ""
+            let visible = conversations.filter { ($0.meeting_mode ?? false) == meeting }
+            let identity = visible.first { $0.id == remembered }?.id ?? (newDraft.isEmpty ? visible.first?.id : nil)
             chooseConversation(identity)
         } catch { report(error) }
     }
@@ -115,11 +138,22 @@ extension JunoStore {
         conversationMore = page.has_more
     }
     func chooseConversation(_ id: String?) {
-        if currentConversation != nil || !chatDraft.isEmpty { UserDefaults.standard.set(chatDraft, forKey: "chatDraft." + (currentConversation ?? "new")) }
+        if let id, let row = conversations.first(where: { $0.id == id }), (row.meeting_mode ?? false) != meeting { return }
+        if currentConversation != nil || !chatDraft.isEmpty { UserDefaults.standard.set(chatDraft, forKey: "chatDraft." + (currentConversation ?? (meeting ? "new.meeting" : "new"))) }
         currentConversation = id; messages = []; olderMessages = false
         UserDefaults.standard.set(id, forKey: "conversationID")
-        chatDraft = UserDefaults.standard.string(forKey: "chatDraft." + (id ?? "new")) ?? ""
+        chatDraft = UserDefaults.standard.string(forKey: "chatDraft." + (id ?? (meeting ? "new.meeting" : "new"))) ?? ""
         if let id { Task { do { try await loadMessages(id) } catch { chatIssue = "Could not load this conversation. Try Refresh." } } }
+    }
+    func switchConversationMode(from oldMode: Bool) {
+        let defaults = UserDefaults.standard
+        defaults.set(currentConversation, forKey: "modeConversation." + (oldMode ? "meeting" : "private"))
+        defaults.set(chatDraft, forKey: "chatDraft." + (currentConversation ?? (oldMode ? "new.meeting" : "new")))
+        let remembered = defaults.string(forKey: "modeConversation." + (meeting ? "meeting" : "private"))
+        let identity = conversations.first { $0.id == remembered && ($0.meeting_mode ?? false) == meeting }?.id
+        currentConversation = nil; chatDraft = ""; messages = []; olderMessages = false
+        chooseConversation(identity)
+        chatIssue = nil
     }
     func loadMessages(_ id: String, older: Bool = false) async throws {
         var path = "/v1/conversations/\(id)/messages"
@@ -142,6 +176,22 @@ extension JunoStore {
         guard !chatSending else { return }
         let text = retry.flatMap { failed in messages.first { $0.request_id == failed.request_id && $0.role == "user" }?.text } ?? chatDraft
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if retry == nil, let period = ConcurReconciliationPeriod.command(text) {
+            guard sharedProfile == nil else { chatIssue = "Request Concur jobs on the work Mac."; return }
+            chatSending = true
+            chatIssue = nil
+            Task {
+                defer { chatSending = false }
+                do {
+                    try await period.open()
+                    if chatDraft == text { chatDraft = "" }
+                    section = "Purchasing"
+                } catch {
+                    chatIssue = (error as? APIProblem)?.message ?? "Could not open Concur Helper."
+                }
+            }
+            return
+        }
         if retry == nil, let draft = memoryRequestText(text) { memoryReviewMessageID = nil;memoryReviewOriginal = text;memoryReviewText = draft;memoryNotice = nil;return }
         chatSending = true; chatIssue = nil
         let mode = meeting
@@ -150,7 +200,7 @@ extension JunoStore {
             do {
                 var identity = currentConversation
                 if identity == nil {
-                    let row = try await decode(ConversationRecord.self, "/v1/conversations", method: "POST", body: ["title": String(text.prefix(70))])
+                    let row = try await decode(ConversationRecord.self, "/v1/conversations", method: "POST", body: ["title": String(text.prefix(70)), "meeting_mode": mode])
                     identity = row.id; currentConversation = row.id; UserDefaults.standard.set(row.id, forKey: "conversationID")
                     UserDefaults.standard.set(text, forKey: "chatDraft." + row.id)
                 }
@@ -244,7 +294,7 @@ struct JunoBrandLogo: View {
         Group {
             if let url = Bundle.main.url(forResource: resource, withExtension: "png"), let logo = NSImage(contentsOf: url) {
                 Image(nsImage: logo).resizable().interpolation(.high).scaledToFill()
-                    .frame(width: 132, height: 42).clipped()
+                    .frame(width: 100, height: 32).clipped()
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(colorScheme == .dark ? Color(red: 36.0/255, green: 36.0/255, blue: 36.0/255) : Color(red: 0.99, green: 0.97, blue: 0.95))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -257,6 +307,7 @@ struct JunoBrandLogo: View {
 }
 
 struct RootView: View {
+    @State private var showCommands = false
     @ObservedObject var store: JunoStore
     @AppStorage("sidebarVisible") private var showSidebar = true
     @State private var visited = ["Today"]
@@ -266,14 +317,16 @@ struct RootView: View {
     @AppStorage("checkInReminderLastShown") private var lastReminderDay = ""
     @State private var reminderDay: String?
     private let daily = [("Today","sun.max"),("Chat","bubble.left.and.bubble.right"),("Plan","checklist"),("Schedules","calendar"),("Check-in","square.and.pencil"),("Memories","book.closed"),("Workers","person.2")]
-    private let sources = [("TaskDock","tray.full"),("Evidence","doc.text.magnifyingglass")]
-    private func title(_ key: String) -> String { ["Check-in":"Daily check-in","Model":"Local model","Workers":"Worker updates" ][key] ?? key }
+    private let sources = [("Evidence","externaldrive")]
+    private func title(_ key: String) -> String { ["Check-in":"Daily check-in","Model":"Local model","Workers":"Team","Plan":"Issues","Schedules":"Schedule","Evidence":"Sources","Recurring":"Recurring tasks" ][key] ?? key }
     @ViewBuilder private func workspace(_ key:String) -> some View {
         switch key {
         case "Today": TodayWorkspace(store:store)
         case "Schedules": SchedulesWorkspace(store:store)
         case "Plan": PlanningWorkspace(store:store)
         case "Reports": ReportsWorkspace(store:store)
+        case "Recurring": RecurringWorkspace(store:store)
+        case "Purchasing": PurchasingWorkspace(store:store)
         case "Memories": MemoryWorkspace(store:store)
         case "Check-in": CheckInWorkspace(store:store)
         case "Model":
@@ -281,7 +334,7 @@ struct RootView: View {
             else { VStack(alignment:.leading,spacing:16) { Text("Your work Mac runs Juno’s model").font(.title2.bold());Text("Set up LM Studio on the work Mac. AI replies need that Mac awake and reachable. Memory and diary edits work offline.").foregroundStyle(.secondary) }.padding(32) }
         case "TaskDock": TaskDockWorkspace(store:store)
         case "Connections": ConnectionsWorkspace(store:store)
-        case "Evidence": IntegrationsWorkspace(store:store)
+        case "Evidence": SourcesWorkspace(store:store)
         case "Workers": WorkerWorkspace(store:store)
         case "Computers": ComputersWorkspace(store:store)
         default: ChatWorkspace(store:store)
@@ -301,8 +354,15 @@ struct RootView: View {
                 Text(title(store.section)).font(.headline)
                 Spacer()
                 Text(store.status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                Toggle("Meeting mode",isOn:$store.meeting).toggleStyle(.switch).help("Professional tone; private-mode replies stay hidden.")
-            }.padding(.horizontal,18).padding(.vertical,12)
+                SourceHealthButton(store: store)
+                Button { showCommands = true } label: { Label("Search", systemImage: "magnifyingglass") }
+                    .help("Search or go to… (Command-K)").accessibilityLabel("Search or go to")
+                    .keyboardShortcut("k", modifiers: .command)
+                Toggle(store.meeting ? "Meeting mode on" : "Meeting mode",isOn:$store.meeting)
+                    .toggleStyle(.button).disabled(store.chatSending)
+                    .help("Use a professional conversation and hide private material.")
+            }.padding(.horizontal,18).padding(.vertical,8)
+            if store.meeting { Rectangle().fill(Color.teal).frame(height:3).accessibilityHidden(true) }
             if store.sharedProfile != nil {
                 HStack {
                     Label(store.offline ? "Offline copy" : "Work Mac connected",systemImage:store.offline ? "wifi.slash" : "checkmark.icloud")
@@ -324,26 +384,39 @@ struct RootView: View {
             HStack(spacing:0) {
                 if showSidebar {
                     List(selection:$store.section) {
-                        Section("My workday") { ForEach(daily,id:\.0) { key,icon in Label(title(key),systemImage:icon).tag(key) } }
-                        Section("Reporting") { Label("Reports", systemImage: "doc.text").tag("Reports") }
+                        Section("Day") { Label("Today",systemImage:"sun.max").tag("Today"); Label("Chat",systemImage:"bubble.left.and.bubble.right").tag("Chat") }
+                        Section("Work") {
+                            Label("Issues",systemImage:"checklist").tag("Plan")
+                            Label("Schedule",systemImage:"calendar").tag("Schedules")
+                            Label("Recurring tasks",systemImage:"repeat").tag("Recurring")
+                            Label("Purchasing",systemImage:"cart").tag("Purchasing")
+                            Label("Team",systemImage:"person.2").tag("Workers")
+                        }
+                        Section("Write & recall") { Label("Reports", systemImage: "doc.text").tag("Reports"); Label("Memories",systemImage:"book.closed").tag("Memories"); Label("Daily check-in",systemImage:"square.and.pencil").tag("Check-in") }
                         Section("Saved sources") { ForEach(sources,id:\.0) { key,icon in Label(title(key),systemImage:icon).tag(key) } }
                         Section { Button { NotificationCenter.default.post(name:Notification.Name("JunoSettings"),object:nil) } label: { Label("Settings…",systemImage:"gearshape") }.buttonStyle(.plain) }
-                    }.listStyle(.sidebar).frame(width:178)
+                    }.listStyle(.sidebar).frame(width:196)
                     Divider()
                 }
                 ZStack { ForEach(visited,id:\.self) { key in
-                    workspace(key).frame(maxWidth:.infinity,maxHeight:.infinity)
+                    Group {
+                        if store.meeting && ["Memories", "Check-in", "Workers", "Purchasing", "Evidence"].contains(key) {
+                            VStack(alignment: .leading, spacing: 14) {
+                                Label("Private workspace hidden", systemImage: "lock.shield").font(.title2)
+                                Text("Turn off Meeting mode to review personal memories, diary entries, worker reports, purchasing or source copies.").foregroundStyle(.secondary)
+                            }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        } else { workspace(key) }
+                    }.frame(maxWidth:.infinity,maxHeight:.infinity)
                         .opacity(store.section == key ? 1 : 0).disabled(store.section != key)
                         .allowsHitTesting(store.section == key).accessibilityHidden(store.section != key)
                 } }
             }
             if let issue = store.problem { HStack { Text(issue).foregroundStyle(.orange);Spacer();Button("Dismiss") { store.problem = nil } }.padding(12) }
-            Divider()
-            HStack { Text(store.sharedProfile == nil ? "Saved on this Mac" : "Work Mac and offline copy"); Spacer() }
-                .font(.caption).foregroundStyle(.secondary).padding(.horizontal,14).padding(.vertical,8)
         }.frame(minWidth:880,minHeight:600).preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
+        .sheet(isPresented: $showCommands) { JunoCommandPalette(store: store) }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("JunoToggleSidebar"))) { _ in showSidebar.toggle() }
         .onChange(of:store.section) { key in
+            if key == "TaskDock" { store.sourcesTab = "TaskDock"; store.section = "Evidence"; return }
             if !visited.contains(key) { visited.append(key) }
             if key == "Check-in" { dismissReminder() }
         }
@@ -388,17 +461,19 @@ struct ChatWorkspace: View {
     @State private var deleteTarget: ConversationRecord?
     @State private var deletingConversation = false
     @State private var deleteIssue: String?
+    private var visibleConversations: [ConversationRecord] { store.conversations.filter { ($0.meeting_mode ?? false) == store.meeting } }
     var body: some View {
         HSplitView {
             VStack(alignment: .leading) {
                 Button { store.chooseConversation(nil) } label: { Label("New conversation", systemImage: "plus") }.disabled(store.chatSending)
                 List(selection: Binding(get: { store.currentConversation }, set: { store.chooseConversation($0) })) {
-                    ForEach(store.conversations) { row in
+                    ForEach(visibleConversations) { row in
                         Text(row.title).lineLimit(2).tag(row.id).contextMenu {
                             Button("Delete conversation…",role:.destructive) { deleteTarget = row;deleteIssue = nil }.disabled(store.offline || store.chatSending || deletingConversation)
                         }
                     }
                 }.disabled(store.chatSending || deletingConversation)
+                if store.meeting { Text("Private conversations are hidden. Meeting chats use separate context and exclude saved memories and diaries.").font(.caption).foregroundStyle(.secondary) }
                 if let id = store.currentConversation,let row = store.conversations.first(where: { $0.id == id }) {
                     Button("Delete conversation…",role:.destructive) { deleteTarget = row;deleteIssue = nil }.disabled(store.offline || store.chatSending || deletingConversation)
                 }
@@ -415,7 +490,8 @@ struct ChatWorkspace: View {
                         LazyVStack(alignment: .leading, spacing: 18) {
                             if store.olderMessages { Button("Load older messages") { if let id = store.currentConversation { Task { do { try await store.loadMessages(id, older: true) } catch { store.report(error) } } } } }
                             if store.messages.isEmpty { Text("What would you like to work through?").font(.title2).padding(.top, 30) }
-                            ForEach(store.messages) { message in
+                            ForEach(chatDisplayEntries(store.messages)) { entry in
+                                if let message = entry.message {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(message.role == "user" ? "You" : "Juno").font(.caption.bold()).foregroundStyle(.secondary)
                                     if message.status == "pending" { ProgressView("Preparing a reply…") }
@@ -450,6 +526,18 @@ struct ChatWorkspace: View {
                                     }
                                     if message.status == "failed" { Button("Retry this reply") { store.sendChat(retry: message) }.disabled(store.chatSending) }
                                 }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(message.role == "user" ? Color.purple.opacity(0.08) : Color.secondary.opacity(0.04)).clipShape(RoundedRectangle(cornerRadius: 10)).id(message.id)
+                                } else {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Label("\(entry.invalidatedCount) earlier answers set aside", systemImage: "arrow.clockwise")
+                                        Text("Referenced work context changed. Removed answer text remains unavailable.").font(.caption).foregroundStyle(.secondary)
+                                        if let question = entry.question {
+                                            Button("Ask again with current context") {
+                                                store.prepareChat(question)
+                                                if store.proposedChatDraft == nil && store.chatDraft == question { store.sendChat() }
+                                            }.disabled(store.chatSending || store.offline || !store.modelConfigured)
+                                        }
+                                    }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                                }
                             }
                             if store.chatSending { ProgressView("Juno is thinking…") }
                         }.padding(.vertical, 4)
@@ -460,7 +548,16 @@ struct ChatWorkspace: View {
                 HStack {
                     TextEditor(text: $store.chatDraft).frame(height: 75).padding(6).overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary)).accessibilityLabel("Message to Juno")
                         .onChange(of: store.chatDraft) { value in UserDefaults.standard.set(value, forKey: "chatDraft." + (store.currentConversation ?? "new")) }
-                    Button(memoryRequestText(store.chatDraft) == nil ? "Send" : "Review memory") { store.sendChat() }.keyboardShortcut(.return, modifiers: .command).disabled(!store.connected || (store.offline && memoryRequestText(store.chatDraft) == nil) || (!store.pendingEdits.isEmpty && memoryRequestText(store.chatDraft) == nil) || (!store.modelConfigured && memoryRequestText(store.chatDraft) == nil) || store.chatSending || store.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.chatDraft.count > 6000)
+                    let concurCommand = ConcurReconciliationPeriod.command(store.chatDraft) != nil
+                    let memoryCommand = memoryRequestText(store.chatDraft) != nil
+                    let chatUnavailable = !store.connected || (!memoryCommand &&
+                        (store.offline || !store.pendingEdits.isEmpty || !store.modelConfigured))
+                    Button(concurCommand ? "Request Concur Job" : memoryCommand ? "Review memory" : "Send") {
+                        store.sendChat()
+                    }.keyboardShortcut(.return, modifiers: .command)
+                        .disabled((concurCommand ? store.sharedProfile != nil : chatUnavailable) ||
+                                  store.chatSending || store.chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                                  store.chatDraft.count > 6000)
                 }
                 HStack { Text("⌘ Return to send · \(store.chatDraft.count)/6000").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Refresh chat") { if let id = store.currentConversation { Task { try? await store.loadMessages(id) } } }.disabled(store.chatSending) }
             }.padding(20).frame(minWidth: 480)
@@ -556,6 +653,7 @@ struct CheckInWorkspace: View {
     @State private var briefRefresh = UUID()
     @State private var showCarry = false
     @State private var editingConfirmedDiary = false
+    @State private var reviewedQuestion: CheckQuestion?
     @FocusState private var answerFocused: Bool
     private let workTimeZone = TimeZone(identifier: "America/Chicago")!
     var dayKey: String {
@@ -580,6 +678,19 @@ struct CheckInWorkspace: View {
             if let briefIssue { Text(briefIssue).font(.callout).foregroundStyle(.orange) }
 
             if let row = store.checkIn, row.local_date == dayKey {
+                if row.status != "confirmed" {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 155), alignment: .leading)], alignment: .leading, spacing: 8) {
+                        ForEach(Array(row.questions.enumerated()), id: \.element.key) { index, question in
+                            let done = row.answers[question.key] != nil
+                            Button { reviewedQuestion = question } label: {
+                                Label(checkInStepTitle(question.key), systemImage: done ? "checkmark.circle.fill" : row.next_key == question.key ? "circle.inset.filled" : "circle")
+                                    .font(.callout).frame(maxWidth: .infinity, alignment: .leading)
+                            }.buttonStyle(.bordered).disabled(!done)
+                                .accessibilityLabel("Step \(index + 1), " + checkInStepTitle(question.key))
+                                .accessibilityValue(done ? "Saved. Open to review" : row.next_key == question.key ? "Current question" : "Not answered")
+                        }
+                    }
+                }
                 if row.status != "confirmed", let key = row.next_key, let question = row.questions.first(where: { $0.key == key }) {
                     VStack(alignment: .leading, spacing: 8) {
                         let step = row.questions.firstIndex(where: { $0.key == key }).map { $0 + 1 } ?? 1
@@ -590,21 +701,22 @@ struct CheckInWorkspace: View {
                         Text(question.text).font(.title2.bold()).textSelection(.enabled).accessibilityAddTraits(.isHeader)
                         Text(row.answers.isEmpty ? "Write your answer below." : "\(row.answers.count) of \(row.questions.count) questions reviewed.").font(.callout).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading)
-                    Text("Your answer").font(.headline)
-                    if let hints = brief?.guidance[key], !hints.isEmpty {
-                        if key == "completed", brief?.completed_count ?? 0 > 0 {
-                            Text("From TaskDock’s saved copy").font(.caption.bold()).foregroundStyle(.secondary)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 20) {
+                            answerField(question).frame(minWidth: 420, maxWidth: .infinity)
+                            checkInHints(key).frame(width: 260)
                         }
-                        ForEach(hints,id:\.self) { Text($0).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
+                        VStack(alignment: .leading, spacing: 12) {
+                            answerField(question)
+                            checkInHints(key)
+                        }
                     }
-                    TextEditor(text: $store.checkAnswer).frame(minHeight: 160).padding(8).overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
-                        .focused($answerFocused).accessibilityLabel("Check-in answer").accessibilityHint(question.text)
-                        .onChange(of: store.checkAnswer) { value in UserDefaults.standard.set(value, forKey: "answerDraft." + store.checkDay) }
                     if let issue = store.checkIssue { Text(issue).foregroundStyle(.orange).textSelection(.enabled) }
                     HStack {
                         Button("Skip for now") { store.saveAnswer(skip: true) }
                         Spacer()
                         Button("Save answer and continue") { store.saveAnswer() }
+                            .keyboardShortcut(.return, modifiers: .command)
                             .buttonStyle(.borderedProminent)
                             .disabled(store.checkAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.checkAnswer.count > 10000)
                     }.disabled(store.checkBusy)
@@ -684,8 +796,53 @@ struct CheckInWorkspace: View {
                 editingConfirmedDiary = false
             }
         }
+        .sheet(item: $reviewedQuestion) { question in
+            VStack(alignment: .leading, spacing: 16) {
+                Text(question.text).font(.title2.bold())
+                ScrollView { Text(store.checkIn?.answers[question.key].flatMap { $0.isEmpty ? "Skipped for now" : $0 } ?? "No answer saved").textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                Text("This is the saved interview answer. You can correct the complete diary during review.").font(.caption).foregroundStyle(.secondary)
+                HStack { Spacer(); Button("Close") { reviewedQuestion = nil }.keyboardShortcut(.cancelAction) }
+            }.padding(24).frame(width: 560, height: 360)
+        }
+
     }
 
+    private func checkInStepTitle(_ key: String) -> String {
+        ["completed": "What you finished", "interruptions": "What came up", "blockers": "Blockers & next steps", "employee_work": "Your team’s work", "tomorrow": "Tomorrow"][key] ?? key
+    }
+    private func answerField(_ question: CheckQuestion) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Your answer").font(.headline)
+            TextEditor(text: $store.checkAnswer).frame(minHeight: 200).padding(8)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
+                .focused($answerFocused).accessibilityLabel("Check-in answer").accessibilityHint(question.text)
+                .onChange(of: store.checkAnswer) { value in UserDefaults.standard.set(value, forKey: "answerDraft." + store.checkDay) }
+            Text("Your writing stays here until you save. Confirm the finished diary before it is used in reports.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+    private func checkInHints(_ key: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Reminders from saved records").font(.headline)
+            Text("Review these before adding them. A task marked complete does not verify a repair.").font(.caption).foregroundStyle(.secondary)
+            let items = key == "completed" ? brief?.completed ?? [] : key == "blockers" ? brief?.blockers ?? [] : []
+            ForEach(items.prefix(5)) { item in
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(item.title).font(.callout)
+                    if key == "blockers", let action = item.next_action, !action.isEmpty { Text(action).font(.caption).foregroundStyle(.secondary) }
+                    Button("Add to answer") {
+                        let note = item.title + (key == "blockers" ? item.next_action.map { ": " + $0 } ?? "" : "")
+                        store.checkAnswer += (store.checkAnswer.isEmpty ? "" : "\n") + "• " + note
+                        answerFocused = true
+                    }.disabled(store.checkBusy).accessibilityLabel("Add " + item.title + " to answer")
+                }
+                Divider()
+            }
+            ForEach(brief?.guidance[key] ?? [], id: \.self) { text in
+                if !items.contains(where: { $0.title == text }) { Text(text).font(.callout).foregroundStyle(.secondary) }
+            }
+            if brief?.source_stale == true { Label("Saved TaskDock copy needs a refresh; some work may be missing.", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
+        }.padding(12).background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+    }
     private func diaryReview(_ row: CheckInRecord) -> some View {
         let confirmed = row.status == "confirmed"
         let hasChanges = store.diaryDraft != row.diary_text
@@ -786,6 +943,9 @@ struct TodayWorkspace: View {
     @FocusState private var searchFocused: Bool
     @State private var remember = false
     @State private var todayCheckIn: CheckInRecord?
+    @State private var lastConfirmed: CheckInRecord?
+    @State private var readingDiary = false
+    @State private var nextPlan: PlanningResult?
     @State private var recallUnavailable = false
     private var today: String { CheckInReminder.day(Date()) }
     private var tasks: [TaskDockTask] { (snapshot?.items ?? []).filter(taskIsUnfinished) }
@@ -812,6 +972,8 @@ struct TodayWorkspace: View {
         var nextSchedules: ScheduleRecord?
         var nextIssues: [String] = []
         var nextCheckIn: CheckInRecord?
+        var nextConfirmed: CheckInRecord?
+        var nextSuggestions: PlanningResult?
         var nextRecallUnavailable = false
         let day = today
         do { let value = try await store.decode(TaskDockState.self,"/v1/taskdock");nextSnapshot = value.snapshot;if let error = value.error { nextIssues.append(error) } }
@@ -826,9 +988,18 @@ struct TodayWorkspace: View {
         do { nextCheckIn = try await store.decode(CheckInRecord.self, "/v1/check-ins/by-date/" + day) }
         catch let issue as APIProblem where issue.status == 404 {}
         catch { nextRecallUnavailable = true }
+        if !store.meeting {
+            do { nextConfirmed = try await store.decode(LatestConfirmedCheckIn.self, "/v1/check-ins/latest-confirmed").record }
+            catch { nextIssues.append("Recent diary recall is unavailable in this copy. Your saved check-ins remain in Daily check-in.") }
+        }
+        if !store.offline {
+            do { nextSuggestions = try await store.decode(PlanningResult.self, "/v1/planning/next?day=" + day) }
+            catch { nextIssues.append("Work readiness could not be recalculated. Open Issues to review the saved context.") }
+        }
         guard !Task.isCancelled, loadID == requestID, store.section == "Today", store.connected, today == day else { return }
         snapshot = nextSnapshot; planning = nextPlanning; schedules = nextSchedules; issues = nextIssues
-        todayCheckIn = nextCheckIn; recallUnavailable = nextRecallUnavailable
+        todayCheckIn = nextCheckIn; lastConfirmed = store.meeting ? nil : nextConfirmed; recallUnavailable = nextRecallUnavailable
+        nextPlan = nextSuggestions
     }
 
     private var recall: some View {
@@ -884,7 +1055,135 @@ struct TodayWorkspace: View {
         .accessibilityLabel("\(title), \(value)")
         .accessibilityAddTraits(filter == selection ? .isSelected : [])
     }
+    private func mainColumn(_ scroll: ScrollViewProxy) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+                WorkSupportPanel(store: store, snapshot: snapshot, planning: planning)
+                SourceFreshnessPanel(store: store)
+                if let nextPlan {
+                    if let question = nextPlan.question {
+                        GroupBox("Your next decision") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(question).font(.headline)
+                                Button("Review issues") { store.section = "Plan" }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    if snapshot?.stale == false {
+                        let ready = nextPlan.tasks.filter { $0.actionable }
+                        if !ready.isEmpty {
+                            GroupBox("Ready to work from the saved evidence") {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    ForEach(ready.prefix(5)) { task in
+                                        HStack(alignment: .top) {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(task.title).font(.headline)
+                                                Text("\(task.estimate_minutes) minutes · " + (task.employee.isEmpty ? "You" : task.employee) + (task.room.isEmpty ? "" : " · " + task.room)).font(.callout)
+                                                Text(task.reason).font(.caption).foregroundStyle(.secondary)
+                                            }
+                                            Spacer()
+                                            Button("Review work") { store.planningTaskID = task.id; store.section = "Plan" }
+                                                .accessibilityLabel("Review work for " + task.title)
+                                        }
+                                        Divider()
+                                    }
+                                    Text("A suggestion is not an assignment or room hold. Review the task before reserving time.").font(.caption).foregroundStyle(.secondary)
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                }
+                ForEach(issues,id:\.self) { Text($0).font(.caption).foregroundStyle(.orange) }
+                if let snapshot {
+                    HStack {
+                        countCard("Unfinished",tasks.count,"tray.full","All unfinished",scroll:scroll)
+                        countCard("Due / overdue",due.count,"calendar.badge.clock","Due / overdue",scroll:scroll)
+                        countCard("Recorded blockers",blocked.count,"pause.circle","Recorded blockers",scroll:scroll)
+                    }
+                    DisclosureGroup(snapshot.stale ? "TaskDock copy is out of date" : "TaskDock source details") {
+                        Text("Saved " + scheduleDate(snapshot.fetched_at) + ". Counts include subtasks.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let error = snapshot.error { Text(error).font(.caption).foregroundStyle(.orange) }
+                    GroupBox("Issues to review") {
+                        VStack(alignment:.leading,spacing:12) {
+                            HStack {
+                                Picker("Show",selection:$filter) { Text("Due / overdue").tag("Due / overdue");Text("Recorded blockers").tag("Recorded blockers");Text("All unfinished").tag("All unfinished") }
+                                TextField("Find an issue",text:$search).textFieldStyle(.roundedBorder).focused($searchFocused)
+                            }
+                            if filtered.isEmpty { Text("No matching issues in the saved copy.").foregroundStyle(.secondary) }
+                            ForEach(filtered.prefix(6)) { task in
+                                VStack(alignment:.leading,spacing:5) {
+                                    HStack {
+                                        Text(task.title).font(.headline)
+                                        Spacer()
+                                        Button("Review") { store.planningTaskID = task.id;store.section = "Plan" }
+                                            .accessibilityLabel("Review " + task.title)
+                                    }
+                                    Text((task.text("status_name") ?? "Status unknown") + " • Due: " + (taskDueDay(task) ?? "Not recorded")).font(.caption).foregroundStyle(.secondary)
+                                    if taskHasRecordedBlocker(task,facts(task)) { Text("Blocker: " + ([task.text("blocked_reason"),task.planningText("blockers"),task.planningText("dependencies"),task.planningBlockerFlag,facts(task)?.blocker,facts(task)?.waiting_on].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator:" • "))).font(.caption).foregroundStyle(.orange) }
+                                }.padding(.vertical,8)
+                                Divider()
+                            }
+                            if filtered.count > 6 { Text("Showing 6 of \(filtered.count). Search to narrow the list.").font(.caption) }
+                            Button("Open all TaskDock records") { store.section = "TaskDock" }
+                        }.padding(8).frame(maxWidth:.infinity,alignment:.leading)
+                    }.id("today-issues")
+                } else if !busy {
+                    GroupBox("Your TaskDock context") { VStack(alignment:.leading,spacing:10) {
+                        Text(!store.connected ? "Connect to Juno’s service to load your saved TaskDock tasks." : !issues.isEmpty ? "The saved TaskDock summary could not be loaded. Try Refresh overview or check the TaskDock connection." : "No TaskDock snapshot is available yet. Connect TaskDock to see issues and deadlines here.")
+                        Button("Open TaskDock") { store.section = "TaskDock" }
+                    }.padding(12).frame(maxWidth:.infinity,alignment:.leading) }
+                }
+        }
+    }
+    private var contextColumn: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            TodayCalendarAgenda(store: store)
+            if !store.meeting, let lastConfirmed {
+                GroupBox("Where you stopped") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Confirmed diary · " + lastConfirmed.local_date, systemImage: "checkmark.circle")
+                        Text(String(lastConfirmed.diary_text.prefix(500)) + (lastConfirmed.diary_text.count > 500 ? "…" : "")).lineLimit(8)
+                        HStack {
+                            Button("Read diary") { readingDiary = true }
+                            Button("Pick up here") {
+                                store.prepareChat("Help me resume from my confirmed diary for " + lastConfirmed.local_date + ":\n\n" + String(lastConfirmed.diary_text.prefix(5000)))
+                            }
+                        }
+                        Text("Pick up here opens an unsent chat draft; it does not change your plan.").font(.caption).foregroundStyle(.secondary)
+                    }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if store.connected && !store.meeting { recall }
+                if let schedules {
+                    let holds = schedules.reservations.filter { hold in
+                        guard let start = providerDate(hold.start) else { return false }
+                        let f = DateFormatter();f.timeZone = TimeZone(identifier:"America/Chicago");f.dateFormat = "yyyy-MM-dd";return f.string(from:start) == today
+                    }
+                    GroupBox("Today’s local planning holds") {
+                        VStack(alignment:.leading,spacing:10) {
+                            if holds.isEmpty { Text("No holds recorded for today.").foregroundStyle(.secondary) }
+                            ForEach(holds) { hold in Text(hold.room + " • " + (hold.employee.isEmpty ? "My work" : hold.employee) + " • " + scheduleDate(hold.start) + " → " + scheduleDate(hold.end)) }
+                            if let notice = schedules.reservation_notice,!notice.isEmpty { Text(notice).foregroundStyle(.orange) }
+                            Button("Review schedules") { store.section = "Schedules" }
+                        }.padding(8).frame(maxWidth:.infinity,alignment:.leading)
+                    }
+                }
+            GroupBox("Reports & sources") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Review saved Dean talking points and chair emails. Reports shows each preparation schedule and its actual status.").font(.callout)
+                    Button("Review saved reports") { store.section = "Reports" }
+                    if let snapshot {
+                        Text("TaskDock copy · " + scheduleDate(snapshot.fetched_at)).font(.caption)
+                        if snapshot.stale { Label("Refresh needed before planning", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
+                    }
+                    Button("Review source status") { store.sourcesTab = "Overview"; store.section = "Evidence" }
+                }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
     var body: some View {
+        GeometryReader { viewport in
         ScrollViewReader { scroll in
         ScrollView {
             VStack(alignment:.leading,spacing:18) {
@@ -907,76 +1206,36 @@ struct TodayWorkspace: View {
                     }.fixedSize()
                 }
                 if store.offline { Label("Offline overview — dated records; memory and diary edits can queue for sync.",systemImage:"wifi.slash").foregroundStyle(.orange) }
-                if store.connected { recall }
-                ForEach(issues,id:\.self) { Text($0).font(.caption).foregroundStyle(.orange) }
-                if let snapshot {
-                    HStack {
-                        countCard("Unfinished",tasks.count,"tray.full","All unfinished",scroll:scroll)
-                        countCard("Due / overdue",due.count,"calendar.badge.clock","Due / overdue",scroll:scroll)
-                        countCard("Recorded blockers",blocked.count,"pause.circle","Recorded blockers",scroll:scroll)
+                if viewport.size.width >= 860 {
+                    HStack(alignment: .top, spacing: 20) {
+                        mainColumn(scroll).frame(minWidth: 500, maxWidth: .infinity)
+                        contextColumn.frame(width: 280)
                     }
-                    DisclosureGroup(snapshot.stale ? "TaskDock copy is out of date" : "TaskDock source details") {
-                        Text("Saved " + scheduleDate(snapshot.fetched_at) + ". Counts include subtasks.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let error = snapshot.error { Text(error).font(.caption).foregroundStyle(.orange) }
-                    GroupBox("Issues to review") {
-                        VStack(alignment:.leading,spacing:12) {
-                            HStack {
-                                Picker("Show",selection:$filter) { Text("Due / overdue").tag("Due / overdue");Text("Recorded blockers").tag("Recorded blockers");Text("All unfinished").tag("All unfinished") }
-                                TextField("Find an issue",text:$search).textFieldStyle(.roundedBorder).focused($searchFocused)
-                            }
-                            if filtered.isEmpty { Text("No matching issues in the saved copy.").foregroundStyle(.secondary) }
-                            ForEach(filtered.prefix(20)) { task in
-                                VStack(alignment:.leading,spacing:5) {
-                                    HStack {
-                                        Text(task.title).font(.headline)
-                                        Spacer()
-                                        Button("Review") { store.planningTaskID = task.id;store.section = "Plan" }
-                                            .accessibilityLabel("Review " + task.title)
-                                    }
-                                    Text((task.text("status_name") ?? "Status unknown") + " • Due: " + (taskDueDay(task) ?? "Not recorded")).font(.caption).foregroundStyle(.secondary)
-                                    if taskHasRecordedBlocker(task,facts(task)) { Text("Blocker: " + ([task.text("blocked_reason"),task.planningText("blockers"),task.planningText("dependencies"),task.planningBlockerFlag,facts(task)?.blocker,facts(task)?.waiting_on].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator:" • "))).font(.caption).foregroundStyle(.orange) }
-                                }.padding(.vertical,8)
-                                Divider()
-                            }
-                            if filtered.count > 20 { Text("Showing 20 of \(filtered.count). Search to narrow the list.").font(.caption) }
-                            Button("Open all TaskDock records") { store.section = "TaskDock" }
-                        }.padding(8).frame(maxWidth:.infinity,alignment:.leading)
-                    }.id("today-issues")
-                } else if !busy {
-                    GroupBox("Your TaskDock context") { VStack(alignment:.leading,spacing:10) {
-                        Text(!store.connected ? "Connect to Juno’s service to load your saved TaskDock tasks." : !issues.isEmpty ? "The saved TaskDock summary could not be loaded. Try Refresh overview or check the TaskDock connection." : "No TaskDock snapshot is available yet. Connect TaskDock to see issues and deadlines here.")
-                        Button("Open TaskDock") { store.section = "TaskDock" }
-                    }.padding(12).frame(maxWidth:.infinity,alignment:.leading) }
-                }
-                if let schedules {
-                    let holds = schedules.reservations.filter { hold in
-                        guard let start = providerDate(hold.start) else { return false }
-                        let f = DateFormatter();f.timeZone = TimeZone(identifier:"America/Chicago");f.dateFormat = "yyyy-MM-dd";return f.string(from:start) == today
-                    }
-                    GroupBox("Today’s local planning holds") {
-                        VStack(alignment:.leading,spacing:10) {
-                            if holds.isEmpty { Text("No holds recorded for today.").foregroundStyle(.secondary) }
-                            ForEach(holds) { hold in Text(hold.room + " • " + (hold.employee.isEmpty ? "My work" : hold.employee) + " • " + scheduleDate(hold.start) + " → " + scheduleDate(hold.end)) }
-                            if let notice = schedules.reservation_notice,!notice.isEmpty { Text(notice).foregroundStyle(.orange) }
-                            Button("Review schedules") { store.section = "Schedules" }
-                        }.padding(8).frame(maxWidth:.infinity,alignment:.leading)
-                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 18) { mainColumn(scroll); contextColumn }
                 }
                 Text("This overview does not choose a priority or assign work. Missing records and unreported blockers stay unknown.").font(.caption).foregroundStyle(.secondary)
-            }.padding(26).frame(maxWidth:1100,alignment:.leading)
+            }.padding(26).frame(maxWidth:1300,alignment:.leading)
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("JunoFind"))) { _ in
             guard store.section == "Today", snapshot != nil else { return }
             scroll.scrollTo("today-issues", anchor: .top)
             searchFocused = true
         }
-        }.task(id: String(store.connected) + "|" + store.section) {
+        }.task(id: String(store.connected) + "|" + store.section + "|" + String(store.meeting)) {
             guard store.section == "Today" else { return }
             await load()
         }
         .sheet(isPresented:$remember) { Editor(store:store,original:nil) }
+        .sheet(isPresented: $readingDiary) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Confirmed diary · " + (lastConfirmed?.local_date ?? "")).font(.title2.bold())
+                ScrollView { Text(lastConfirmed?.diary_text ?? "").textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                HStack { Spacer(); Button("Close") { readingDiary = false }.keyboardShortcut(.cancelAction) }
+            }.padding(24).frame(width: 620, height: junoSheetHeight(620))
+        }
+        .onChange(of: store.meeting) { if $0 { readingDiary = false; lastConfirmed = nil } }
+        }
     }
 }
 
@@ -1100,12 +1359,13 @@ struct JunoHelpView: View {
         ScrollView { VStack(alignment:.leading,spacing:20) {
             Text("A little less to keep in your head").font(.title2.bold())
             Text("Start in Today for a saved overview. Plan helps you review one issue at a time. Schedules compares rooms, people and possible work windows.")
+            GroupBox("Start and find your place again") { Text("Today leads with One small next step. Choose Help me get started, review a first action and finish point, then Start this. I was interrupted saves your place immediately. Help me restart offers a smaller step, a blocker or deliberately parking this work and switching. Parked work stays under Saved for later. Step finished records your personal step; it does not close a TaskDock issue. Meeting mode hides these private bookmarks.").frame(maxWidth:.infinity,alignment:.leading) }
             GroupBox("Talk and remember") { Text("Chat drafts stay until you send or clear them. Saving a memory opens a review first. A Saved to memory badge means a memory record exists; a model’s promise does not. Review and correct facts in Memories.").frame(maxWidth:.infinity,alignment:.leading) }
-            GroupBox("Plan with confidence") { Text("TaskDock is your task hub. Juno reads shared information and labels unknowns. Estimates and possible work windows need review. Apply changes a draft; Save planning persists it. Juno does not assign or notify staff.").frame(maxWidth:.infinity,alignment:.leading) }
-            GroupBox("At the end of the day") { Text("Today shows dated TaskDock completions and your saved diary to help you remember. Daily check-in asks five questions. Set your weekday reminder in Settings → Daily check-in.").frame(maxWidth:.infinity,alignment:.leading) }
+            GroupBox("Plan with confidence") { Text("TaskDock is your task hub. Juno reads shared information and labels unknowns. Estimates and possible work windows need review. Save planning (Command-S) stores your reviewed changes directly in Juno. Cancel keeps the previous saved details. Juno does not assign or notify staff.").frame(maxWidth:.infinity,alignment:.leading) }
+            GroupBox("At the end of the day") { Text("Today shows dated TaskDock completions and your saved diary to help you remember. Daily check-in asks five questions one at a time. Use Add to answer to include a saved-record reminder; review the diary before confirming. Set your weekday reminder in Settings → Daily check-in.").frame(maxWidth:.infinity,alignment:.leading) }
             GroupBox("Review a report") { Text("Open Reports from the sidebar or Today. Review Thursday’s Dean talking points or select a recipient for Friday’s email. Save your edits in Juno, then copy the email when you’re ready to send it.").frame(maxWidth:.infinity,alignment:.leading) }
-            GroupBox("Away from work") { Text("A paired laptop keeps a dated offline copy and queues memory and diary edits. AI replies need the work Mac awake and reachable. Review sync conflicts in Settings → Computers & sync.").frame(maxWidth:.infinity,alignment:.leading) }
-            Text("Command-comma opens Settings. Command-F focuses the current workspace’s search when available. Option-Command-S shows or hides the sidebar. Close Window keeps Juno running. Quit stops this app’s local service.").font(.callout).foregroundStyle(.secondary)
+            GroupBox("Away from work") { Text("A paired laptop keeps a dated offline copy and queues memory and diary edits. Work bookmarks can be updated while connected; offline bookmark editing is disabled in this increment. AI replies need the work Mac awake and reachable. Review sync conflicts in Settings → Computers & sync.").frame(maxWidth:.infinity,alignment:.leading) }
+            Text("Command-K searches saved tasks and memories or opens a workspace. Recurring tasks can create due unassigned tasks in the exact approved TaskDock column after a separate write connection and exact routine review. New routines stay inactive until enabled; paused routines keep their task receipts. Purchasing imports reviewed Receipt Helper exports without submitting anything to Concur. Command-comma opens Settings. Command-F focuses the current workspace’s search when available. Option-Command-S shows or hides the sidebar. Close Window keeps Juno running. Quit stops this app’s local service.").font(.callout).foregroundStyle(.secondary)
         }.padding(24).textSelection(.enabled) }.frame(minWidth:560,minHeight:440)
     }
 }

@@ -31,7 +31,7 @@ def main():
         contents = bundle/'Contents'
         (contents/'MacOS').mkdir(parents=True)
         subprocess.run(['xcrun','swiftc','-parse-as-library','-swift-version','5','-O','-target','arm64-apple-macosx13.5',
-                        str(ROOT/'desktop/Juno.swift'),str(ROOT/'desktop/Companion.swift'),str(ROOT/'desktop/TaskDock.swift'),str(ROOT/'desktop/Shared.swift'),str(ROOT/'desktop/Integrations.swift'),str(ROOT/'desktop/Connections.swift'),str(ROOT/'desktop/Planning.swift'),str(ROOT/'desktop/Schedules.swift'),str(ROOT/'desktop/Workers.swift'),'-o',str(contents/'MacOS/Juno')], check=True)
+                        str(ROOT/'desktop/Juno.swift'),str(ROOT/'desktop/Companion.swift'),str(ROOT/'desktop/TaskDock.swift'),str(ROOT/'desktop/Shared.swift'),str(ROOT/'desktop/Integrations.swift'),str(ROOT/'desktop/Connections.swift'),str(ROOT/'desktop/Planning.swift'),str(ROOT/'desktop/Schedules.swift'),str(ROOT/'desktop/Workers.swift'),str(ROOT/'desktop/Routines.swift'),str(ROOT/'desktop/WorkSupport.swift'),'-o',str(contents/'MacOS/Juno')], check=True)
         resources = contents/'Resources'
         resources.mkdir()
         shutil.copy2(ROOT/'desktop/branding/juno-logo.png', resources/'JunoLogo.png')
@@ -48,7 +48,7 @@ def main():
                                check=True, stdout=subprocess.DEVNULL)
         subprocess.run(['iconutil','-c','icns',str(iconset),'-o',str(resources/'Juno.icns')], check=True)
         info = dict(CFBundleIconFile='Juno', CFBundleName='Juno', CFBundleDisplayName='Juno', CFBundleIdentifier='com.dmccoy.juno.development',
-                    CFBundleExecutable='Juno', CFBundlePackageType='APPL', CFBundleShortVersionString='0.1.0',
+                    CFBundleExecutable='Juno', CFBundlePackageType='APPL', CFBundleShortVersionString=RELEASE['version'].split('-')[0],
                     CFBundleVersion=str(RELEASE['build']), JunoReleaseVersion=RELEASE['version'], LSMinimumSystemVersion='13.5', NSHighResolutionCapable=True,
                     NSAppTransportSecurity={'NSAllowsLocalNetworking':True}, JunoProjectRoot=str(ROOT))
         (contents/'Info.plist').write_bytes(plistlib.dumps(info))

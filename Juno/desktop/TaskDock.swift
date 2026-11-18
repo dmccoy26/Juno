@@ -88,6 +88,7 @@ enum TaskDockKeychain {
 
 struct TaskDockWorkspace: View {
     @ObservedObject var store: JunoStore
+    var embedded = false
     @State private var origin = UserDefaults.standard.string(forKey: "taskdockOrigin") ?? "http://127.0.0.1:8100"
     @State private var token = ""
     @State private var state: TaskDockState?
@@ -173,8 +174,10 @@ struct TaskDockWorkspace: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("TaskDock · read-only").font(.title2.bold())
-            Text("Review TaskDock’s saved tasks here. Connection settings are below when you need them.").foregroundStyle(.secondary)
+            if !embedded {
+                Text("TaskDock · read-only").font(.title2.bold())
+                Text("Review TaskDock’s saved tasks here. Connection settings are below when you need them.").foregroundStyle(.secondary)
+            }
             if store.sharedProfile == nil {
             HStack { Button("Refresh from TaskDock") { reviewing = nil;refresh() }.disabled(busy || !store.connected); if busy { ProgressView().controlSize(.small) } }
             DisclosureGroup("TaskDock connection settings",isExpanded:$settingsExpanded) {
@@ -211,10 +214,12 @@ struct TaskDockWorkspace: View {
             } else { Text("This laptop reads the work Mac’s dated TaskDock snapshot. Manage pairing and refresh TaskDock on the work Mac.").foregroundStyle(.secondary) }
             if let notice { Text(notice).foregroundStyle(.secondary).textSelection(.enabled) }
             if let snapshot = state?.snapshot {
+                if !embedded {
                 if let version = snapshot.info.sharing_version {
                     Text("Controlled sharing • version \(version). Change shared fields in TaskDock Settings → Juno.").font(.caption).foregroundStyle(.secondary)
                     DisclosureGroup("Shared information groups") { Text(snapshot.info.sharing?.pretty ?? "Unknown selection").font(.caption).textSelection(.enabled) }
                 } else { Text("Legacy task scope. Optional planning facts are not shared. Choose them in TaskDock Settings → Juno.").font(.caption).foregroundStyle(.secondary) }
+                }
                 if let notice = snapshot.info.retention_notice { Text(notice).foregroundStyle(.orange) }
                 TimelineView(.periodic(from: .now, by: 60)) { tick in
                     let parser = ISO8601DateFormatter()
@@ -224,10 +229,12 @@ struct TaskDockWorkspace: View {
                     Text("\(snapshot.count) tasks · Juno saved: \(scheduleDate(snapshot.fetched_at))\(stale ? " · STALE — refresh before relying on this" : " · saved snapshot; provider freshness shown separately")").font(.caption).foregroundStyle(stale ? .orange : .secondary)
                 }
                 if let error = state?.error { Text(error).foregroundStyle(.orange) }
-                DisclosureGroup("TaskDock source freshness (separate from Juno’s read time)") { Text(snapshot.sources.pretty).font(.caption.monospaced()).textSelection(.enabled).frame(maxHeight: 110) }
+                if !embedded {
+                DisclosureGroup("TaskDock source freshness (separate from Juno’s read time)") { Text(snapshot.sources.pretty).font(.caption.monospaced()).textSelection(.enabled).frame(maxHeight: 110) }                }
+
                 HSplitView {
                     VStack {
-                        TextField("Filter saved tasks", text: $search).focused($searchFocused).onReceive(NotificationCenter.default.publisher(for:Notification.Name("JunoFind"))) { _ in if store.section == "TaskDock" { searchFocused = true } }.textFieldStyle(.roundedBorder)
+                        TextField("Filter saved tasks", text: $search).focused($searchFocused).onReceive(NotificationCenter.default.publisher(for:Notification.Name("JunoFind"))) { _ in if store.section == "TaskDock" || store.section == "Evidence" && store.sourcesTab == "TaskDock" { searchFocused = true } }.textFieldStyle(.roundedBorder)
                         List(selection: $selected) {
                             ForEach(tasks) { task in
                                 VStack(alignment: .leading) { Text(task.title); Text(task.text("status_name") ?? task.text("behavior") ?? "Status unknown").font(.caption).foregroundStyle(.secondary) }.tag(task.id)
@@ -269,7 +276,24 @@ struct TaskDockWorkspace: View {
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
                     }.frame(minWidth: 350)
                 }
-                DisclosureGroup("Field definitions", isExpanded: $definitions) { ScrollView { Text(snapshot.info.definitions.pretty).font(.caption.monospaced()).textSelection(.enabled) }.frame(maxHeight: 100) }
+                if embedded {
+                    DisclosureGroup("Sharing, freshness & field definitions") {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 10) {
+                if let version = snapshot.info.sharing_version {
+                    Text("Controlled sharing • version \(version). Change shared fields in TaskDock Settings → Juno.").font(.caption).foregroundStyle(.secondary)
+                    DisclosureGroup("Shared information groups") { Text(snapshot.info.sharing?.pretty ?? "Unknown selection").font(.caption).textSelection(.enabled) }
+                } else { Text("Legacy task scope. Optional planning facts are not shared. Choose them in TaskDock Settings → Juno.").font(.caption).foregroundStyle(.secondary) }
+
+                                Text("Provider freshness is separate from Juno’s read time.").font(.caption)
+                                Text(snapshot.sources.pretty).font(.caption.monospaced())
+                                Text("Field definitions").font(.headline)
+                                Text(snapshot.info.definitions.pretty).font(.caption.monospaced())
+                            }.textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        }.frame(maxHeight: 180)
+                    }
+                } else {
+                DisclosureGroup("Field definitions", isExpanded: $definitions) { ScrollView { Text(snapshot.info.definitions.pretty).font(.caption.monospaced()).textSelection(.enabled) }.frame(maxHeight: 100) }                }
             } else {
                 if let error = state?.error { Text(error).foregroundStyle(.orange) }
                 Spacer(); Text("No complete TaskDock snapshot saved yet.").foregroundStyle(.secondary); Spacer()

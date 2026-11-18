@@ -30,6 +30,14 @@ func credentialWork<T>(_ operation: @escaping () throws -> T) async throws -> T 
 
 @MainActor
 final class JunoStore: ObservableObject {
+    @Published var routineDeliveryNotice = ""
+    @Published var routineDeliveryRevision = 0
+    var routineDeliveryBusy = false
+    var calendarRefreshInProgress = false
+    var calendarSettingsOpen: Bool { NSApplication.shared.windows.contains { $0.title == "Juno Settings" && $0.isVisible } }
+    @Published var calendarCopyRevision = 0
+    @Published var calendarRefreshStatus = UserDefaults.standard.bool(forKey: "calendarAutomaticEnabled") ? (UserDefaults.standard.string(forKey: "calendarAutomaticStatus") ?? "Automatic calendar refresh is enabled.") : "Automatic calendar refresh is off."
+
     @Published var items: [Memory] = []
     @Published var selected: String?
     @Published var query = ""
@@ -39,10 +47,16 @@ final class JunoStore: ObservableObject {
     @Published var busy = false
     @Published var hasMore = false
     @Published var meeting = UserDefaults.standard.bool(forKey: "meetingMode") {
-        didSet { UserDefaults.standard.set(meeting, forKey: "meetingMode") }
+        didSet {
+            UserDefaults.standard.set(meeting, forKey: "meetingMode")
+            if oldValue != meeting { switchConversationMode(from: oldValue) }
+        }
     }
     @Published var section = "Today"
+    @Published var sourcesTab = "Overview"
+    @Published var reportsTab = "Documents"
     @Published var workerTaskID:String?
+    @Published var schedulingTask: SchedulingTaskContext?
     @Published var settingsSection = "Connections"
     @Published var unsavedSections:Set<String> = []
     func openSettings(_ section:String) {
@@ -114,6 +128,8 @@ final class JunoStore: ObservableObject {
     }
     @Published var chairsPreparing = false
     @Published var chairsNotice = ""
+    @Published var chairsFailure: String?
+    @Published var chairsFailureWeek = ""
     var chairsLastAttempt: Date?
     var chairsHandledWeek: String?
     var startupTask: Task<Void, Never>?
@@ -468,7 +484,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     private var activeWindow:NSWindow? { NSApp.keyWindow ?? NSApp.mainWindow ?? window }
     @objc func toggleSidebar() { NotificationCenter.default.post(name: Notification.Name("JunoToggleSidebar"), object: nil) }
     func validateMenuItem(_ item:NSMenuItem) -> Bool {
-        if item.action == #selector(findInWorkspace) { return ["Today","Plan","Memories","TaskDock","Evidence"].contains(store.section) && NSApp.keyWindow === window && window?.attachedSheet == nil }
+        if item.action == #selector(findInWorkspace) { return (["Today","Plan","Memories","TaskDock","Evidence"].contains(store.section) || (store.section == "Reports" && store.reportsTab == "Documents")) && NSApp.keyWindow === window && window?.attachedSheet == nil }
         if item.action == #selector(toggleSidebar) { return NSApp.keyWindow === window && window?.attachedSheet == nil }
         if item.action == #selector(zoomCurrent(_:)) { return activeWindow?.isVisible == true && activeWindow?.styleMask.contains(.resizable) == true }
         if item.action == #selector(minimizeCurrent(_:)) { return activeWindow?.isVisible == true && activeWindow?.isMiniaturized == false }
@@ -517,7 +533,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     func applicationShouldTerminate(_ sender:NSApplication) -> NSApplication.TerminateReply {
         guard !store.unsavedSections.isEmpty else { return .terminateNow }
         let alert = NSAlert();alert.messageText = "You have unsaved changes"
-        alert.informativeText = "Return to " + store.unsavedSections.sorted().joined(separator:" and ") + " to save your draft, or quit and discard those draft changes. Your saved records are kept."
+        alert.informativeText = "Return to " + store.unsavedSections.sorted().joined(separator:" and ") + " to save, or quit without saving. Your saved records are kept. Editors with local recovery can offer unsaved drafts when you reopen."
         alert.addButton(withTitle:"Return to Juno");alert.addButton(withTitle:"Quit without saving")
         return alert.runModal() == .alertFirstButtonReturn ? .terminateCancel : .terminateNow
     }

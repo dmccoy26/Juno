@@ -221,12 +221,15 @@ def availability(session,owner,day,room='',employee='',minutes=60,supervision=Fa
     budget_cache=_budget_cache if _budget_cache is not None else {}
     calendar_ready=True
     if not employee or supervision:
-        if 'calendar_ready' not in budget_cache:
+        calendar_key=('calendar_ready',day.isoformat())
+        if calendar_key not in budget_cache:
             calendars=session.scalars(select(IntegrationSnapshot).where(IntegrationSnapshot.owner_id==owner,IntegrationSnapshot.kind.in_(['calendar','google_calendar','outlook_calendar']))).all()
-            calendar_ready=not any(r.details.get('active') is not False and (r.error or (now()-r.fetched_at).total_seconds()>86400) for r in calendars)
-            budget_cache['calendar_ready']=calendar_ready
-        calendar_ready=budget_cache['calendar_ready']
-        if not calendar_ready:warnings.append('The connected calendar needs refresh before reserving personal/supervised work.')
+            calendar_ready=not any(r.details.get('active') is not False and (r.error or (now()-r.fetched_at).total_seconds()>86400 or
+                (r.details.get('start') and day.isoformat()<r.details['start']) or
+                (r.details.get('end') and day.isoformat()>=r.details['end'])) for r in calendars)
+            budget_cache[calendar_key]=calendar_ready
+        calendar_ready=budget_cache[calendar_key]
+        if not calendar_ready:warnings.append('The connected calendar needs refresh or date coverage before reserving personal/supervised work.')
         filtered=[]
         for a,b in possible:
             local=a.astimezone(ZONE);week=local.date()-timedelta(days=local.weekday());weekstart=datetime.combine(week,time(),ZONE);weekend=weekstart+timedelta(days=7)

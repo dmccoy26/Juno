@@ -198,6 +198,17 @@ class ProviderAPITests(memory_tests.MemoryTests):
         self.app=create_app(self.engine,model_factory=FakeModel,provider_transport=self.fixture)
         self.client=TestClient(self.app,base_url='http://127.0.0.1:18123',client=('127.0.0.1',50000));self.client.headers['Authorization']='Bearer '+self.token
     def refresh(self,provider='gmail',expected=None):return self.client.post('/v1/providers/'+provider+'/refresh',json={'token':TOKEN,'selection':config(provider),'expected_id':expected})
+    def test_calendar_busy_only_omits_private_details_from_saved_copy_and_cache(self):
+        response=self.client.post('/v1/providers/google_calendar/refresh',json={'token':TOKEN,'selection':{**config('google_calendar'),'busy_only':True}})
+        self.assertEqual(response.status_code,200,response.text)
+        snapshot=response.json()['snapshot'];self.assertTrue(snapshot['details']['busy_only'])
+        self.assertTrue(any(row.get('busy') for row in snapshot['items']))
+        self.assertNotIn('Synthetic Dean meeting',response.text)
+        self.assertNotIn('Read this agenda',response.text)
+        self.assertNotIn('Synthetic Dean meeting',self.client.get('/v1/cache').text)
+        for row in snapshot['items']:
+            self.assertNotIn('description',row);self.assertNotIn('location',row);self.assertNotIn('notes',row)
+
     def test_owner_cache_context_disconnection_and_error_retention(self):
         first=self.refresh();self.assertEqual(first.status_code,200,first.text);row=first.json()['snapshot'];ident=row['id']
         self.assertEqual(self.client.get('/v1/integrations',headers={'Authorization':'Bearer '+self.other_token}).json()['items'],[])

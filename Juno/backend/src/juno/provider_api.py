@@ -25,6 +25,7 @@ class Selection(Strict):
     end:str=Field(default='',max_length=10)
     timezone:str=Field(default='America/Chicago',max_length=100)
     include_threads:bool=True
+    busy_only:bool=False
     reviewed_account:str | None=Field(default=None,pattern=r'^[0-9a-f]{64}$')
 class Refresh(Credential):
     selection:Selection

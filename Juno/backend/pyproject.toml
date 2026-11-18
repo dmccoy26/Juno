@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "juno-backend"
-version = "0.1.0.dev0"
+version = "0.2.27.dev0"
 description = "Juno work companion service and read-only integrations"
 requires-python = ">=3.12"
 dependencies = [

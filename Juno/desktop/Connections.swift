@@ -32,9 +32,9 @@ struct SavedConnection: Codable {
     var completionArchiveID = "";var completionDateColumn = ""
     var accountID = "";var accountLabel = ""
     var query = "in:inbox is:unread";var start = integrationDay(-30);var end = integrationDay(30);var zone = "America/Chicago"
-    var includeThreads = true;var retryAt:Date?
+    var includeThreads = true;var busyOnly = true;var retryAt:Date?
     init() {}
-    enum CodingKeys:String,CodingKey { case clientID,clientSecret,tenant,accessToken,refreshToken,expiry,scope,resources,resourceLabels,accountID,accountLabel,query,start,end,zone,includeThreads,retryAt,completionArchiveID,completionDateColumn }
+    enum CodingKeys:String,CodingKey { case clientID,clientSecret,tenant,accessToken,refreshToken,expiry,scope,resources,resourceLabels,accountID,accountLabel,query,start,end,zone,includeThreads,busyOnly,retryAt,completionArchiveID,completionDateColumn }
     init(from decoder:Decoder) throws {
         self.init();let c = try decoder.container(keyedBy:CodingKeys.self)
         clientID = try c.decodeIfPresent(String.self,forKey:.clientID) ?? clientID;clientSecret = try c.decodeIfPresent(String.self,forKey:.clientSecret) ?? clientSecret;tenant = try c.decodeIfPresent(String.self,forKey:.tenant) ?? tenant
@@ -44,9 +44,34 @@ struct SavedConnection: Codable {
         completionDateColumn = try c.decodeIfPresent(String.self,forKey:.completionDateColumn) ?? ""
         accountID = try c.decodeIfPresent(String.self,forKey:.accountID) ?? accountID;accountLabel = try c.decodeIfPresent(String.self,forKey:.accountLabel) ?? accountLabel
         query = try c.decodeIfPresent(String.self,forKey:.query) ?? query;start = try c.decodeIfPresent(String.self,forKey:.start) ?? start;end = try c.decodeIfPresent(String.self,forKey:.end) ?? end;zone = try c.decodeIfPresent(String.self,forKey:.zone) ?? zone
+        busyOnly = try c.decodeIfPresent(Bool.self,forKey:.busyOnly) ?? true
         includeThreads = try c.decodeIfPresent(Bool.self,forKey:.includeThreads) ?? includeThreads;retryAt = try c.decodeIfPresent(Date.self,forKey:.retryAt)
     }
 }
+// Scheduling preferences contain no tokens. Authorization remains in this Mac's Keychain.
+enum CalendarRefreshPolicy {
+    static let enabledKey = "calendarAutomaticEnabled"
+    static let approvalKey = "calendarAutomaticSelection"
+    static let attemptKey = "calendarAutomaticAttempt"
+    static let retryKey = "calendarAutomaticRetry"
+    static let statusKey = "calendarAutomaticStatus"
+    static func window(now: Date) -> (String, String) {
+        var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "America/Chicago")!
+        let day = c.startOfDay(for: now)
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = c.timeZone; f.dateFormat = "yyyy-MM-dd"
+        return (f.string(from: c.date(byAdding: .day, value: -7, to: day)!), f.string(from: c.date(byAdding: .day, value: 91, to: day)!))
+    }
+    static func selection(_ value: SavedConnection) -> String {
+        // Exact reviewed account, resources, privacy and client; dates intentionally roll.
+        let parts = [value.accountID, value.clientID, value.tenant, value.zone, value.busyOnly ? "busy" : "details"] + value.resources.sorted()
+        return parts.map { "\($0.utf8.count):" + $0 }.joined(separator: "|")
+    }
+    static func due(now: Date, attempt: Date?, retry: Date?) -> Bool {
+        if let retry, retry > now { return false }
+        return attempt.map { now.timeIntervalSince($0) >= 900 || $0 > now.addingTimeInterval(900) } ?? true
+    }
+}
+
 struct ProviderVault {
     let service:String
     init(service:String = (Bundle.main.bundleIdentifier ?? "com.dmccoy.juno") + ".providers") { self.service = service }
@@ -124,6 +149,80 @@ extension ProviderVault {
 }
 
 extension JunoStore {
+    func refreshWorkCalendarAutomatically(now: Date = Date()) async {
+        let prefs = UserDefaults.standard
+        guard connected, sharedProfile == nil, !offline, !calendarRefreshInProgress, !calendarSettingsOpen,
+              prefs.bool(forKey: CalendarRefreshPolicy.enabledKey),
+              CalendarRefreshPolicy.due(now: now, attempt: prefs.object(forKey: CalendarRefreshPolicy.attemptKey) as? Date,
+                retry: prefs.object(forKey: CalendarRefreshPolicy.retryKey) as? Date) else { return }
+        calendarRefreshInProgress = true; defer { calendarRefreshInProgress = false }
+        prefs.set(now, forKey: CalendarRefreshPolicy.attemptKey)
+        func status(_ text: String) { calendarRefreshStatus = text; prefs.set(text, forKey: CalendarRefreshPolicy.statusKey) }
+        let vault = ProviderVault()
+        do {
+            guard var saved = try await vault.readAsync(.google_calendar), !saved.accountID.isEmpty, !saved.resources.isEmpty,
+                  prefs.string(forKey: CalendarRefreshPolicy.approvalKey) == CalendarRefreshPolicy.selection(saved) else {
+                prefs.set(false, forKey: CalendarRefreshPolicy.enabledKey)
+                status("Automatic calendar refresh paused. Review the account and calendar selection in Settings."); return
+            }
+            let state = try JSONDecoder().decode(ConnectionSnapshots.self, from: await localRequest("/v1/providers/state"))
+            guard let previous = state.items.first(where: { $0.kind == "google_calendar" }), previous.details.active != false,
+                  previous.details.tombstone != true else {
+                prefs.set(false, forKey: CalendarRefreshPolicy.enabledKey)
+                status("Automatic calendar refresh paused. Reconnect and review Google Calendar in Settings."); return
+            }
+            if let retry = saved.retryAt, retry > now { prefs.set(retry, forKey: CalendarRefreshPolicy.retryKey); return }
+            func credential(force: Bool = false) async throws -> String {
+                if force || saved.expiry.map({ $0 < now.addingTimeInterval(60) }) != false {
+                    guard !saved.refreshToken.isEmpty else { throw APIProblem(message: "Sign in to Google Calendar again.", status: 401) }
+                    let data = try await localRequest("/v1/providers/oauth/renew", method: "POST", body: ["provider":"google_calendar",
+                        "client_id":saved.clientID,"client_secret":saved.clientSecret,"tenant":saved.tenant,"refresh_token":saved.refreshToken])
+                    let tokens = try JSONDecoder().decode(OAuthTokens.self, from: data)
+                    guard let expiry = providerDate(tokens.expires_at) else { throw APIProblem(message: "Calendar sign-in needs review.", status: 401) }
+                    // Do not restore a credential removed or changed while renewal was in flight.
+                    guard let latest = try await vault.readAsync(.google_calendar),
+                          CalendarRefreshPolicy.selection(latest) == CalendarRefreshPolicy.selection(saved), latest.refreshToken == saved.refreshToken,
+                          prefs.bool(forKey: CalendarRefreshPolicy.enabledKey) else { throw CancellationError() }
+                    saved = latest; saved.accessToken = tokens.access_token; saved.refreshToken = tokens.refresh_token ?? saved.refreshToken
+                    saved.expiry = expiry; saved.scope = tokens.scope
+                    try await vault.saveAsync(saved, provider: .google_calendar)
+                }
+                return saved.accessToken
+            }
+            let range = CalendarRefreshPolicy.window(now: now)
+            func fetch(_ token: String) async throws -> Data {
+                guard prefs.bool(forKey: CalendarRefreshPolicy.enabledKey), !calendarSettingsOpen else { throw CancellationError() }
+                return try await localRequest("/v1/providers/google_calendar/refresh", method: "POST", body: ["token":token,"expected_id":previous.id,
+                    "selection":["resources":saved.resources,"reviewed_account":saved.accountID,"start":range.0,"end":range.1,
+                        "timezone":saved.zone,"busy_only":saved.busyOnly]])
+            }
+            let data: Data
+            do { data = try await fetch(credential()) }
+            catch let issue as APIProblem where issue.status == 401 { data = try await fetch(credential(force: true)) }
+            let result = try JSONDecoder().decode(ProviderRefreshReply.self, from: data)
+            if result.review_required {
+                prefs.set(false, forKey: CalendarRefreshPolicy.enabledKey)
+                status("Automatic calendar refresh paused: the Google account changed. Review it in Settings."); return
+            }
+            prefs.removeObject(forKey: CalendarRefreshPolicy.retryKey)
+            calendarCopyRevision += 1
+            status("Calendar updated " + sourceReadDate(ISO8601DateFormatter().string(from: now)) + ". Refreshes every 15 minutes while Juno is open; covers 90 days ahead.")
+        } catch is CancellationError {
+            status("Calendar refresh paused while connection settings change. Last successful copy retained.")
+        } catch {
+            let issue = error as? APIProblem
+            if issue?.status == 401 || issue?.status == 403 || issue?.status == 404 {
+                prefs.set(false, forKey: CalendarRefreshPolicy.enabledKey)
+                status("Automatic calendar refresh needs sign-in or calendar access review in Settings. Last successful copy retained.")
+            } else {
+                let delay = max(900, issue?.retryAfter ?? 900)
+                prefs.set(now.addingTimeInterval(Double(delay)), forKey: CalendarRefreshPolicy.retryKey)
+                status("Calendar refresh could not finish. Last successful copy retained; Juno will retry after " + sourceReadDate(ISO8601DateFormatter().string(from: now.addingTimeInterval(Double(delay)))) + ".")
+            }
+            calendarCopyRevision += 1
+        }
+    }
+
     func refreshCompletionArchive() async throws {
         let sources = try JSONDecoder().decode(ConnectionSnapshots.self,
             from: await localRequest("/v1/providers/state"))
@@ -153,6 +252,7 @@ extension JunoStore {
 struct DirectProviderWorkspace: View {
     @ObservedObject var store:JunoStore
     @Binding var provider:WorkProvider
+    @AppStorage(CalendarRefreshPolicy.enabledKey) private var automaticCalendar = false
     @State private var saved = SavedConnection()
     @State private var tokenField = ""
     @State private var secretField = ""
@@ -295,6 +395,27 @@ struct DirectProviderWorkspace: View {
             await loadState()
         }
     }
+    func configureAutomaticCalendar() {
+        guard reviewed, !busy, !store.calendarRefreshInProgress else { return }
+        busy = true
+        operationTask = Task {
+            defer { busy = false }
+            do {
+                guard manualIDs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      !saved.accountID.isEmpty, !saved.resources.isEmpty, saved.zone == "America/Chicago" else {
+                    throw APIProblem(message: "Choose discovered calendars and America/Chicago before enabling automatic refresh.", status: 0)
+                }
+                try await saveForm()
+                UserDefaults.standard.set(CalendarRefreshPolicy.selection(saved), forKey: CalendarRefreshPolicy.approvalKey)
+                UserDefaults.standard.removeObject(forKey: CalendarRefreshPolicy.attemptKey)
+                UserDefaults.standard.removeObject(forKey: CalendarRefreshPolicy.retryKey)
+                automaticCalendar = true
+                store.calendarRefreshStatus = "Automatic calendar refresh enabled. Close Settings to start the first rolling refresh."
+                notice = store.calendarRefreshStatus
+                UserDefaults.standard.set(store.calendarRefreshStatus, forKey: CalendarRefreshPolicy.statusKey)
+            } catch { record(error) }
+        }
+    }
     func refresh() {
         guard reviewed,!cooldown else { return };busy = true
         operationTask = Task {
@@ -315,7 +436,12 @@ struct DirectProviderWorkspace: View {
                 }
                 guard provider == .gmail || !selectedResources.isEmpty else { throw APIProblem(message:"Choose at least one resource before refreshing.",status:0) }
                 try await saveForm()
+                if provider == .google_calendar, automaticCalendar,
+                   UserDefaults.standard.string(forKey: CalendarRefreshPolicy.approvalKey) == CalendarRefreshPolicy.selection(saved) {
+                    let range = CalendarRefreshPolicy.window(now: Date()); saved.start = range.0; saved.end = range.1
+                }
                 var selection:[String:Any] = ["resources":selectedResources,"query":saved.query,"start":saved.start,"end":saved.end,"timezone":saved.zone,"include_threads":saved.includeThreads,"reviewed_account":saved.accountID]
+                if provider == .google_calendar || provider == .outlook_calendar { selection["busy_only"] = saved.busyOnly }
                 if provider == .smartsheet {
                     selection["completion_archive_id"] = saved.completionArchiveID
                     selection["completion_date_column"] = saved.completionDateColumn
@@ -332,7 +458,7 @@ struct DirectProviderWorkspace: View {
                 try Task.checkCancellation()
                 let result = try JSONDecoder().decode(ProviderRefreshReply.self,from:data)
                 if result.review_required { reviewed = false;notice = "The provider account changed. Discover again and review the account before replacing the saved copy." }
-                else { saved.retryAt = nil;try await vault.saveAsync(saved,provider:provider);notice = "Read-only refresh complete. Open Evidence to review the dated copy." }
+                else { saved.retryAt = nil;try await vault.saveAsync(saved,provider:provider);if provider == .google_calendar { store.calendarCopyRevision += 1 };notice = "Read-only refresh complete. Open Evidence to review the dated copy." }
             } catch { record(error) }
             await loadState()
         }
@@ -364,6 +490,22 @@ struct DirectProviderWorkspace: View {
         return Binding(get:{formatter.date(from:saved[keyPath:path]) ?? Date()},set:{saved[keyPath:path] = formatter.string(from:$0);reviewed = false})
     }
     @ViewBuilder var selectionFields:some View {
+        if provider == .google_calendar || provider == .outlook_calendar {
+            Toggle("Save busy/free times only", isOn: $saved.busyOnly).onChange(of: saved.busyOnly) { _ in reviewed = false }
+            if provider == .google_calendar {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Automatic calendar refresh").font(.headline)
+                    Text("Every 15 minutes while Juno is open and this work Mac is awake. Keeps seven days back and 90 days ahead in Central time. Only your reviewed calendars and privacy choice are used.").font(.caption).fixedSize(horizontal: false, vertical: true)
+                    if automaticCalendar {
+                        Text("Enabled for the saved selection. Changes to the account, calendars or privacy setting require review again.").font(.caption)
+                        Button("Turn off automatic calendar refresh") { automaticCalendar = false; store.calendarRefreshStatus = "Automatic calendar refresh is off. Last successful copy retained."; UserDefaults.standard.set(store.calendarRefreshStatus, forKey: CalendarRefreshPolicy.statusKey) }
+                    }
+                    Button(automaticCalendar ? "Save reviewed automatic refresh settings" : "Enable automatic calendar refresh") { configureAutomaticCalendar() }.disabled(!reviewed || store.calendarRefreshInProgress)
+                    Text(store.calendarRefreshStatus).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }.padding(.vertical, 8)
+            }
+            Text("When on, Juno omits event titles, descriptions and locations before saving. Busy times still exclude work you do or supervise.").font(.caption).foregroundStyle(.secondary)
+        }
         if provider == .gmail {
             Text("Gmail search query").font(.headline)
             TextField("in:inbox is:unread",text:$saved.query).onChange(of:saved.query) { _ in reviewed = false }
@@ -395,9 +537,18 @@ struct DirectProviderWorkspace: View {
             }
         }
         if provider.timed {
+            if provider == .google_calendar, automaticCalendar,
+               UserDefaults.standard.string(forKey: CalendarRefreshPolicy.approvalKey) == CalendarRefreshPolicy.selection(saved) {
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    let range = CalendarRefreshPolicy.window(now: context.date)
+                    Text("Automatic coverage: " + range.0 + " through " + range.1 + " (end not included). This window moves forward each day.")
+                        .font(.callout).fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
             HStack {
                 VStack(alignment:.leading) { Text("From").font(.caption);DatePicker("From",selection:dayBinding(\.start),displayedComponents:.date).labelsHidden() }
                 VStack(alignment:.leading) { Text("Until (not included)").font(.caption);DatePicker("Until",selection:dayBinding(\.end),displayedComponents:.date).labelsHidden() }
+            }
             }
             TextField("IANA timezone",text:$saved.zone)
             Text("Choose a window of 1–366 days. Missing records do not prove free time, room access, employee availability or capability.").font(.caption).foregroundStyle(.secondary)
@@ -423,29 +574,32 @@ struct DirectProviderWorkspace: View {
           ScrollView {
             VStack(alignment:.leading,spacing:15) {
                 Text("Direct program connections").font(.title2.bold())
-                Text("Credentials stay in this Mac's Keychain. Juno's saved evidence is separate from TaskDock's task records. Sign-in and reads start only when you choose them.").foregroundStyle(.secondary)
+                Text("Credentials stay in this Mac's Keychain. Juno's saved evidence is separate from TaskDock's task records. Reads use your explicit selection. Google Calendar can also refresh automatically when you enable it.").foregroundStyle(.secondary)
                 Picker("Program",selection:$provider) { ForEach(WorkProvider.allCases) { p in Text(p.label).tag(p) } }.disabled(busy || waiting)
                 setupFields
                 Divider()
                 selectionFields.disabled(busy || waiting)
                 if let current {
                     Divider();if current.details.tombstone == true { Text("No saved copy. Discover and review this connection before refreshing.").font(.caption) } else { Text("Last saved copy: \(current.count) records · \(providerDate(current.fetched_at)?.formatted() ?? current.fetched_at)").font(.caption) }
+                    if let start = current.details.start, let end = current.details.end {
+                        Text("Saved coverage: " + start + " through " + end + " (end not included)").font(.caption).foregroundStyle(.secondary)
+                    }
                     if let error = current.error { Text(error).foregroundStyle(.orange) }
                     Text("View/remove historical content in Evidence. Disconnecting does not delete provider data or revoke authorization in the provider's account settings.").font(.caption).foregroundStyle(.secondary)
                 }
                 if busy || waiting { ProgressView().controlSize(.small) }
                 if let notice { Text(notice).foregroundStyle(.secondary).textSelection(.enabled) }
                 Button("Disconnect and forget this Mac's credential…",role:.destructive) { forget = true }.disabled(busy || waiting)
-            }.padding(28).frame(maxWidth:.infinity,alignment:.leading)
+            }.padding(28).frame(maxWidth:.infinity,alignment:.leading).disabled(store.calendarRefreshInProgress)
           }
           Divider()
           VStack(alignment: .leading, spacing: 7) {
               HStack {
                   Toggle("I reviewed the account, selection and coverage", isOn: $reviewed)
-                      .toggleStyle(.checkbox).disabled(saved.accountID.isEmpty || busy || waiting)
+                      .toggleStyle(.checkbox).disabled(saved.accountID.isEmpty || busy || waiting || store.calendarRefreshInProgress)
                   Spacer()
                   Button("Refresh read-only copy") { refresh() }
-                      .buttonStyle(.borderedProminent).disabled(busy || waiting || !reviewed || cooldown)
+                      .buttonStyle(.borderedProminent).disabled(busy || waiting || !reviewed || cooldown || store.calendarRefreshInProgress)
               }
               if let retry = saved.retryAt, retry > Date() {
                   Text("Retry after " + retry.formatted()).font(.caption).foregroundStyle(.secondary)
@@ -468,6 +622,7 @@ struct DirectProviderWorkspace: View {
                 operationTask = Task {
                     defer { busy = false }
                     do {
+                        if expectedProvider == .google_calendar { automaticCalendar = false; UserDefaults.standard.removeObject(forKey: CalendarRefreshPolicy.approvalKey) }
                         try await vault.forgetAsync(expectedProvider)
                         var body:[String:Any] = [:];if let previousID { body["expected_id"] = previousID }
                         _ = try await store.localRequest("/v1/providers/"+expectedProvider.rawValue+"/disconnect",method:"POST",body:body)

@@ -5,8 +5,9 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 source = (ROOT / 'desktop/Schedules.swift').read_text()
 models = source.split('struct SchedulesWorkspace:', 1)[0]
-projection = source.split('struct ScheduleWeekItem:', 1)[1]
-projection = 'struct ScheduleWeekItem:' + projection.split('    var body: some View {', 1)[0] + '}\n'
+items = 'struct ScheduleWeekItem:' + source.split('struct ScheduleWeekItem:', 1)[1].split('func scheduleTimelineMinute(', 1)[0]
+projection = 'struct ScheduleWeekView:' + source.split('struct ScheduleWeekView:', 1)[1].split('    var body: some View {', 1)[0] + '}\n'
+projection = items + projection
 projection = projection.replace('struct ScheduleWeekView: View', 'struct ScheduleWeekView').replace('@State ', '').replace('private ', '').replace('func moveWeek(', 'mutating func moveWeek(')
 # The production parser is ISO8601 based; fixtures use the same explicit offsets.
 parser = '''

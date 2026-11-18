@@ -337,7 +337,10 @@ def install(app,db,device,lock_owner):
         window={'previous':previous.isoformat(),'meeting':meeting.isoformat(),'prepared':cutoff.isoformat(),'previous_confirmed':value.previous_confirmed}
         basis=weekly_basis(session,actor.owner_id,day,window)
         content=meeting_text(session,actor.owner_id,previous,cutoff,meeting,td,beacon,beacon_stale,value.previous_confirmed,value.archive_refresh_failed)
-        session.add(DeanDraft(owner_id=actor.owner_id,week_start=day,text=content,basis=basis))
+        generated = DeanDraft(owner_id=actor.owner_id,week_start=day,text=content,basis=basis)
+        session.add(generated)
+        from .report_history import retain
+        retain(session,generated,'dean','generated')
         session.commit()
         return {'created':True,'week_start':str(day)}
 
@@ -361,10 +364,14 @@ def install(app,db,device,lock_owner):
             if 'completion_archive' in saved_basis and 'completion_archive' not in supplied_basis:
                 supplied_basis = {**supplied_basis, 'completion_archive': saved_basis['completion_archive']}
             if supplied_basis!=saved_basis:raise HTTPException(409,'The saved source basis changed. Reload and compare the draft.')
+            from .report_history import retain
+            retain(session,row,'dean','saved_before_edit')
             row.text=value.text;row.basis=saved_basis;row.revision+=1;row.updated_at=now()
         else:
             current_basis=weekly_basis(session,actor.owner_id,day)
             if value.basis!=current_basis:raise HTTPException(409,'Evidence changed after preparation. Prepare a fresh draft and compare before saving.')
             row=DeanDraft(owner_id=actor.owner_id,week_start=day,text=value.text,basis=current_basis);session.add(row)
+        from .report_history import retain
+        retain(session,row,'dean','edited')
         session.flush();receipt={'id':row.id,'revision':row.revision,'saved_at':row.updated_at.isoformat()}
         session.add(DeanDraftOperation(owner_id=actor.owner_id,operation_id=str(value.operation_id),fingerprint=fp,receipt=receipt));session.commit();return receipt

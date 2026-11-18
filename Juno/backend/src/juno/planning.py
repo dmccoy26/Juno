@@ -183,6 +183,8 @@ def build_plan(session, owner, day, *, horizon_days=7, reserve_override=None):
     operational_tasks = {}
     for card in operations['cards']:
         for linked in card['tasks']: operational_tasks.setdefault(linked['task_id'], []).append(card)
+    from .operations import saved as saved_operations
+    _,request_data = saved_operations(session, owner)
     allocation_windows = {}
     stale_tasks = bool(snapshot and ((now()-snapshot.fetched_at).total_seconds()>86400 or (tdstate and tdstate.error)))
     availability_budget = {}
@@ -191,11 +193,13 @@ def build_plan(session, owner, day, *, horizon_days=7, reserve_override=None):
     if len(candidates)>500: notices.append('Only the first 500 priority candidates are evaluated; this is not a complete task plan.')
     for task in candidates[:500]:
         if task.get('source_completed') is True or task.get('completed_at') or str(task.get('behavior','')).lower() in ('done','completed','archived'): continue
+        from .request_reviews import overlay
+        task = overlay(session, owner, snapshot, task, request_data.get('request_reviews',{}))
         identity = str(task['id']); f = facts.get(identity, {})
         estimate = f.get('minutes')
         # Deliberately broad starter estimate. Never infer hours from a title.
         suggested = estimate or 60
-        missing = []
+        missing = ['Review changed request detail: '+key for key, value in task.get('planning_details',{}).items() if value.get('review_conflict')]
         if estimate is None: missing.append('Confirm duration: starter suggestion 30–90 minutes; scope is unknown.')
         available = free
         room = f.get('room', '')

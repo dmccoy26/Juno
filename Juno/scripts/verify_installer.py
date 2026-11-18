@@ -141,9 +141,18 @@ from test_workers import WorkerTests
 from test_worker_host import WorkerHostTests
 from test_local_model_output import LocalModelOutputTests
 from test_operations import OperationsTests
+from test_recurring import RoutineCalendarTests, RoutineAPITests
+from test_routine_delivery import RoutineDeliveryTests
+from test_purchasing import PurchasingParseTests, PurchasingAPITests
+from test_work_support import WorkSupportTests
+from test_purchasing_export import PurchasingExportTests
+from test_purchase_assets import PurchaseAssetTests
+from test_request_reviews import RequestReviewTests
+from test_chairs_report import ChairsDraftTests, ChairCompositionScopeTests
+from test_companion import CompanionTests
 import juno.planning
 assert Path(juno.planning.__file__).resolve().is_relative_to(Path(sys.argv[2]).resolve())
-suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (ProviderReaderTests,OAuthTests,ProviderAPITests,PlanningTests,DailyBriefTests,ContinuityTests,ScheduleTests,MemoryTests,TaskDockTests,TaskDockAPITests,SharingTests,WorkerTests,WorkerHostTests,LocalModelOutputTests,OperationsTests)])
+suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (ProviderReaderTests,OAuthTests,ProviderAPITests,PlanningTests,DailyBriefTests,ContinuityTests,ScheduleTests,MemoryTests,TaskDockTests,TaskDockAPITests,SharingTests,WorkerTests,WorkerHostTests,LocalModelOutputTests,OperationsTests,RoutineCalendarTests,RoutineAPITests,PurchasingParseTests,PurchasingAPITests,ChairsDraftTests,ChairCompositionScopeTests,CompanionTests,RoutineDeliveryTests,PurchaseAssetTests,RequestReviewTests,PurchasingExportTests,WorkSupportTests)])
 result=unittest.TextTestRunner(verbosity=0).run(suite)
 sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
 """

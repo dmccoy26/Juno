@@ -26,6 +26,16 @@ struct RepairWindow: Decodable, Identifiable {
     var start: String; var end: String; var proposed_end: String; var available_minutes: Int
     var id: String { start + end }
 }
+struct SchedulingTaskContext {
+    let taskID: String
+    let workspace: String
+    let title: String
+    let room: String
+    let employee: String
+    let minutes: Int
+    let supervision: Bool
+    let ready: Bool
+}
 struct AvailabilityRecord: Decodable {
     var day: String; var revision: Int; var rooms: [String]; var people: [AvailabilityPerson]
     var windows: [RepairWindow]; var warnings: [String]; var source_notices: [String]; var notice: String
@@ -90,13 +100,21 @@ struct SchedulesWorkspace: View {
     @State private var comparisonDate = Date()
     @State private var comparisonRoom = ""
     @State private var comparisonPerson = "My work"
+    @AppStorage("comparisonTimeline") private var comparisonTimeline = true
+    @State private var showOwnerTimeline = false
     @State private var editingPersonName: String?
     @State private var limitHours = "20"; @State private var desiredHours = ""
     private let weekdays = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
     private func load() async {
         busy = true; defer { busy = false }
-        do { record = try await store.decode(ScheduleRecord.self,"/v1/schedules");dirty = false;issue = nil }
+        do { record = try await store.decode(ScheduleRecord.self,"/v1/schedules");dirty = false;issue = nil; useTaskSettings() }
         catch { issue = (error as? APIProblem)?.message ?? "Could not load schedules." }
+    }
+    private func useTaskSettings() {
+        guard let task = store.schedulingTask else { return }
+        scheduleView = "Compare"
+        comparisonRoom = record?.rules.first { $0.kind == "room" && scheduleRoomKey($0.name) == scheduleRoomKey(task.room) }?.name ?? task.room
+        comparisonPerson = task.employee.isEmpty ? "My work" : record?.people.first { $0.name.caseInsensitiveCompare(task.employee) == .orderedSame }?.name ?? task.employee
     }
     private func save() async {
         guard let record else { return };busy = true;defer { busy = false }
@@ -120,6 +138,20 @@ struct SchedulesWorkspace: View {
                 }
                 if store.offline { Text("Dated offline schedule copy. Reconnect to edit schedules or reserve work.").foregroundStyle(.orange) }
                 if let issue { Text(issue).foregroundStyle(.orange).textSelection(.enabled) }
+                if let task = store.schedulingTask {
+                    GroupBox("Finding time for") {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(task.title).font(.headline)
+                                Text("\(task.minutes) minutes · " + (task.employee.isEmpty ? "You" : task.employee) + " · " + task.room + (task.supervision ? " · with your supervision" : "")).font(.callout)
+                                if !task.ready { Text("Review task prerequisites before reserving time.").font(.caption).foregroundStyle(.orange) }
+                            }
+                            Spacer()
+                            Button("Use task settings") { useTaskSettings() }
+                            Button("Explore without task") { store.schedulingTask = nil }
+                        }
+                    }
+                }
                 if let record {
                     Picker("Schedule view", selection:$scheduleView) {
                         Text("By person").tag("Week by person")
@@ -138,16 +170,28 @@ struct SchedulesWorkspace: View {
                             }
                             Text(comparisonDate.formatted(Date.FormatStyle(date: .complete, time: .omitted, timeZone: TimeZone(identifier: "America/Chicago")!)) + " · Central time")
                                 .font(.subheadline).foregroundStyle(.secondary)
-                            let comparisonLayout = geometry.size.width >= 790
+                            HStack {
+                                Toggle("Show aligned timeline", isOn: $comparisonTimeline).toggleStyle(.switch)
+                                if comparisonPerson != "My work" { Toggle("Include my availability", isOn: $showOwnerTimeline).toggleStyle(.checkbox) }
+                            }
+                            let includeOwner = comparisonPerson != "My work" && (showOwnerTimeline || store.schedulingTask?.supervision == true)
+                            if includeOwner { Text("Matching times include your recorded availability. Unrecorded meetings or closures remain unknown.").font(.caption).foregroundStyle(.secondary) }
+                            let comparisonLayout = comparisonTimeline || geometry.size.width >= 790
                                 ? AnyLayout(HStackLayout(alignment: .top, spacing: 16))
                                 : AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
+                            ScrollView(.horizontal) {
                             comparisonLayout {
-                                ScheduleWeekView(record:record,byRoom:true,comparisonDate:comparisonDate,selectionBinding:$comparisonRoom)
-                                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                                ScheduleWeekView(record:record,byRoom:false,comparisonDate:comparisonDate,selectionBinding:$comparisonPerson)
-                                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                                RoomPersonWindows(store:store,day:comparisonDate,room:comparisonRoom,person:comparisonPerson,revision:record.revision,dirty:dirty)
-                                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                                ScheduleWeekView(record:record,byRoom:true,comparisonDate:comparisonDate,selectionBinding:$comparisonRoom,timeline:comparisonTimeline)
+                                    .frame(minWidth: comparisonTimeline ? 215 : nil, maxWidth: .infinity, alignment: .topLeading)
+                                ScheduleWeekView(record:record,byRoom:false,comparisonDate:comparisonDate,selectionBinding:$comparisonPerson,timeline:comparisonTimeline)
+                                    .frame(minWidth: comparisonTimeline ? 215 : nil, maxWidth: .infinity, alignment: .topLeading)
+                                if includeOwner {
+                                    ScheduleWeekView(record: record, byRoom: false, comparisonDate: comparisonDate, selectionBinding: .constant("My work"), timeline: comparisonTimeline, readOnlySelection: true)
+                                        .frame(minWidth: comparisonTimeline ? 215 : nil, maxWidth: .infinity, alignment: .topLeading)
+                                }
+                                RoomPersonWindows(store:store,day:comparisonDate,room:comparisonRoom,person:comparisonPerson,revision:record.revision,dirty:dirty,timeline:comparisonTimeline,requireOwner:includeOwner,onReserved:{ Task { await load() } })
+                                    .frame(minWidth: comparisonTimeline ? 215 : nil, maxWidth: .infinity, alignment: .topLeading)
+                            }.frame(minWidth: max(0, geometry.size.width - 48), alignment: .topLeading)
                             }
                             RoomTaskDockIssues(store:store,room:comparisonRoom,person:comparisonPerson)
                         } else {
@@ -195,7 +239,7 @@ struct SchedulesWorkspace: View {
                 }
             }.padding(24).disabled(busy)
         }
-        }.task { comparisonDate = Date(); await load() }.onChange(of:store.section) { key in if key == "Schedules",!dirty,!ruleEditor,!personEditor,!exceptionEditor { Task { await load() } } }
+        }.task { comparisonDate = Date(); await load() }.onChange(of:store.section) { key in if key == "Schedules",!dirty,!ruleEditor,!personEditor,!exceptionEditor { comparisonDate = Date(); Task { await load() } } }
         .onChange(of:dirty) { value in if value { store.unsavedSections.insert("Schedules") } else { store.unsavedSections.remove("Schedules") } }
         .sheet(isPresented:$ruleEditor) { ruleForm }
         .sheet(isPresented:$personEditor) { personForm }
@@ -318,6 +362,92 @@ struct RepairWindowsView: View {
 struct ScheduleWeekItem: Identifiable {
     var id: String; var time: String; var title: String; var detail: String; var kind: String
     var order: String
+    var endOrder = "24:00"
+}
+
+func scheduleTimelineMinute(_ text: String) -> Int? {
+    let parts = text.split(separator: ":")
+    guard parts.count == 2, let hour = Int(parts[0]), let minute = Int(parts[1]),
+          (0...24).contains(hour), (0...59).contains(minute), hour < 24 || minute == 0 else { return nil }
+    return hour * 60 + minute
+}
+
+struct ScheduleTimeline: View {
+    let items: [ScheduleWeekItem]
+    let day: Date
+    private let first = 360
+    private let last = 1440
+    private let pointsPerMinute: CGFloat = 0.7
+    private var displayedItems: [ScheduleWeekItem] {
+        Dictionary(grouping: items, by: { $0.kind + "|" + $0.order + "|" + $0.endOrder }).values.map { group in
+            var item = group[0]
+            if group.count > 1 {
+                item.id = group.map(\.id).sorted().joined(separator: "|")
+                item.title += " (\(group.count))"
+                item.detail = group.map(\.detail).filter { !$0.isEmpty }.joined(separator: "; ")
+            }
+            return item
+        }.sorted { $0.order == $1.order ? $0.id < $1.id : $0.order < $1.order }
+    }
+    private func color(_ kind: String) -> Color {
+        switch kind {
+        case "classroom_busy": return .orange
+        case "hold": return .purple
+        case "exception": return .red
+        case "possible": return .green
+        default: return .blue
+        }
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                ZStack(alignment: .topLeading) {
+                    ForEach(6...24, id: \.self) { hour in
+                        HStack(spacing: 4) {
+                            Text(hour == 24 ? "12 AM +1" : "\(hour % 12 == 0 ? 12 : hour % 12) \(hour < 12 ? "AM" : "PM")")
+                                .font(.caption2).foregroundStyle(.secondary).frame(width: 40, alignment: .leading)
+                            Rectangle().fill(Color.secondary.opacity(0.15)).frame(height: 1)
+                        }.offset(y: CGFloat(hour * 60 - first) * pointsPerMinute)
+                    }
+                    ForEach(displayedItems) { item in
+                        if let start = scheduleTimelineMinute(item.order), let end = scheduleTimelineMinute(item.endOrder), end > first, start < last, end > start {
+                            let a = max(first, start), b = min(last, end)
+                            VStack(alignment: .leading, spacing: 2) {
+                                if b - a >= 30 { Text(item.title).font(.caption.bold()).lineLimit(1) }
+                                if b - a >= 50 { Text(item.time).font(.caption2).lineLimit(1) }
+                                if b - a >= 90 && !item.detail.isEmpty { Text(item.detail).font(.caption2).lineLimit(2) }
+                                Spacer(minLength: 0)
+                            }.padding(.horizontal, 5).padding(.top, b - a >= 30 ? 3 : 0)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                                .frame(height: max(3, CGFloat(b - a) * pointsPerMinute), alignment: .topLeading)
+                                .background(color(item.kind).opacity(item.kind == "room" ? 0.07 : 0.22))
+                                .overlay(alignment: .leading) { Rectangle().fill(color(item.kind)).frame(width: 3) }
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                .padding(.leading, 44)
+                                .offset(y: CGFloat(a - first) * pointsPerMinute)
+                                .help(item.title + " · " + item.time + " · " + item.detail)
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel(item.title + ", " + item.time + ", " + item.detail)
+                        }
+                    }
+                    if CheckInReminder.day(day) == CheckInReminder.day(context.date) {
+                        let values = CheckInReminder.calendar.dateComponents([.hour, .minute], from: context.date)
+                        let minute = (values.hour ?? 0) * 60 + (values.minute ?? 0)
+                        if minute >= first {
+                            Rectangle().fill(Color.red).frame(height: 1)
+                                .offset(y: CGFloat(minute - first) * pointsPerMinute)
+                                .accessibilityHidden(true).allowsHitTesting(false)
+                        }
+                    }
+                }.frame(height: CGFloat(last - first) * pointsPerMinute, alignment: .topLeading)
+            }
+            let early = items.filter { (scheduleTimelineMinute($0.endOrder) ?? last) <= first }
+            if !early.isEmpty {
+                Text("Before 6 AM").font(.caption.bold())
+                ForEach(early) { item in Text(item.time + " · " + item.title).font(.caption) }
+            }
+        }.frame(maxWidth: .infinity, alignment: .topLeading)
+    }
 }
 
 struct ScheduleWeekView: View {
@@ -326,6 +456,8 @@ struct ScheduleWeekView: View {
     var comparisonDate: Date? = nil
     var selectionBinding: Binding<String>? = nil
     var weekBinding: Binding<Date>? = nil
+    var timeline = false
+    var readOnlySelection = false
     @State private var selected = ""
     @State private var anchor = Date()
     private var calendar: Calendar {
@@ -369,16 +501,16 @@ struct ScheduleWeekView: View {
             matching(r.kind,r.name,r.location) && r.start_date <= day && day <= r.end_date && r.days.contains(weekday)
                 && !exceptions.contains { $0.kind == r.kind }
         }.map { r in
-            ScheduleWeekItem(id:r.id,time:scheduleTime(r.start_time) + "–" + scheduleTime(r.end_time),title:scheduleKind(r.kind),detail:r.kind == "classroom_busy" ? r.name : r.timezone,kind:r.kind,order:r.start_time)
+            ScheduleWeekItem(id:r.id,time:scheduleTime(r.start_time) + "–" + scheduleTime(r.end_time),title:scheduleKind(r.kind),detail:r.kind == "classroom_busy" ? r.name : r.timezone,kind:r.kind,order:r.start_time,endOrder:r.end_time)
         }
         result += exceptions.map { e in
-            ScheduleWeekItem(id:e.id,time:e.closed ? "All day" : scheduleTime(e.start_time ?? "") + "–" + scheduleTime(e.end_time ?? ""),title:e.closed ? (e.kind == "classroom_busy" ? "No classes" : "Unavailable / closed") : scheduleKind(e.kind),detail:e.note,kind:"exception",order:e.start_time ?? "00:00")
+            ScheduleWeekItem(id:e.id,time:e.closed ? "All day" : scheduleTime(e.start_time ?? "") + "–" + scheduleTime(e.end_time ?? ""),title:e.closed ? (e.kind == "classroom_busy" ? "No classes" : "Unavailable / closed") : scheduleKind(e.kind),detail:e.note,kind:"exception",order:e.closed ? "00:00" : e.start_time ?? "00:00",endOrder:e.closed ? "24:00" : e.end_time ?? "24:00")
         }
         result += record.reservations.compactMap { r -> ScheduleWeekItem? in
             guard let start = providerDate(r.start), let end = providerDate(r.end),
-                  (byRoom ? r.room == selection : selection == "My work" ? r.employee.isEmpty || r.uses_owner : r.employee == selection),
+                  (byRoom ? r.room == selection : selection == "My work" ? r.employee.isEmpty || r.uses_owner : r.employee.caseInsensitiveCompare(selection) == .orderedSame),
                   start < calendar.date(byAdding:.day,value:1,to:date)!, end > date else { return nil }
-            return ScheduleWeekItem(id:r.id,time:format(start,"h:mm a") + "–" + format(end,"h:mm a"),title:"Planning hold",detail:byRoom ? (r.employee.isEmpty ? "My work" : r.employee) : r.room,kind:"hold",order:format(start,"HH:mm"))
+            return ScheduleWeekItem(id:r.id,time:format(start,"h:mm a") + "–" + format(end,"h:mm a"),title:"Planning hold",detail:byRoom ? (r.employee.isEmpty ? "My work" : r.employee) : r.room,kind:"hold",order:start < date ? "00:00" : format(start,"HH:mm"),endOrder:end >= calendar.date(byAdding:.day,value:1,to:date)! ? "24:00" : format(end,"HH:mm"))
         }
         return result.sorted { $0.order == $1.order ? $0.id < $1.id : $0.order < $1.order }
     }
@@ -389,16 +521,17 @@ struct ScheduleWeekView: View {
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
             HStack {
-                Picker(byRoom ? "Room" : "Person",selection:Binding(get:{selection},set:{selected = $0; selectionBinding?.wrappedValue = $0})) {
+                if readOnlySelection { Text("You").font(.headline) }
+                else { Picker(byRoom ? "Room" : "Person",selection:Binding(get:{selection},set:{selected = $0; selectionBinding?.wrappedValue = $0})) {
                     ForEach(choices,id:\.self) { Text($0).tag($0) }
-                }.frame(maxWidth:320)
+                }.frame(maxWidth:320) }
                 Spacer()
                 if comparisonDate == nil {
                 Button("Previous week") { moveWeek(-7) }
                 Button("This week") { anchor = Date();weekBinding?.wrappedValue = anchor }
                 Button("Next week") { moveWeek(7) }
                 }
-            }
+            }.frame(height: timeline ? 120 : nil, alignment: .top)
             if comparisonDate == nil {
             DatePicker("Week containing",selection:Binding(get:{weekBinding?.wrappedValue ?? anchor},set:{anchor = $0;weekBinding?.wrappedValue = $0}),displayedComponents:.date).environment(\.timeZone,calendar.timeZone)
             Text(format(week[0],"MMM d") + " – " + format(week[6],"MMM d, yyyy") + " • America/Chicago").font(.headline)
@@ -407,7 +540,8 @@ struct ScheduleWeekView: View {
                 Text(byRoom ? "Building access, classes, planning holds and daily exceptions" : "Work hours, planning holds and daily exceptions").font(.caption).foregroundStyle(.secondary)
             }
             if let comparisonDate {
-                dayCard(comparisonDate, compact: true)
+                if timeline { ScheduleTimeline(items: items(comparisonDate), day: comparisonDate) }
+                else { dayCard(comparisonDate, compact: true) }
             } else {
                 ScrollView(.horizontal) {
                     HStack(alignment: .top, spacing: 8) {
@@ -422,7 +556,7 @@ struct ScheduleWeekView: View {
                 if !p.notes.isEmpty { DisclosureGroup("Schedule notes") { Text(p.notes).font(.caption).foregroundStyle(.secondary) } }
                 if p.status != "active" { Text("Availability is unconfirmed; this person is excluded from confirmed capacity.").foregroundStyle(.orange) }
             }
-            if comparisonDate == nil { Text("Saved schedules, not confirmed free time. Use Plan to review task requirements and possible repair windows.").font(.caption).foregroundStyle(.secondary) }
+            if comparisonDate == nil { Text("Saved schedules, not confirmed free time. Use Issues to review task requirements and possible repair windows.").font(.caption).foregroundStyle(.secondary) }
             if let notice = record.reservation_notice, !notice.isEmpty { Text(notice).foregroundStyle(.orange) }
             if choices.isEmpty { Text("Add room schedules in List & edit to start this view.").foregroundStyle(.secondary) }
         }.onAppear { anchor = weekBinding?.wrappedValue ?? Date(); if let selectionBinding, selectionBinding.wrappedValue != selection { selectionBinding.wrappedValue = selection } }
@@ -453,14 +587,26 @@ struct ScheduleWeekView: View {
 struct RoomPersonWindows: View {
     @ObservedObject var store: JunoStore
     let day: Date; let room: String; let person: String; let revision: Int; let dirty: Bool
+    var timeline = false
+    var requireOwner = false
+    var onReserved: () -> Void = {}
     @State private var result: AvailabilityRecord?
     @State private var issue: String?
     @State private var loading = false
     @State private var loadedSignature: String?
+    @State private var proposed: RepairWindow?
+    @State private var proposedStart = Date()
+    @State private var holding = false
+    @State private var holdNotice: String?
+    private var activeTask: SchedulingTaskContext? {
+        guard let task = store.schedulingTask, scheduleRoomKey(task.room) == scheduleRoomKey(room),
+              task.employee.caseInsensitiveCompare(person == "My work" ? "" : person) == .orderedSame else { return nil }
+        return task
+    }
     private var dayKey: String {
         let f = DateFormatter(); f.timeZone = TimeZone(identifier:"America/Chicago"); f.dateFormat = "yyyy-MM-dd"; return f.string(from:day)
     }
-    private var signature: String { [dayKey,room,person,String(revision),String(dirty),String(store.offline)].joined(separator:"|") }
+    private var signature: String { [dayKey,room,person,String(revision),String(dirty),String(store.offline),String(store.calendarCopyRevision),activeTask?.taskID ?? "",String(activeTask?.minutes ?? 5),String(requireOwner || activeTask?.supervision == true)].joined(separator:"|") }
     private func load() async {
         result = nil; issue = nil
         guard !dirty else { issue = "Save schedule changes to calculate matching times."; return }
@@ -470,7 +616,7 @@ struct RoomPersonWindows: View {
         let requested = signature
         do {
             var url = URLComponents(); url.path = "/v1/availability"
-            url.queryItems = [URLQueryItem(name:"day",value:dayKey),URLQueryItem(name:"room",value:room),URLQueryItem(name:"employee",value:person == "My work" ? "" : person),URLQueryItem(name:"minutes",value:"5")]
+            url.queryItems = [URLQueryItem(name:"day",value:dayKey),URLQueryItem(name:"room",value:room),URLQueryItem(name:"employee",value:person == "My work" ? "" : person),URLQueryItem(name:"minutes",value:String(activeTask?.minutes ?? 5)),URLQueryItem(name:"supervision",value:requireOwner || activeTask?.supervision == true ? "true" : "false")]
             let fresh = try await store.decode(AvailabilityRecord.self,url.string!)
             guard !Task.isCancelled, requested == signature else { return }
             result = fresh; loadedSignature = requested
@@ -488,27 +634,103 @@ struct RoomPersonWindows: View {
     }
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
-            Text("Possible work times").font(.title3.bold())
-            Text((person == "My work" ? "Me" : person) + " in " + room).font(.headline)
-            if loading { ProgressView().controlSize(.small) }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Possible work times").font(.title3.bold())
+                Text((person == "My work" ? "Me" : person) + " in " + room).font(.caption)
+                if timeline, let task = activeTask, loadedSignature == signature,
+                   let window = result?.windows.first(where: { localDay($0.start) == dayKey }) {
+                    Text(time(window.start) + "–" + time(window.proposed_end)).font(.callout.bold())
+                    Button("Review hold…") { proposedStart = providerDate(window.start) ?? Date(); proposed = window }
+                        .disabled(!task.ready || loading || holding || dirty || store.offline)
+                }
+            }.frame(height: timeline ? 120 : nil, alignment: .top)
+            if timeline {
+                ScheduleTimeline(items: (loadedSignature == signature ? result?.windows ?? [] : []).filter { localDay($0.start) == dayKey }.map { window in
+                    ScheduleWeekItem(id: window.id, time: time(window.start) + "–" + time(window.end), title: "Possible opening", detail: "\(window.available_minutes) minutes", kind: "possible", order: rawTime(window.start), endOrder: localDay(window.end) > dayKey ? "24:00" : rawTime(window.end))
+                }, day: day)
+            }
+            if loading { ProgressView("Calculating openings…").controlSize(.small) }
             if let issue { Text(issue).foregroundStyle(.orange) }
+            if let holdNotice { Text(holdNotice).font(.callout).foregroundStyle(.secondary) }
             if let result, loadedSignature == signature {
                 let windows = result.windows.filter { localDay($0.start) == dayKey }
                 if windows.isEmpty { Text("No confirmed opening on this date.").foregroundStyle(.secondary) }
-                ForEach(windows) { window in
+                if !timeline { ForEach(windows) { window in
                     VStack(alignment:.leading,spacing:4) {
                         Text(time(window.start) + "–" + time(window.end)).font(.headline)
                         Text("\(window.available_minutes) minutes").font(.caption)
                     }.frame(maxWidth:.infinity,alignment:.leading).padding(10)
                         .background(Color.green.opacity(0.13)).overlay(alignment:.leading) { Rectangle().fill(.green).frame(width:3) }
+                } }
+                if let task = activeTask {
+                    Text("Openings for \(task.minutes) minutes").font(.headline)
+                    ForEach(windows.prefix(5)) { window in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(time(window.start) + "–" + time(window.proposed_end)).font(.callout)
+                            HStack {
+                                Button("Review hold…") { proposedStart = providerDate(window.start) ?? Date(); proposed = window }
+                                    .disabled(!task.ready || loading || holding || dirty || store.offline)
+                                Button("Copy note") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString("Proposed work: " + task.title + "\n" + room + " · " + scheduleDate(window.start) + "–" + time(window.proposed_end) + "\n" + (task.employee.isEmpty ? "You" : task.employee) + (task.supervision ? " with Dan" : "") + "\nProposed time only; no assignment or notification has been made.", forType: .string)
+                                    holdNotice = "Proposed note copied. Nobody has been notified."
+                                }
+                            }
+                        }
+                    }
+                } else if store.schedulingTask != nil {
+                    Text("The room or person differs from the selected task. Use task settings to review a hold.").font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(result.warnings,id:\.self) { Text($0).font(.caption).foregroundStyle(.orange) }
                 DisclosureGroup("Source dates") { ForEach(result.source_notices,id:\.self) { Text($0).font(.caption) } }
             }
-            Button("Review task in Plan") { store.section = "Plan" }
-            Text("Openings of at least 5 minutes, excluding classes, closures and existing holds. Independent staff work is assumed; task skills, supervision and blockers still need review. Weekly limits can shorten usable time. Past times are excluded.").font(.caption).foregroundStyle(.secondary)
+            Button("Review issue") { store.section = "Plan" }
+            DisclosureGroup("What Juno checked") {
+                Text(activeTask == nil
+                     ? "Exploratory openings of at least 5 minutes. Review a task’s duration, skills, supervision and blockers before reserving."
+                     : "Uses the task’s saved duration and supervision choice. A supervised task also needs your availability. Prerequisites are checked again when reserving.")
+                Text("Classes, closures, existing holds and past times are excluded. Weekly limits can shorten usable time. Unrecorded meetings or closures may still affect availability.")
+            }.font(.caption).foregroundStyle(.secondary)
             Button("Refresh matching times") { Task { await load() } }.disabled(loading || store.offline || dirty)
         }.task(id:signature) { await load() }
+            .sheet(item: $proposed) { window in
+                if let task = activeTask, let first = providerDate(window.start), let end = providerDate(window.end), end.timeIntervalSince(first) >= Double(task.minutes * 60) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Review planning hold").font(.title2.bold())
+                        Text(task.title).font(.headline)
+                        Text(room + " · " + (task.employee.isEmpty ? "You" : task.employee) + (task.supervision ? " with your supervision" : ""))
+                        DatePicker("Start", selection: $proposedStart, in: first...end.addingTimeInterval(-Double(task.minutes * 60)), displayedComponents: [.date, .hourAndMinute])
+                        Text("Duration: \(task.minutes) minutes")
+                        Text("This saves a Juno hold. It does not change TaskDock or notify the worker. Availability and prerequisites are checked again when saved.").font(.callout).foregroundStyle(.secondary)
+                        if let issue { Text(issue).foregroundStyle(.orange) }
+                        HStack {
+                            Button("Cancel", role: .cancel) { proposed = nil }.keyboardShortcut(.cancelAction)
+                            Spacer()
+                            Button("Reserve in Juno") { Task { await reserve(task) } }.buttonStyle(.borderedProminent)
+                        }.disabled(holding)
+                    }.padding(24).frame(width: 560).interactiveDismissDisabled(holding)
+                        .environment(\.locale, Locale(identifier: "en_US"))
+                        .environment(\.timeZone, DeanMeetingSchedule.zone)
+                }
+            }
+    }
+    private func rawTime(_ value: String) -> String {
+        guard let date = providerDate(value) else { return "00:00" }
+        let formatter = DateFormatter(); formatter.timeZone = DeanMeetingSchedule.zone; formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+    private func reserve(_ task: SchedulingTaskContext) async {
+        guard let result, loadedSignature == signature, task.ready else { return }
+        holding = true; defer { holding = false }
+        let start = proposedStart
+        do {
+            _ = try await store.request("/v1/schedules/reservations", method: "POST", body: ["expected_revision": result.revision,
+                "task_id": task.taskID, "workspace_id": task.workspace, "room": room, "employee": task.employee,
+                "start": ISO8601DateFormatter().string(from: start), "end": ISO8601DateFormatter().string(from: start.addingTimeInterval(Double(task.minutes * 60)))])
+            proposed = nil
+            holdNotice = "Juno hold saved for " + task.title + " at " + scheduleDate(ISO8601DateFormatter().string(from: start)) + ". TaskDock is unchanged; nobody was notified."
+            await load(); onReserved()
+        } catch { issue = (error as? APIProblem)?.message ?? "Hold not confirmed. Reload before retrying." }
     }
 }
 
@@ -603,7 +825,7 @@ struct RoomTaskDockIssues: View {
                             DisclosureGroup("TaskDock record details") { TaskDockDetails(task:task,info:snapshot.info) }
                         }.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color.secondary.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius:8))
                     }
-                    Text("Reads Juno’s saved TaskDock snapshot. Reloading here does not refresh TaskDock’s upstream services. Suggested placements can be added later.").font(.caption).foregroundStyle(.secondary)
+                    Text("Reads Juno’s saved TaskDock snapshot. Review an issue’s planning details, then choose Find time to explore a Juno hold.").font(.caption).foregroundStyle(.secondary)
                 } else if !busy { Text("No TaskDock snapshot saved. Connect or refresh TaskDock in its Juno tab.").foregroundStyle(.secondary) }
             }.padding(8).frame(maxWidth:.infinity,alignment:.leading)
         }.task { await load() }

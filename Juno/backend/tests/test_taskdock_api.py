@@ -1,5 +1,5 @@
 import copy
-from datetime import timedelta
+from datetime import datetime, timedelta
 import threading
 import uuid
 from fastapi.testclient import TestClient
@@ -179,6 +179,16 @@ class TaskDockAPITests(memory_tests.MemoryTests):
             reopened.headers['Authorization']='Bearer '+self.other_token
             self.assertEqual(reopened.get(get_path).status_code,404)
         self.assertNotIn(self.body['token'],first.text)
+
+    def test_failed_refresh_retains_last_successful_copy_time(self):
+        snapshot = self.pair()
+        ReaderFactory.failure = TaskDockError('Synthetic source unavailable', 502)
+        self.assertGreaterEqual(self.refresh(expected_snapshot_id=snapshot['id']).status_code, 400)
+        state = self.client.get('/v1/taskdock').json()
+        self.assertTrue(state['error'])
+        self.assertEqual(state['snapshot']['id'], snapshot['id'])
+        self.assertEqual(datetime.fromisoformat(state['snapshot']['fetched_at']), datetime.fromisoformat(snapshot['fetched_at']))
+        self.assertTrue(state['snapshot']['stale'])
 
     def test_inflight_chat_fails_after_task_snapshot_changes(self):
         snapshot=self.pair()

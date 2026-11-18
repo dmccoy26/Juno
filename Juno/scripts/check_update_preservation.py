@@ -12,16 +12,24 @@ import psycopg
 from psycopg import sql
 
 
-def capture(state):
+def capture(state, projection=None):
     state=state.resolve()
     owner=json.loads((state/'desktop-owner.json').read_text())['owner_id']
     with psycopg.connect(host=str(state/'postgres/socket'),user='juno',dbname='juno_dev') as connection:
         connection.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
         tables=connection.execute("select tablename from pg_tables where schemaname='public' and tablename not in ('devices','alembic_version') order by tablename").fetchall()
-        rows={name:[r[0] for r in connection.execute(sql.SQL('select md5(row_to_json(r)::text) from {} r order by 1').format(sql.Identifier(name)))] for (name,) in tables}
+        rows={};columns={}
+        for (name,) in tables:
+            current=[r[0] for r in connection.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=%s ORDER BY ordinal_position",(name,))]
+            fields=(projection or {}).get(name,current)
+            if not fields or not set(fields).issubset(current):
+                raise ValueError('Previously saved columns are missing in '+name+'.')
+            query=sql.SQL('select md5(row_to_json(r)::text) from (select {} from {}) r order by 1').format(sql.SQL(',').join(map(sql.Identifier,fields)),sql.Identifier(name))
+            rows[name]=[r[0] for r in connection.execute(query)]
+            columns[name]=fields
         # Device credentials rotate normally. Previously paired identities must still exist.
         devices=[r[0] for r in connection.execute('select id from devices order by id')]
-    return {'format':1,'workspace':str(state),'owner':owner,'rows':rows,'devices':devices}
+    return {'format':2,'workspace':str(state),'owner':owner,'rows':rows,'columns':columns,'devices':devices}
 
 
 def compare(before,after):
@@ -39,13 +47,16 @@ def main():
     p.add_argument('command',choices=('capture','verify'))
     p.add_argument('--state',type=Path,default=Path.home()/'Library/Application Support/Juno')
     p.add_argument('--baseline',type=Path,required=True)
-    args=p.parse_args();current=capture(args.state)
+    args=p.parse_args()
     if args.command=='capture':
+        current=capture(args.state)
         fd=os.open(args.baseline,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
         with os.fdopen(fd,'w') as output:json.dump(current,output)
         print('Private preservation baseline saved. Work content was not printed.')
     else:
-        compare(json.loads(args.baseline.read_text()),current)
+        before=json.loads(args.baseline.read_text())
+        current=capture(args.state,before.get('columns'))
+        compare(before,current)
         print('PASS same workspace/owner, unchanged work records and retained device identities.')
 
 

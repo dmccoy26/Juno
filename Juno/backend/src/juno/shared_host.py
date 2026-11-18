@@ -52,6 +52,14 @@ class LANBoundary:
             path.startswith('/v1/conversations') and method in {'GET','POST'} or
             path.startswith('/v1/conversations/') and path.count('/') == 3 and method == 'DELETE' or
             path.startswith('/v1/check-ins') and method in {'GET','POST','PUT'} or
+            path == '/v1/work-support' and method == 'GET' or
+            path == '/v1/work-support/actions' and method == 'POST' or
+            path in {'/v1/recurring','/v1/purchasing','/v1/reports/index'} and method == 'GET' or
+            path.startswith('/v1/recurring/') and path.count('/') == 4 and path.endswith('/history') and method == 'GET' or
+            path in {'/v1/purchasing/link','/v1/purchasing/unlink','/v1/purchasing/asset-link','/v1/purchasing/asset-unlink'} and method == 'POST' or
+            path.startswith('/v1/reports/chairs/') and path.count('/') == 5 and ((path.endswith('/evidence') and method == 'GET') or (path.endswith('/preview') and method == 'POST')) or
+            path.startswith('/v1/reports/') and path.endswith('/history') and path.count('/') == 5 and method == 'GET' or
+            path.startswith('/v1/reports/') and path.endswith('/review') and path.count('/') == 5 and method in {'GET','POST'} or
             path == '/v1/taskdock' and method == 'GET' or
             path.startswith('/v1/taskdock/snapshots') and method == 'GET' or
             path == '/v1/taskdock/history' and method == 'GET' or
@@ -63,12 +71,14 @@ class LANBoundary:
             path == '/v1/planning/estimate' and method == 'POST' or
             path.startswith('/v1/planning/weekly-draft/') and method in {'GET','PUT'} or
             path.startswith('/v1/planning/chairs-draft/') and path.count('/') == 4 and method in {'GET','PUT'} or
+            path.startswith('/v1/planning/chairs-draft/') and path.count('/') == 5 and path.endswith('/style') and method == 'POST' or
             path.startswith('/v1/planning/dean-follow-up/') and (
                 path.count('/') == 4 and method in {'GET','PUT'} or
                 path.count('/') == 5 and path.endswith('/extract') and method == 'POST') or
             path in {'/v1/planning/carry-forward','/v1/planning/carry-forward/history'} and method == 'GET' or
             path in {'/v1/planning/carry-forward/preview','/v1/planning/carry-forward/save'} and method == 'POST' or
             path == '/v1/planning' and method in {'GET','PUT'} or
+            path == '/v1/planning/request-review' and method in {'GET','POST'} or
             path in {'/v1/planning/next','/v1/planning/weekly','/v1/planning/check-in','/v1/planning/daily-brief'} and method == 'GET' or
             path == '/v1/model' and method == 'GET')
         if not allowed or not permitted:

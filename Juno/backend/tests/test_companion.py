@@ -26,6 +26,24 @@ class FakeModel:
 
 
 class CompanionTests(memory_tests.MemoryTests):
+    def test_latest_confirmed_diary_is_owner_scoped_dated_and_cached(self):
+        from datetime import date, datetime, timezone
+        from juno.models import CheckIn
+        from juno.database import sessions
+        with sessions(self.engine)() as session:
+            session.add_all([
+                CheckIn(owner_id=self.actor.owner_id, local_date=date(2026,11,16),status='confirmed',diary_text='Reviewed corrected wording',answers={'tomorrow':'Old superseded text'}),
+                CheckIn(owner_id=self.actor.owner_id, local_date=date(2026,11,17),status='draft',diary_text='Unconfirmed notes'),
+                CheckIn(owner_id=self.actor.owner_id, local_date=date(2026,11,20),status='confirmed',diary_text='Future record'),
+            ]);session.commit()
+        with patch('juno.offline_cache.now',return_value=datetime(2026,11,18,16,tzinfo=timezone.utc)):
+            row=self.client.get('/v1/check-ins/latest-confirmed').json()['record']
+            self.assertEqual(row['local_date'],'2026-11-16')
+            self.assertEqual(row['diary_text'],'Reviewed corrected wording')
+            self.assertIsNone(self.client.get('/v1/check-ins/latest-confirmed',headers={'Authorization':'Bearer '+self.other_token}).json()['record'])
+            pages=self.client.get('/v1/cache').json()['pages']
+            self.assertEqual(next(p['body'] for p in pages if p['path']=='/v1/check-ins/latest-confirmed')['record'],row)
+
     # Reuse the isolated PostgreSQL harness, not its individual test methods.
     def setUp(self):
         super().setUp()
@@ -211,17 +229,27 @@ class CompanionTests(memory_tests.MemoryTests):
             private = self.turn(private_message)
         self.assertFalse(private.json()['meeting_mode'])
 
+        self.client.post('/v1/memories', json={'text':'Private memory fixture never shared in meetings', 'source':'private fixture', 'confidence':'confirmed'})
+        self.assertEqual(self.turn(meeting_mode=True).status_code, 409)
+        private_path = self.path
+        meeting = self.client.post('/v1/conversations', json={'title':'Fictional meeting', 'meeting_mode':True}).json()
+        self.assertTrue(meeting['meeting_mode'])
+        self.path = '/v1/conversations/' + meeting['id'] + '/messages'
         response=self.turn(meeting_mode=True)
         self.assertTrue(response.json()['meeting_mode'])
         messages = FakeModel.calls[-1]
         self.assertIn('No flirting', messages[0]['content'])
-        self.assertIn({'role': 'user', 'content': private_message}, messages)
+        self.assertNotIn({'role': 'user', 'content': private_message}, messages)
+        self.assertNotIn('Private memory fixture never shared in meetings', str(messages))
         self.assertNotIn({'role': 'assistant', 'content': 'A private joke for this fixture.'}, messages)
-        self.assertEqual(self.client.get(self.path).json()['items'][1]['text'], 'A private joke for this fixture.')
+        self.assertEqual(self.client.get(private_path).json()['items'][1]['text'], 'A private joke for this fixture.')
 
+        self.assertEqual(self.turn().status_code, 409)
+        self.path = private_path
         self.turn()
         self.assertIn('brief, understated compliment', FakeModel.calls[-1][0]['content'])
         self.assertIn({'role': 'assistant', 'content': 'A private joke for this fixture.'}, FakeModel.calls[-1])
+        self.assertEqual(self.client.delete('/v1/conversations/' + meeting['id']).status_code, 200)
 
     def test_message_order_repair_preserves_existing_chat(self):
         from importlib import import_module
@@ -229,7 +257,10 @@ class CompanionTests(memory_tests.MemoryTests):
         from alembic.operations import Operations
 
         previous = self.turn().json()
-        migration = import_module('migrations.versions.0017_chat_message_order')
+        from pathlib import Path
+        from importlib.util import spec_from_file_location, module_from_spec
+        spec = spec_from_file_location('message_order_migration', Path(__file__).resolve().parents[1] / 'migrations/versions/0017_chat_message_order.py')
+        migration = module_from_spec(spec); spec.loader.exec_module(migration)
         with self.engine.begin() as connection:
             connection.execute(text('ALTER TABLE messages ALTER COLUMN order_key RESTART WITH 1'))
             with Operations.context(MigrationContext.configure(connection)):

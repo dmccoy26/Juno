@@ -93,7 +93,7 @@ def request_overview(task,info,fetched_at):
     required=task.get('planning_readiness',{}).get('missing',[])
     order=list(dict.fromkeys([*required,*QUESTIONS]))
     questions=[{'key':key,'label':FIELDS[key],'question':QUESTIONS[key]} for key in order
-               if key in QUESTIONS and fact(task,key).get('state')=='unknown']
+               if key in QUESTIONS and (fact(task,key).get('state')=='unknown' or fact(task,key).get('review_conflict'))]
     priority=task.get('priority')
     priority_label='Unknown'
     if priority is not None and task.get('priority_state')!='default_or_unknown':

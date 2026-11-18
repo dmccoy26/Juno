@@ -41,12 +41,12 @@ def view(row):
 def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockReader, host_manager=None, provider_transport=None, oauth_manager=None, worker_manager=None):
     engine = engine if engine is not None else engine_for()
     factory = sessions(engine)
-    app = FastAPI(title="Juno companion service", version="0.1.0-preview.10")
+    app = FastAPI(title="Juno companion service", version="0.2.27")
     from fastapi.exceptions import RequestValidationError
     from fastapi.responses import JSONResponse
     @app.exception_handler(RequestValidationError)
     async def safe_connection_validation(request,error):
-        if request.url.path.startswith(('/worker','/v1/workers','/v1/providers','/v1/taskdock','/v1/integrations/beacon','/v1/operations','/v1/planning/dean-follow-up/')):
+        if request.url.path.startswith(('/worker','/v1/workers','/v1/providers','/v1/taskdock','/v1/integrations/beacon','/v1/operations','/v1/recurring','/v1/work-support','/v1/purchasing','/v1/reports','/v1/planning/dean-follow-up/','/v1/planning/request-review')):
             return JSONResponse({'detail':'Check the required fields and allowed values. Private input is not echoed.'},status_code=422,headers={'Cache-Control':'no-store'})
         from fastapi.exception_handlers import request_validation_exception_handler
         return await request_validation_exception_handler(request,error)
@@ -197,4 +197,16 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
     from . import operations
     operations.install(app, db, device, lock_owner)
     operations.install_references(app, db, device, lock_owner)
+    from . import recurring
+    recurring.install(app, db, device, lock_owner)
+    from . import routine_api
+    routine_api.install(app, db, device, lock_owner, factory)
+    from . import purchasing
+    purchasing.install(app, db, device, lock_owner)
+    from . import request_reviews
+    request_reviews.install(app, db, device, lock_owner)
+    from . import report_history
+    report_history.install(app, db, device, lock_owner)
+    from . import work_support
+    work_support.install(app, db, device, lock_owner)
     return app

@@ -33,6 +33,7 @@ class ConnectionInput(Strict):
 
 class ConversationInput(Strict):
     title: str = Field(default='New conversation', min_length=1, max_length=200)
+    meeting_mode: bool = False
 
 
 class TurnInput(Strict):
@@ -71,7 +72,7 @@ def saved_memory_links(session, owner_id, messages, memories=None):
 
 
 def conversation_view(row):
-    return {k: getattr(row, k) for k in ('id', 'title', 'created_at')}
+    return {k: getattr(row, k) for k in ('id', 'title', 'created_at', 'meeting_mode')}
 
 
 def checkin_view(row):
@@ -97,7 +98,7 @@ def invalidate_context(session, owner_id, key):
         row.context_refs = {}
 
 
-def context_for(session, owner_id, question, history):
+def context_for(session, owner_id, question, history, meeting=False):
     words = set(re.findall(r'\w{4,}', question.lower()))
     memories = session.scalars(select(Memory).where(Memory.owner_id == owner_id).order_by(Memory.updated_at.desc()).limit(200)).all()
     memories.sort(key=lambda m: len(words.intersection(re.findall(r'\w{4,}', m.text.lower()))), reverse=True)
@@ -188,6 +189,11 @@ def context_for(session, owner_id, question, history):
             'notice':'User-reviewed structured schedules govern current work availability and status; they supersede older informal schedule memories when dates match. If facts conflict or dates are unclear, ask before choosing. Staff status and weekly limits are constraints; candidates and tentative schedules are not confirmed capacity. Use the availability endpoint/results for exact intersections; never invent a reservation.'})
     for message in history:
         refs.update(message.context_refs)
+    if meeting:
+        # Existing memories/diaries and unclassified private context are private by default.
+        def shareable(key): return key.startswith(('taskdock:', 'integration:beacon', 'schedules:'))
+        context = [entry for entry in context if shareable(entry.get('source', ''))]
+        refs = {key: value for key, value in refs.items() if shareable(key)}
     return context, refs
 
 
@@ -327,7 +333,7 @@ def install(app, db, device, lock_owner, model_factory=LocalModel):
     @app.post('/v1/conversations', status_code=201)
     def new_conversation(value: ConversationInput, actor=Depends(device), session=Depends(db)):
         lock_owner(session, actor.owner_id)
-        row = Conversation(owner_id=actor.owner_id, title=value.title)
+        row = Conversation(owner_id=actor.owner_id, title=value.title, meeting_mode=value.meeting_mode)
         session.add(row);commit(session)
         return conversation_view(row)
 
@@ -353,7 +359,9 @@ def install(app, db, device, lock_owner, model_factory=LocalModel):
     @app.post('/v1/conversations/{identity}/messages')
     def send(identity: str, value: TurnInput, actor=Depends(device), session=Depends(db)):
         lock_owner(session, actor.owner_id)
-        owned(session, Conversation, actor, identity)
+        conversation = owned(session, Conversation, actor, identity)
+        if conversation.meeting_mode != value.meeting_mode:
+            raise HTTPException(409, 'Start a separate conversation for this mode. Private and Meeting-mode contexts cannot be mixed. Use Juno 0.2 or later on both Macs for separate mode-specific conversations.')
         connection = session.get(ModelConnection, actor.owner_id)
         memory_intent = memory_request(value.text) is not None
         if connection is None and not memory_intent: raise HTTPException(503, 'Choose a local model in Model connection before chatting. Your draft has not been sent.')
@@ -374,7 +382,7 @@ def install(app, db, device, lock_owner, model_factory=LocalModel):
         if existing: history = [r for r in history if r.request_id != request_id]
         if value.meeting_mode:
             history = [r for r in history if r.role != 'assistant' or r.meeting_mode]
-        context, refs = context_for(session, actor.owner_id, value.text, history)
+        context, refs = context_for(session, actor.owner_id, value.text, history, value.meeting_mode)
         prompt = prompt_for(value.text, history, context, value.meeting_mode)
         if answer is None:
             user = Message(conversation_id=identity, role='user', text=value.text, request_id=request_id, status='complete', meeting_mode=value.meeting_mode)

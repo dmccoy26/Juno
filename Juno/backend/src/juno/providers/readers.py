@@ -33,5 +33,10 @@ def read(provider,token,config,transport=None):
         account={'id':identity(provider,required(value.get('id'))),'label':text(value.get('mail') or value.get('userPrincipalName') or value.get('displayName') or 'Microsoft account',300)};handler=other.read_microsoft
     if config.get('reviewed_account')!=account['id']:return {'review_required':True,'account':account}
     rows,details=handler(http,config,account)
+    if provider in ('google_calendar','outlook_calendar') and config.get('busy_only') is True:
+        # Minimize persisted calendar data before snapshots, caches or model context see it.
+        rows=[{**{key:row[key] for key in ('id','start','end','busy','all_day','status','kind') if key in row},
+               'title':'Busy calendar commitment' if row.get('busy') else 'Calendar item (not busy)'} for row in rows]
+        details={**details,'busy_only':True,'notice':'Busy/free times only; event titles, descriptions and locations were omitted.'}
     return {'review_required':False,'account':account,'items':rows,'details':{**details,'provider':provider,'route':'direct',
         'overlap_notice':'Direct records may overlap TaskDock task imports or manual calendar copies. Do not count matching evidence as additional tasks or commitments. TaskDock remains the task system of record.'}}

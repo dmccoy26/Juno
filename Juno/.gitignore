@@ -14,3 +14,10 @@ results/
 *.egg-info/
 
 docs/reports/*.log
+
+# Private interface reviews, releases and recovery artifacts
+output/
+*.pkg
+*.pkg.sha256
+*.junobak
+*.app/

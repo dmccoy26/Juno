@@ -96,6 +96,38 @@ class ScheduleTests(test_planning.PlanningTests):
         self.assertFalse(view['calendar_ready'])
         self.assertTrue(any('calendar' in warning for warning in view['warnings']))
 
+    def test_work_google_calendar_blocks_me_and_supervision_not_independent_worker(self):
+        from datetime import datetime
+        self.schedule(rules=self.rules)
+        self.save(reserve_minutes=0,windows=[])
+        self.add_source('google_calendar',[{'id':'meeting','title':'Fictional private meeting','kind':'calendar_event','busy':True,
+            'start':'2030-01-07T09:00:00-06:00','end':'2030-01-07T10:00:00-06:00'},
+            {'id':'free','title':'Transparent event','busy':False,'start':'2030-01-07T10:00:00-06:00','end':'2030-01-07T11:00:00-06:00'}])
+        meeting=datetime.fromisoformat('2030-01-07T09:30:00-06:00')
+        def overlaps(view):
+            return any(datetime.fromisoformat(w['start'])<=meeting<datetime.fromisoformat(w['end']) for w in view['windows'])
+        self.assertFalse(overlaps(self.windows(employee='')))
+        self.assertFalse(overlaps(self.windows(employee='Alex',supervision=True)))
+        self.assertTrue(overlaps(self.windows(employee='Alex',supervision=False)))
+
+    def test_calendar_coverage_is_exclusive_and_checked_per_day(self):
+        from juno.models import IntegrationSnapshot
+        self.schedule(rules=self.rules)
+        self.save(reserve_minutes=0,windows=[])
+        self.add_source('google_calendar',[])
+        with self.factory() as session:
+            row=session.get(IntegrationSnapshot,(self.actor.owner_id,'google_calendar'))
+            row.details={**row.details,'start':'2030-01-07','end':'2030-01-08'};session.commit()
+        self.assertTrue(self.windows(employee='')['calendar_ready'])
+        self.assertFalse(self.windows(employee='',day='2030-01-08')['calendar_ready'])
+        self.assertFalse(self.windows(employee='',day='2030-01-06')['calendar_ready'])
+        self.assertTrue(self.windows(employee='Alex',day='2030-01-08')['calendar_ready'])
+        from juno.schedules import availability
+        with self.factory() as session:
+            cache={}
+            self.assertTrue(availability(session,self.actor.owner_id,date(2030,1,7),room='Lab',employee='',_budget_cache=cache)['calendar_ready'])
+            self.assertFalse(availability(session,self.actor.owner_id,date(2030,1,8),room='Lab',employee='',_budget_cache=cache)['calendar_ready'])
+
     def test_new_schedule_profiles_and_cache_invalidate_old_chat(self):
         from test_companion import FakeModel
         from juno.api import create_app

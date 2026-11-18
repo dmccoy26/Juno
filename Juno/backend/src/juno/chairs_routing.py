@@ -52,5 +52,11 @@ def task_routes(tasks, sheet_rows):
             if len(resolved) != 1:
                 continue
         department = next(iter(candidates), '')
-        routes[str(task['id'])] = recipient(title, department)
+        facts = task.get('planning_details')
+        room_fact = facts.get('room') if isinstance(facts, dict) else None
+        # Only the explicitly shared, supplied structured value is routing evidence.
+        # Missing/unknown values and title suggestions never become a room fact.
+        room = room_fact.get('value') if isinstance(room_fact, dict) and room_fact.get('state') == 'provided' else ''
+        room = room if isinstance(room, str) else ''
+        routes[str(task['id'])] = recipient(title, department, room)
     return routes

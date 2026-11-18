@@ -75,12 +75,48 @@ class Conversation(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
     owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), index=True)
     title: Mapped[str] = mapped_column(String(200))
+    meeting_mode: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 from sqlalchemy import BigInteger, Identity, Date
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import date
+
+
+class RecurringRoutine(Base):
+    __tablename__ = 'recurring_routines'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=ident)
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), index=True)
+    definition: Mapped[dict] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), default='draft')
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+    target_scope: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_planned_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+
+class ReportVersion(Base):
+    __tablename__ = 'report_versions'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), primary_key=True)
+    week_start: Mapped[date] = mapped_column(Date, primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, primary_key=True)
+    content: Mapped[dict] = mapped_column(JSONB)
+    action: Mapped[str] = mapped_column(String(30))
+    saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ReportReview(Base):
+    __tablename__ = 'report_reviews'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), primary_key=True)
+    week_start: Mapped[date] = mapped_column(Date, primary_key=True)
+    audience: Mapped[str] = mapped_column(String(20), primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class Message(Base):
@@ -320,3 +356,71 @@ class OperationalState(Base):
     data: Mapped[dict] = mapped_column(JSONB, default=dict)
     revision: Mapped[int] = mapped_column(Integer, default=1)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class RoutineRuleVersion(Base):
+    __tablename__ = 'routine_rule_versions'
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), primary_key=True)
+    routine_id: Mapped[str] = mapped_column(ForeignKey('recurring_routines.id'), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, primary_key=True)
+    definition: Mapped[dict] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20))
+    action: Mapped[str] = mapped_column(String(30))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class RoutineOccurrenceRecord(Base):
+    __tablename__ = 'routine_occurrences'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey('owners.id'), index=True)
+    routine_id: Mapped[str] = mapped_column(ForeignKey('recurring_routines.id'), index=True)
+    rule_revision: Mapped[int] = mapped_column(Integer)
+    local_date: Mapped[date] = mapped_column(Date)
+    period_key: Mapped[str] = mapped_column(String(30))
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    due_date: Mapped[date] = mapped_column(Date)
+    target_scope: Mapped[dict] = mapped_column(JSONB)
+    payload: Mapped[dict] = mapped_column(JSONB)
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    operation_id: Mapped[str] = mapped_column(String(36), unique=True)
+    status: Mapped[str] = mapped_column(String(20))
+    reason: Mapped[str] = mapped_column(String(300), default='')
+    lease_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    lease_expires: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    task_id: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class WorkBookmark(Base):
+    __tablename__='work_bookmarks'
+    id: Mapped[str]=mapped_column(String(36),primary_key=True,default=ident)
+    owner_id: Mapped[str]=mapped_column(ForeignKey('owners.id'),index=True)
+    title: Mapped[str]=mapped_column(String(300))
+    first_action: Mapped[str]=mapped_column(Text)
+    finish_point: Mapped[str]=mapped_column(Text)
+    where_stopped: Mapped[str]=mapped_column(Text,default='')
+    blocker: Mapped[str]=mapped_column(Text,default='')
+    status: Mapped[str]=mapped_column(String(20),default='working')
+    source_ref: Mapped[dict | None]=mapped_column(JSONB,nullable=True)
+    resume_count: Mapped[int]=mapped_column(Integer,default=0)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+    updated_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+
+
+class WorkSupport(Base):
+    __tablename__='work_support'
+    owner_id: Mapped[str]=mapped_column(ForeignKey('owners.id'),primary_key=True)
+    revision: Mapped[int]=mapped_column(Integer,default=0)
+    current_id: Mapped[str | None]=mapped_column(String(36),nullable=True)
+    updated_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+
+
+class WorkSupportOperation(Base):
+    __tablename__='work_support_operations'
+    owner_id: Mapped[str]=mapped_column(ForeignKey('owners.id'),primary_key=True)
+    operation_id: Mapped[str]=mapped_column(String(36),primary_key=True)
+    fingerprint: Mapped[str]=mapped_column(String(64))
+    bookmark_id: Mapped[str]=mapped_column(String(36))
+    revision: Mapped[int]=mapped_column(Integer)
+    command: Mapped[str]=mapped_column(String(20))
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
