@@ -118,6 +118,8 @@ def main():
             pairing={'address':invitation['address'],'pin':invitation['certificate_sha256'],'owner':owner,'invitation':code}
             settings=temp/'pair.json';settings.write_text(json.dumps(pairing));settings.chmod(0o600)
             native=(ROOT/'desktop/Shared.swift').read_text().split('extension JunoStore {',1)[0]
+            vault=(ROOT/'desktop/Connections.swift').read_text()
+            native += '\n'+vault[vault.index('enum ConnectionSecrets {'):vault.index('struct ProviderVault {')]
             (temp/'main.swift').write_text(native+'\n'+SWIFT)
             program=temp/'native-check'
             subprocess.run(['xcrun','swiftc','-swift-version','5',str(temp/'main.swift'),'-o',str(program)],check=True,capture_output=True)

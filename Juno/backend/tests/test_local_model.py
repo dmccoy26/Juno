@@ -26,3 +26,15 @@ class LocalModelTests(unittest.TestCase):
     def test_embedding_models_are_not_offered_for_chat(self):
         with patch.object(LocalModel,'request',return_value={'data':[{'id':'synthetic-chat'},{'id':'text-embedding-synthetic'}]}):
             self.assertEqual(LocalModel('http://127.0.0.1:1234/v1').models(),['synthetic-chat'])
+
+    def test_evidence_review_is_bounded_without_reasoning_or_automatic_retry(self):
+        client=LocalModel('http://127.0.0.1:1234/v1')
+        messages=[{'role':'system','content':'Synthetic rules'},{'role':'user','content':'Synthetic evidence'}]
+        response={'output':[{'type':'message','content':'{"include":[]}'}]}
+        with patch.object(client,'request',return_value=response) as request:
+            self.assertEqual(client.classify_evidence(messages,'juno-qwen3.5-9b-gguf'),'{"include":[]}')
+            self.assertEqual(request.call_args.args[1]['reasoning'],'off')
+            self.assertEqual(request.call_args.args[1]['max_output_tokens'],1024)
+        with patch.object(client,'request',side_effect=ModelError('Fixture outage')) as request:
+            with self.assertRaises(ModelError):client.classify_evidence(messages,'juno-qwen3.5-9b-gguf')
+            self.assertEqual(request.call_count,1)

@@ -13,14 +13,15 @@ if CommandLine.arguments.count>2 {
     let other = try vault.read(.slack);precondition(other == nil)
     print("PASS Keychain connection survives a separate native process and remains provider isolated")
 } else {
-    defer { try? vault.forget(.gmail) }
+    defer { try? vault.forget(.gmail); SecItemDelete(ConnectionSecrets.query(service) as CFDictionary) }
     var saved = SavedConnection();saved.accessToken = "synthetic-access";saved.refreshToken = "synthetic-initial-refresh";saved.accountID = "synthetic-account";saved.resources = ["primary"]
     try vault.save(saved,provider:.gmail);saved.refreshToken = "synthetic-rotated-refresh";try vault.save(saved,provider:.gmail)
-    var q = vault.query(.gmail);q[kSecReturnAttributes as String] = true
+    var q = ConnectionSecrets.query(service);q[kSecReturnAttributes as String] = true
     var attrs:CFTypeRef?;precondition(SecItemCopyMatching(q as CFDictionary,&attrs) == errSecSuccess)
     let values = attrs as! [String:Any];if let accessibility = values[kSecAttrAccessible as String] as? String { precondition(accessibility == kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String) }
     precondition((values[kSecAttrSynchronizable as String] as? Bool ?? false) == false)
     let child = Process();child.executableURL = URL(fileURLWithPath:CommandLine.arguments[0]);child.arguments = [service,"read"];try child.run();child.waitUntilExit();precondition(child.terminationStatus == 0)
+    ConnectionSecrets.clearCache()
     let removed = try vault.read(.gmail);precondition(removed == nil)
     let challenge = String(repeating:"A",count:43)
     let base = "https://accounts.google.com/o/oauth2/v2/auth?state=synthetic-flow&client_id=synthetic-client&response_type=code&code_challenge_method=S256&code_challenge=" + challenge + "&redirect_uri=http%3A%2F%2F127.0.0.1%3A18123%2Fv1%2Fproviders%2Foauth%2Fcallback%2Fgoogle"

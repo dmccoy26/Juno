@@ -150,6 +150,8 @@ import Foundation
 
 def main():
     source=(ROOT/'desktop/Shared.swift').read_text().split('extension JunoStore {',1)[0]
+    vault=(ROOT/'desktop/Connections.swift').read_text()
+    source += '\n'+vault[vault.index('enum ConnectionSecrets {'):vault.index('struct ProviderVault {')]
     with tempfile.TemporaryDirectory(prefix='juno-offline-check-') as folder:
         path=Path(folder)
         (path/'main.swift').write_text(source+'\nstruct APIProblem: Error { let message:String; let status:Int }\n'+TEST)

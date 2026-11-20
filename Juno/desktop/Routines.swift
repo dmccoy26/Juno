@@ -35,6 +35,25 @@ struct RoutineDefinition: Codable, Equatable {
     var missed_policy = "latest"
     var overlap_policy = "wait"
 }
+
+func routineScheduleLabel(_ rule: RoutineDefinition) -> String {
+    let days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    let selected = Array(Set(rule.weekdays)).sorted()
+    let cadence: String
+    switch rule.frequency {
+    case "daily": cadence = rule.interval == 1 ? "Daily" : "Every \(rule.interval) days"
+    case "weekly":
+        let label = selected == [0, 1, 2, 3, 4] ? "Weekdays" : selected.compactMap { days.indices.contains($0) ? days[$0] : nil }.joined(separator: ", ")
+        cadence = rule.interval == 1 ? label : "Every \(rule.interval) weeks · " + label
+    case "monthly" where rule.interval == 12: cadence = "Annually · " + rule.start_date.dropFirst(5).prefix(2) + String(format: "-%02d", rule.month_day)
+    case "monthly": cadence = (rule.interval == 1 ? "Monthly" : "Every \(rule.interval) months") + " · day \(rule.month_day)"
+    default:
+        let ordinal = rule.ordinal == -1 ? "last" : [1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth"][rule.ordinal] ?? "selected"
+        let day = days.indices.contains(rule.weekday) ? days[rule.weekday] : "weekday"
+        cadence = (rule.interval == 1 ? "Monthly" : "Every \(rule.interval) months") + " · " + ordinal + " " + day
+    }
+    return cadence + " · " + rule.creation_time + " Central"
+}
 struct RoutineOccurrence: Decodable, Identifiable {
     let occurrence_date: String
     let creation_at: String
@@ -93,13 +112,15 @@ struct RecurringWorkspace: View {
                     List(state.items, selection: $selected) { item in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.definition.title).font(.headline)
-                            Text(item.status.capitalized + " · " + item.definition.frequency.capitalized).font(.caption).foregroundStyle(.secondary)
+                            Text(item.status.capitalized + " · " + routineScheduleLabel(item.definition)).font(.caption).foregroundStyle(.secondary)
                         }.padding(.vertical, 4).tag(item.id)
                     }.frame(minWidth: 220, idealWidth: 280, maxWidth: 350)
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
                             if let chosen {
                                 Text(chosen.definition.title).font(.title2.bold())
+                                Text(routineScheduleLabel(chosen.definition)).font(.headline)
+                                Text("Starts " + chosen.definition.start_date + (chosen.definition.end_date.map { " · ends " + $0 } ?? " · no end date")).font(.callout).foregroundStyle(.secondary)
                                 if !chosen.definition.description.isEmpty { Text(chosen.definition.description).textSelection(.enabled) }
                                 Label(chosen.status.capitalized + (chosen.status == "active" ? " · due occurrences are managed on the work Mac" : " · new creation is not running"), systemImage: "doc.badge.clock")
                                 if canEdit, state.execution_available, chosen.status != "retired" {

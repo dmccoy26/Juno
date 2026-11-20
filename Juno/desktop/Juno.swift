@@ -439,6 +439,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     var settingsWindow: NSWindow?
     var helpWindow: NSWindow?
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ConnectionSecrets.installLockObservers()
         NSApp.setActivationPolicy(.regular)
         UNUserNotificationCenter.current().delegate = self
         let menu = NSMenu(); let appItem = NSMenuItem(); menu.addItem(appItem)

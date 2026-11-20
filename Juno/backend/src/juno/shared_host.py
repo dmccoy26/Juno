@@ -77,6 +77,7 @@ class LANBoundary:
                 path.count('/') == 5 and path.endswith('/extract') and method == 'POST') or
             path in {'/v1/planning/carry-forward','/v1/planning/carry-forward/history'} and method == 'GET' or
             path in {'/v1/planning/carry-forward/preview','/v1/planning/carry-forward/save'} and method == 'POST' or
+            path == '/v1/planning/dean-agenda' and method in {'GET','PUT'} or
             path == '/v1/planning' and method in {'GET','PUT'} or
             path == '/v1/planning/request-review' and method in {'GET','POST'} or
             path in {'/v1/planning/next','/v1/planning/weekly','/v1/planning/check-in','/v1/planning/daily-brief'} and method == 'GET' or

@@ -90,6 +90,9 @@ class MeetingPrepare(Strict):
     taskdock_id:str=Field(min_length=1,max_length=36)
     beacon_id:str=Field(min_length=1,max_length=36)
     archive_refresh_failed:bool=False
+    preserve_saved_revision:int|None=Field(default=None,ge=1)
+    allow_late:bool=False
+    reformat_saved_revision:int|None=Field(default=None,ge=1)
 
 
 def meeting_diaries(session,owner,start,end):
@@ -120,6 +123,8 @@ def normalized_basis(value):
 def dean_view(session,owner,day):
     row=session.scalar(select(DeanDraft).where(DeanDraft.owner_id==owner,DeanDraft.week_start==day))
     basis=weekly_basis(session,owner,day,row.basis.get('meeting_window') if row else None)
+    if row:
+        basis.update({key:row.basis[key] for key in ('dean_format','dean_review_notes') if key in row.basis})
     return {'owner_id':owner,'week_start':str(day),'exists':row is not None,'id':row.id if row else None,
             'text':row.text if row else '', 'revision':row.revision if row else 0,'basis':normalized_basis(row.basis) if row else basis,
             'sources_changed':bool(row and normalized_basis(row.basis)!=basis),'updated_at':row.updated_at if row else None,
@@ -156,7 +161,7 @@ def meeting_text(session,owner,previous,cutoff,meeting,td,beacon,beacon_stale,pr
     from .taskdock_planning import provided,request_overview
     from .operations import briefing
     from .dean_follow_up import briefing_lines
-    from .completion_archive import report_lines
+    from .completion_archive import report_lines,undated_update_lines
     from .chairs_routing import recipient
     def dated(value):
         try:
@@ -230,6 +235,7 @@ def meeting_text(session,owner,previous,cutoff,meeting,td,beacon,beacon_stale,pr
     section(lines,'TaskDock: completions recorded since the meeting',
             [entry for _,entry in sorted(completed,reverse=True)],24,'No shared completion timestamps in this window.')
     lines.extend(report_lines(session, owner, previous, cutoff))
+    lines.extend(undated_update_lines(session, owner, previous, cutoff))
     if archive_refresh_failed:
         lines.append('Smartsheet archive refresh did not complete. Review archive coverage before sharing.')
     section(lines,'TaskDock: dated progress notes',
@@ -273,7 +279,9 @@ def meeting_text(session,owner,previous,cutoff,meeting,td,beacon,beacon_stale,pr
 
 
 
-def install(app,db,device,lock_owner):
+def install(app,db,device,lock_owner,model_factory=None):
+    from . import dean_briefing
+    dean_briefing.install(app,db,device,lock_owner)
     @app.get('/v1/planning/carry-forward')
     def source(day:date=Query(),actor=Depends(device),session=Depends(db)):
         valid_day(day);lock_owner(session,actor.owner_id);return carry_source(session,actor.owner_id,day)
@@ -323,12 +331,20 @@ def install(app,db,device,lock_owner):
         meeting=value.meeting.astimezone(CHICAGO)
         cutoff=now().astimezone(CHICAGO)
         valid_day(previous.date());valid_day(meeting.date())
-        if not previous<cutoff<=meeting or meeting.date()-previous.date()>timedelta(days=366):
+        late_allowed=value.allow_late and meeting<=cutoff and meeting.date()<=cutoff.date()<=meeting.date()+timedelta(days=6-meeting.weekday())
+        if not previous<min(cutoff,meeting) or (cutoff>meeting and not late_allowed) or meeting.date()-previous.date()>timedelta(days=366):
             raise HTTPException(422,'Choose a past reporting start and an upcoming meeting within one year of it.')
         day=meeting.date()-timedelta(days=meeting.weekday())
         lock_owner(session,actor.owner_id)
         row=session.scalar(select(DeanDraft).where(DeanDraft.owner_id==actor.owner_id,DeanDraft.week_start==day))
-        if row:return {'created':False,'week_start':str(day)}
+        if row and value.preserve_saved_revision is None and value.reformat_saved_revision is None:return {'created':False,'week_start':str(day)}
+        if value.reformat_saved_revision is not None and (not row or row.revision!=value.reformat_saved_revision):
+            raise HTTPException(409,'The Dean draft changed. Reload before rebuilding; its writing has been kept.')
+        if value.preserve_saved_revision is not None:
+            if not row or row.revision!=value.preserve_saved_revision:
+                raise HTTPException(409,'The saved Dean writing changed. Reload before preparing; no writing was replaced.')
+            if row.basis.get('meeting_window'):
+                return {'created':False,'week_start':str(day)}
         td,beacon,td_stale,beacon_stale=sources(session,actor.owner_id)
         if not td or td_stale or td.info.get('sharing_restricted') or td.id!=value.taskdock_id:
             raise HTTPException(409,'TaskDock did not supply a current shared copy. Refresh it again before preparing this draft.')
@@ -337,12 +353,39 @@ def install(app,db,device,lock_owner):
         window={'previous':previous.isoformat(),'meeting':meeting.isoformat(),'prepared':cutoff.isoformat(),'previous_confirmed':value.previous_confirmed}
         basis=weekly_basis(session,actor.owner_id,day,window)
         content=meeting_text(session,actor.owner_id,previous,cutoff,meeting,td,beacon,beacon_stale,value.previous_confirmed,value.archive_refresh_failed)
-        generated = DeanDraft(owner_id=actor.owner_id,week_start=day,text=content,basis=basis)
-        session.add(generated)
+        basis['dean_format']=dean_briefing.FORMAT
+        basis['dean_review_notes']=content
+        from . import dean_reasoning
+        reasoning_plan=dean_reasoning.plan(session,actor.owner_id,previous,cutoff)
+        captured_revision=row.revision if row else 0
+        # Release the owner lock while LM Studio works, so laptop edits and sync
+        # continue. Recheck both the saved writing and its source basis afterward.
+        session.commit()
+        reasoning=dean_reasoning.assess(reasoning_plan,model_factory)
+        lock_owner(session,actor.owner_id)
+        session.expire_all()
+        row=session.scalar(select(DeanDraft).where(DeanDraft.owner_id==actor.owner_id,DeanDraft.week_start==day))
+        if (row.revision if row else 0)!=captured_revision:
+            raise HTTPException(409,'The Dean draft changed during evidence review. Your writing has been kept.')
+        current_basis=weekly_basis(session,actor.owner_id,day,window)
+        if current_basis!={k:v for k,v in basis.items() if k not in ('dean_format','dean_review_notes')}:
+            raise HTTPException(409,'Sources changed during evidence review. Refresh and prepare again; saved writing has been kept.')
+        basis['dean_review_notes']+=dean_reasoning.notes(reasoning,reasoning_plan)
+        td,beacon,_,_=sources(session,actor.owner_id)
+        content=dean_briefing.compose(session,actor.owner_id,previous,cutoff,meeting,td,beacon,reasoning=reasoning)
         from .report_history import retain
+        if row:
+            retain(session,row,'dean','saved_before_preparation')
+            if value.reformat_saved_revision is None:
+                content += '\n\nSaved notes and additions (preserved verbatim)\n' + row.text
+            row.text=content;row.basis=basis;row.revision+=1;row.updated_at=now()
+            generated=row
+        else:
+            generated = DeanDraft(owner_id=actor.owner_id,week_start=day,text=content,basis=basis)
+            session.add(generated)
         retain(session,generated,'dean','generated')
         session.commit()
-        return {'created':True,'week_start':str(day)}
+        return {'created':True,'week_start':str(day),'review_notice':None if reasoning['state']=='local_model' else 'Local model review was unavailable; this draft uses evidence rules and saved priorities. Details are in the source notes.'}
 
     @app.get('/v1/planning/weekly-draft/{day}')
     def read(day:date,actor=Depends(device),session=Depends(db)):
@@ -363,6 +406,8 @@ def install(app,db,device,lock_owner):
             # Older paired clients omit this field when editing an existing revision.
             if 'completion_archive' in saved_basis and 'completion_archive' not in supplied_basis:
                 supplied_basis = {**supplied_basis, 'completion_archive': saved_basis['completion_archive']}
+            for key in ('dean_format','dean_review_notes'):
+                if key in saved_basis and key not in supplied_basis:supplied_basis={**supplied_basis,key:saved_basis[key]}
             if supplied_basis!=saved_basis:raise HTTPException(409,'The saved source basis changed. Reload and compare the draft.')
             from .report_history import retain
             retain(session,row,'dean','saved_before_edit')

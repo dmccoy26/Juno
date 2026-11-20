@@ -19,6 +19,7 @@ def main():
             empty=other.get('/v1/planning/weekly?day=2030-01-06').json()['basis']
         weekly=case.client.get('/v1/planning/weekly?day=2030-01-06').json();saved=case.client.get('/v1/planning/weekly-draft/2030-01-06').json()
         planning=(ROOT/'desktop/Planning.swift').read_text().split('struct PlanningWorkspace:',1)[0].replace('import SwiftUI','import Foundation')
+        planning=planning[:planning.index('struct IssueBlockerEditor: View {')]+planning[planning.index('struct PlanningRequestField:'): ]
         companion=(ROOT/'desktop/Companion.swift').read_text();types=companion[companion.index('struct CarryTaskChoice:'):companion.index('struct DailyBriefItem:')]
         with tempfile.TemporaryDirectory(prefix='juno-continuity-native-') as temporary:
             folder=Path(temporary)
@@ -34,6 +35,10 @@ precondition(saved.revision==0 && !saved.exists)
 let empty=try load("empty-basis",WeeklyBasis.self)
 let encodedEmpty=try JSONSerialization.jsonObject(with:JSONEncoder().encode(empty)) as! [String:Any]
 precondition(encodedEmpty["snapshot_id"] is NSNull && encodedEmpty["workspace_id"] is NSNull && encodedEmpty["taskdock_saved_at"] is NSNull)
+var leadership=weekly.basis
+leadership.dean_format="leadership-v1";leadership.dean_review_notes="Synthetic source evidence"
+let roundTrip=try decoder.decode(WeeklyBasis.self,from:JSONEncoder().encode(leadership))
+precondition(roundTrip==leadership)
 let basis=try JSONSerialization.jsonObject(with:JSONEncoder().encode(weekly.basis))
 let body:[String:Any] = ["operation_id":UUID().uuidString,"expected_revision":0,"text":"Student Test native reviewed Dean text","basis":basis]
 try JSONSerialization.data(withJSONObject:body).write(to:root.appendingPathComponent("save-body.json"))

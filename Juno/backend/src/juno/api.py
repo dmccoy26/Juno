@@ -41,7 +41,7 @@ def view(row):
 def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockReader, host_manager=None, provider_transport=None, oauth_manager=None, worker_manager=None):
     engine = engine if engine is not None else engine_for()
     factory = sessions(engine)
-    app = FastAPI(title="Juno companion service", version="0.2.27")
+    app = FastAPI(title="Juno companion service", version="0.2.33")
     from fastapi.exceptions import RequestValidationError
     from fastapi.responses import JSONResponse
     @app.exception_handler(RequestValidationError)
@@ -185,7 +185,7 @@ def create_app(engine=None, model_factory=LocalModel, taskdock_factory=TaskDockR
     from . import planning, schedules, estimates
     planning.install(app, db, device, lock_owner)
     from . import planning_continuity
-    planning_continuity.install(app, db, device, lock_owner)
+    planning_continuity.install(app, db, device, lock_owner, model_factory)
     from . import chairs_report
     chairs_report.install(app, db, device, lock_owner, model_factory)
     from . import dean_follow_up

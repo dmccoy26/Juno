@@ -364,9 +364,13 @@ def install(app, db, device, lock_owner, model_factory=LocalModel):
             raise HTTPException(409, 'Start a separate conversation for this mode. Private and Meeting-mode contexts cannot be mixed. Use Juno 0.2 or later on both Macs for separate mode-specific conversations.')
         connection = session.get(ModelConnection, actor.owner_id)
         memory_intent = memory_request(value.text) is not None
-        if connection is None and not memory_intent: raise HTTPException(503, 'Choose a local model in Model connection before chatting. Your draft has not been sent.')
+        from .staff_absence import absence_request, apply_absence
+        from .schedules import state_view as schedules_view
+        absence = absence_request(value.text, schedules_view(session, actor.owner_id)['people'], now().astimezone(ZoneInfo('America/Chicago')).date())
+        if connection is None and not memory_intent and absence is None: raise HTTPException(503, 'Choose a local model in Model connection before chatting. Your draft has not been sent.')
         base_url, model = (connection.base_url, connection.model) if connection else ('', 'Juno memory review')
         if memory_intent: model = 'Juno memory review'
+        if absence is not None: model = 'Juno staffing schedules'
         request_id = str(value.request_id)
         existing = session.scalars(select(Message).where(Message.conversation_id == identity, Message.request_id == request_id)).all()
         answer = next((r for r in existing if r.role == 'assistant'), None)
@@ -382,6 +386,18 @@ def install(app, db, device, lock_owner, model_factory=LocalModel):
         if existing: history = [r for r in history if r.request_id != request_id]
         if value.meeting_mode:
             history = [r for r in history if r.role != 'assistant' or r.meeting_mode]
+        if absence is not None:
+            result = apply_absence(session, actor.owner_id, absence, value.text, history)
+            if answer is None:
+                session.add(Message(conversation_id=identity, role='user', text=value.text, request_id=request_id, status='complete', meeting_mode=value.meeting_mode))
+                answer = Message(conversation_id=identity, role='assistant', text=result, request_id=request_id, status='complete', meeting_mode=value.meeting_mode)
+                session.add(answer)
+            else:
+                answer.status, answer.text = 'complete', result
+            answer.model_name = model
+            answer.context_refs = {'schedules:'+actor.owner_id: schedules_view(session, actor.owner_id)['revision']}
+            commit(session)
+            return message_view(answer)
         context, refs = context_for(session, actor.owner_id, value.text, history, value.meeting_mode)
         prompt = prompt_for(value.text, history, context, value.meeting_mode)
         if answer is None:

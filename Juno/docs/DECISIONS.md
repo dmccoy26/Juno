@@ -105,3 +105,20 @@ No new cloud provider, external messaging or institutional scope was introduced.
 ## Preview 8 connection versions
 
 Direct-provider disconnect/authorization denial and TaskDock saved-evidence denial advance the current source version so older reads cannot reactivate it. An empty connection or removed network copy keeps one content-free version marker per owner/source. Removal erases imported text, origin/account/resource metadata and derived replies; the marker contains only control state and is excluded from Evidence, model context and laptop cache. Local Connections metadata supplies its version for a later explicitly reviewed read. This avoids absence → read → removal → absence accepting an obsolete first read, without introducing a source-content archive or another schema migration.
+
+
+## 2026-11-19 — Dean briefing audience and continuing topics
+
+The Dean’s main talking points focus on classroom impact, systemic technology issues, current blockers and decisions, policy/training/staffing projects, submitted spending and planned purchases. Individual printer servicing and consumable records remain available in separate source review notes. Clearly stated multi-classroom disruptions remain eligible. Monitoring findings and task closures retain their evidence limits.
+
+Owner-confirmed continuing topics are stored as planning agenda data with editable status and optional reporting week, using revision checks and the existing paired-owner permissions. Explicit report rebuilding preserves the previous version in immutable history. Automatically prepared or edited reports remain protected from background replacement.
+
+
+### 2026-11-20 — One app connection vault without changing provider scopes
+
+Keep credentials in one app-scoped local Keychain item, using exact service/account entry keys so managed writes remain distinct from TaskDock reads and Beacon issue credentials. Never collect the macOS password or loosen access controls to avoid prompts. Migrate only after successful legacy authorization, retain original items for recovery, and fail closed on denial/corruption. Persist a forget tombstone before legacy removal. Cache only in the running app and clear on session resignation/sleep. Initial migration may still prompt for each old item; later preview identities authorize one consolidated connection item. Stable production signing remains a separate distribution concern.
+
+
+### 2026-11-20 — Direct absence reports are bounded schedule actions
+
+Treat an explicit report about a known worker’s full-day absence as authorization to save dated availability exceptions. Parse supported dates deterministically; ask for clarification on unfamiliar names, partial days or ambiguous periods rather than asking a model to authorize a write. Persist the schedule change and complete chat reply in one owner-locked transaction. Keep regular shifts and existing holds, flag affected holds, and reuse the same schedule persistence path as Settings. Replacement windows are proposals requiring fresh work-calendar coverage, confirmed staff schedules, room access/classes and holds; never silently assign or reserve. Historical informal proposal notes do not override structured absence exceptions.

@@ -3,7 +3,7 @@ from pathlib import Path
 import subprocess,tempfile
 root=Path(__file__).resolve().parents[1]
 s=(root/'desktop/Connections.swift').read_text()
-models=s[s.index('struct SavedConnection:'):s.index('struct ProviderVault {')]
+models=s[s.index('struct SavedConnection:'):s.index('// One local-only Keychain item')]
 method=s[s.index('    func refreshWorkCalendarAutomatically('):s.index('    func refreshCompletionArchive(')]
 # The real scheduler uses standard preferences; this executable substitutes an isolated suite.
 method=method.replace('let prefs = UserDefaults.standard','let prefs = testPreferences')

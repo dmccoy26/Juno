@@ -79,3 +79,31 @@ def report_lines(session, owner, start, end, *, limit=24, include_notes=True, in
     if row.error or now() - row.fetched_at > timedelta(days=1):
         lines.append(f'Using the saved archive from {row.fetched_at.astimezone(CENTRAL):%b %d at %-I:%M %p} Central. The copy may be out of date.')
     return lines
+
+
+def undated_update_lines(session, owner, start, end):
+    """Completed rows updated in-window are evidence of updates, not dated closures."""
+    from .chairs_routing import field
+    row = archive_source(session, owner)
+    if not row or row.details.get('active') is False:
+        return []
+    archive_id = row.details['completion_archive']['sheet_id']
+    matches = []
+    for item in row.items:
+        if ((item.get('provider_ids') or {}).get('sheet_id') != archive_id
+                or item.get('archive_completed_on') or field(item, 'Status').casefold() != 'completed'):
+            continue
+        try:
+            modified = datetime.fromisoformat(field(item, 'Modified').replace('Z', '+00:00'))
+            if modified.tzinfo is None or not start < modified <= end:
+                continue
+        except (TypeError, ValueError):
+            continue
+        title = ' '.join(item['title'].split())[:160]
+        notes = ' '.join((item.get('archive_notes') or '').split())[:150]
+        matches.append((modified, f'• {title} — marked completed; completion date unknown. Last updated {modified.astimezone(CENTRAL):%b %d at %-I:%M %p} Central.' + (f' Archive note: {notes}' if notes else '')))
+    if not matches:
+        return []
+    return ['', 'Smartsheet: completed items updated since the last meeting',
+            'Modified is the last update, not the completion date.',
+            *[line for _, line in sorted(matches, key=lambda pair: pair[0], reverse=True)]]

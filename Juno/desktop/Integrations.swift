@@ -43,23 +43,23 @@ enum BeaconKeychain {
     static func query(_ origin:String) -> [String:Any] {
         [kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:service,kSecAttrAccount as String:origin]
     }
-    static func read(_ origin:String) throws -> String? {
-        var q = query(origin);q[kSecReturnData as String] = true;q[kSecMatchLimit as String] = kSecMatchLimitOne
-        var value:CFTypeRef?;let code = SecItemCopyMatching(q as CFDictionary,&value)
-        if code == errSecItemNotFound { return nil }
-        guard code == errSecSuccess,let data = value as? Data,let text = String(data:data,encoding:.utf8) else { throw APIProblem(message:"Beacon's key could not be read from Keychain.",status:0) }
+    static func read(_ origin: String) throws -> String? {
+        let data = try ConnectionSecrets.read(service: service, account: origin) {
+            var q = query(origin);q[kSecReturnData as String] = true;q[kSecMatchLimit as String] = kSecMatchLimitOne
+            var value:CFTypeRef?;let code = SecItemCopyMatching(q as CFDictionary,&value)
+            if code == errSecItemNotFound { return nil }
+            guard code == errSecSuccess,let data = value as? Data,let _ = String(data:data,encoding:.utf8) else { throw APIProblem(message:"Beacon's key could not be read from Keychain.",status:0) }
+            return data
+        }
+        guard let data else { return nil }
+        guard let text = String(data: data, encoding: .utf8) else { throw APIProblem(message: "The saved connection credential is unreadable; it was retained.", status: 0) }
         return text
     }
-    static func save(_ token:String,origin:String) throws {
-        let q = query(origin);let data = Data(token.utf8)
-        var code = SecItemUpdate(q as CFDictionary,[kSecValueData as String:data] as CFDictionary)
-        if code == errSecItemNotFound {
-            var item = q;item[kSecValueData as String] = data;item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly;item[kSecAttrSynchronizable as String] = false
-            code = SecItemAdd(item as CFDictionary,nil)
-        }
-        guard code == errSecSuccess else { throw APIProblem(message:"Beacon was read, but its key could not be saved in Keychain. Enter it again for the next refresh.",status:0) }
+    static func save(_ token: String, origin: String) throws {
+        try ConnectionSecrets.save(Data(token.utf8), service: service, account: origin)
     }
     static func forget(_ origin:String) throws {
+        try ConnectionSecrets.save(nil, service: service, account: origin)
         let code = SecItemDelete(query(origin) as CFDictionary)
         guard code == errSecSuccess || code == errSecItemNotFound else { throw APIProblem(message:"Beacon's saved key could not be removed.",status:0) }
     }

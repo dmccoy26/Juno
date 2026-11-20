@@ -151,26 +151,23 @@ enum SharedKeychain {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: origin]
     }
     static func read(_ origin: String) throws -> String? {
-        var q = query(origin); q[kSecReturnData as String] = true; q[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(q as CFDictionary, &result)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess, let data = result as? Data, let text = String(data: data, encoding: .utf8) else { throw APIProblem(message: "Juno could not read the shared host token from Keychain.", status: 0) }
+        let data = try ConnectionSecrets.read(service: service, account: origin) {
+            var q = query(origin); q[kSecReturnData as String] = true; q[kSecMatchLimit as String] = kSecMatchLimitOne
+            var result: CFTypeRef?
+            let status = SecItemCopyMatching(q as CFDictionary, &result)
+            if status == errSecItemNotFound { return nil }
+            guard status == errSecSuccess, let data = result as? Data, let _ = String(data: data, encoding: .utf8) else { throw APIProblem(message: "Juno could not read the shared host token from Keychain.", status: 0) }
+            return data
+        }
+        guard let data else { return nil }
+        guard let text = String(data: data, encoding: .utf8) else { throw APIProblem(message: "The saved connection credential is unreadable; it was retained.", status: 0) }
         return text
     }
     static func save(_ token: String, origin: String) throws {
-        let q = query(origin)
-        let data = Data(token.utf8)
-        var status = SecItemUpdate(q as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        if status == errSecItemNotFound {
-            var item = q; item[kSecValueData as String] = data
-            item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-            item[kSecAttrSynchronizable as String] = false
-            status = SecItemAdd(item as CFDictionary, nil)
-        }
-        guard status == errSecSuccess else { throw APIProblem(message: "shared host was reached, but the token could not be saved in Keychain.", status: 0) }
+        try ConnectionSecrets.save(Data(token.utf8), service: service, account: origin)
     }
     static func forget(_ origin: String) throws {
+        try ConnectionSecrets.save(nil, service: service, account: origin)
         let status = SecItemDelete(query(origin) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw APIProblem(message: "Could not remove the shared host credential from Keychain.", status: 0) }
     }
@@ -386,7 +383,7 @@ extension JunoStore {
     func wire(_ path:String,endpoint:URL,token:String,session:URLSession,method:String,body:[String:Any]?) async throws -> Data {
         guard let url = URL(string:path,relativeTo:endpoint)?.absoluteURL else { throw APIProblem(message:"Invalid request.",status:0) }
         var request = URLRequest(url:url); request.httpMethod = method; request.timeoutInterval = path.contains("/messages") && method == "POST" ? 100 : (path.hasPrefix("/v1/taskdock/") ? 300 : (path.hasPrefix("/v1/providers/") ? 120 : 30))
-        if method == "POST", path.hasPrefix("/v1/planning/chairs-draft/"), path.hasSuffix("/prepare") {
+        if method == "POST", (path == "/v1/planning/dean-meeting/prepare" || (path.hasPrefix("/v1/planning/chairs-draft/") && path.hasSuffix("/prepare"))) {
             request.timeoutInterval = 100
         }
         request.setValue("Bearer " + token,forHTTPHeaderField:"Authorization"); request.cachePolicy = .reloadIgnoringLocalCacheData

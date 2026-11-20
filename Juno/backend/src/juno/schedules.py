@@ -259,27 +259,33 @@ def invalidate(session,owner):
     invalidate_context(session,owner,'planning:'+owner)
 
 
+def persist_schedule(session,owner,value):
+    row=session.get(ScheduleState,owner)
+    if (row.revision if row else 0)!=value.expected_revision:raise HTTPException(409,'Schedules changed. Reload before saving; keep your draft.')
+    data=value.model_dump(mode='json',exclude={'expected_revision'})
+    data['reservations']=row.data.get('reservations',[]) if row else []
+    managed=set(row.data.get('managed',[])) if row else set()
+    for rule in data['rules']:
+        kind=rule['kind'];name=rule['location'] if kind=='classroom_busy' else rule['name']
+        managed.add(kind+'|'+(room_key(name) if kind in ('room','classroom_busy') else '' if kind=='work' else name.casefold()))
+    data['managed']=sorted(managed)
+    # Do not silently validate old reservations against a newly changed schedule.
+    data['reservation_notice']='Existing holds need review after schedule changes.' if data['reservations'] else ''
+    invalidate(session,owner)
+    if row is None:row=ScheduleState(owner_id=owner,data=data,revision=1,updated_at=now());session.add(row)
+    else:row.data=data;row.revision+=1;row.updated_at=now()
+    session.flush();return state_view(session,owner)
+
+
 def install(app,db,device,lock_owner):
     @app.get('/v1/schedules')
     def read(actor=Depends(device),session=Depends(db)):return state_view(session,actor.owner_id)
 
     @app.put('/v1/schedules')
     def save(value:ScheduleInput,actor=Depends(device),session=Depends(db)):
-        lock_owner(session,actor.owner_id);row=session.get(ScheduleState,actor.owner_id)
-        if (row.revision if row else 0)!=value.expected_revision:raise HTTPException(409,'Schedules changed. Reload before saving; keep your draft.')
-        data=value.model_dump(mode='json',exclude={'expected_revision'})
-        data['reservations']=row.data.get('reservations',[]) if row else []
-        managed=set(row.data.get('managed',[])) if row else set()
-        for rule in data['rules']:
-            kind=rule['kind'];name=rule['location'] if kind=='classroom_busy' else rule['name']
-            managed.add(kind+'|'+(room_key(name) if kind in ('room','classroom_busy') else '' if kind=='work' else name.casefold()))
-        data['managed']=sorted(managed)
-        # Do not silently validate old reservations against a newly changed schedule.
-        data['reservation_notice']='Existing holds need review after schedule changes.' if data['reservations'] else ''
-        invalidate(session,actor.owner_id)
-        if row is None:row=ScheduleState(owner_id=actor.owner_id,data=data,revision=1,updated_at=now());session.add(row)
-        else:row.data=data;row.revision+=1;row.updated_at=now()
-        session.commit();return state_view(session,actor.owner_id)
+        lock_owner(session,actor.owner_id)
+        result=persist_schedule(session,actor.owner_id,value)
+        session.commit();return result
 
     @app.get('/v1/availability')
     def find(day:date=Query(),room:str=Query(default='',max_length=300),employee:str=Query(default='',max_length=300),

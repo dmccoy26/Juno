@@ -61,26 +61,23 @@ enum TaskDockKeychain {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: origin]
     }
     static func read(_ origin: String) throws -> String? {
-        var q = query(origin); q[kSecReturnData as String] = true; q[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(q as CFDictionary, &result)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess, let data = result as? Data, let text = String(data: data, encoding: .utf8) else { throw APIProblem(message: "Juno could not read the TaskDock token from Keychain.", status: 0) }
+        let data = try ConnectionSecrets.read(service: service, account: origin) {
+            var q = query(origin); q[kSecReturnData as String] = true; q[kSecMatchLimit as String] = kSecMatchLimitOne
+            var result: CFTypeRef?
+            let status = SecItemCopyMatching(q as CFDictionary, &result)
+            if status == errSecItemNotFound { return nil }
+            guard status == errSecSuccess, let data = result as? Data, let _ = String(data: data, encoding: .utf8) else { throw APIProblem(message: "Juno could not read the TaskDock token from Keychain.", status: 0) }
+            return data
+        }
+        guard let data else { return nil }
+        guard let text = String(data: data, encoding: .utf8) else { throw APIProblem(message: "The saved connection credential is unreadable; it was retained.", status: 0) }
         return text
     }
     static func save(_ token: String, origin: String) throws {
-        let q = query(origin)
-        let data = Data(token.utf8)
-        var status = SecItemUpdate(q as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        if status == errSecItemNotFound {
-            var item = q; item[kSecValueData as String] = data
-            item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-            item[kSecAttrSynchronizable as String] = false
-            status = SecItemAdd(item as CFDictionary, nil)
-        }
-        guard status == errSecSuccess else { throw APIProblem(message: "TaskDock was reached, but the token could not be saved in Keychain.", status: 0) }
+        try ConnectionSecrets.save(Data(token.utf8), service: service, account: origin)
     }
     static func forget(_ origin: String) throws {
+        try ConnectionSecrets.save(nil, service: service, account: origin)
         let status = SecItemDelete(query(origin) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw APIProblem(message: "Could not remove the TaskDock credential from Keychain.", status: 0) }
     }

@@ -68,6 +68,29 @@ class LocalModel:
         return [r['id'] for r in value['data'] if isinstance(r, dict) and isinstance(r.get('id'), str)
                 and len(r['id'])<=200 and 'embed' not in r['id'].lower()][:100]
 
+    def classify_evidence(self, messages, model):
+        """One bounded request; a failed review falls back to source rules, not a retry."""
+        if 'qwen3' in model.casefold():
+            result = self.request('/api/v1/chat', {
+                'model': model, 'system_prompt': messages[0]['content'], 'input': messages[1]['content'],
+                'reasoning': 'off', 'store': False, 'max_output_tokens': 1024,
+            }, origin=self.base_url.removesuffix('/v1'))
+            output = result.get('output') if isinstance(result, dict) else None
+            if not isinstance(output, list): raise ModelError('Local evidence review was incomplete.')
+            answer = '\n'.join(item['content'] for item in output if isinstance(item, dict)
+                               and item.get('type') == 'message' and isinstance(item.get('content'), str)).strip()
+        else:
+            result = self.request('/chat/completions', {'model': model, 'messages': messages,
+                'temperature': 0, 'max_tokens': 1024, 'stream': False})
+            try:
+                choice=result['choices'][0]
+                if choice.get('finish_reason')=='length': raise ValueError()
+                answer=choice['message']['content']
+            except (TypeError,KeyError,IndexError,ValueError): raise ModelError('Local evidence review was incomplete.') from None
+        if not isinstance(answer,str) or not answer or len(answer)>12000:
+            raise ModelError('Local evidence review was incomplete.')
+        return answer
+
     def compose_email(self, messages, model):
         if 'qwen3' not in model.casefold():
             return self.complete(messages, model)

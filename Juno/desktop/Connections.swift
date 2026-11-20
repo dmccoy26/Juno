@@ -72,32 +72,112 @@ enum CalendarRefreshPolicy {
     }
 }
 
+// One local-only Keychain item for the app's connection credentials. Legacy
+// items are migrated only after a successful read; denial/corruption never
+// becomes an empty credential, and original items remain recoverable.
+enum ConnectionSecrets {
+    struct Envelope: Codable {
+        var format = 1
+        var entries: [String: Data] = [:]
+        var migrated: Set<String> = []
+    }
+    private static let lock = NSLock()
+    private static var cache: [String: Envelope] = [:]
+    private static var observers: [NSObjectProtocol] = []
+    static func installLockObservers() {
+        guard observers.isEmpty else { return }
+        for name in [NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.willSleepNotification] {
+            observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: nil) { _ in clearCache() })
+        }
+    }
+    static func clearCache() { lock.lock(); defer { lock.unlock() }; cache.removeAll() }
+    static func vaultService(_ service: String) -> String {
+        for suffix in [".taskdock", ".beacon", ".sharedHost", ".providers"] where service.hasSuffix(suffix) {
+            return String(service.dropLast(suffix.count)) + ".connectionVault"
+        }
+        return service + ".connectionVault"
+    }
+    static func query(_ service: String) -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: vaultService(service), kSecAttrAccount as String: "connections-v1"]
+    }
+    private static func entryKey(_ service: String, _ account: String) throws -> String {
+        try JSONEncoder().encode([service, account]).base64EncodedString()
+    }
+    private static func load(_ service: String) throws -> Envelope {
+        let name = vaultService(service)
+        if let value = cache[name] { return value }
+        var q = query(service); q[kSecReturnData as String] = true; q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let code = SecItemCopyMatching(q as CFDictionary, &result)
+        if code == errSecItemNotFound { return Envelope() }
+        guard code == errSecSuccess, let data = result as? Data else {
+            throw APIProblem(message: "Juno’s connection vault is locked or access was denied. Allow Juno in the macOS Keychain prompt, then retry.", status: 0)
+        }
+        guard let value = try? JSONDecoder().decode(Envelope.self, from: data), value.format == 1 else {
+            throw APIProblem(message: "Juno’s saved connection vault could not be read. Existing credentials were retained.", status: 0)
+        }
+        cache[name] = value
+        return value
+    }
+    private static func persist(_ value: Envelope, service: String) throws {
+        let data = try JSONEncoder().encode(value); let q = query(service)
+        var code = SecItemUpdate(q as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if code == errSecItemNotFound {
+            var item = q; item[kSecValueData as String] = data
+            item[kSecAttrLabel as String] = "Juno connection vault"
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            item[kSecAttrSynchronizable as String] = false
+            code = SecItemAdd(item as CFDictionary, nil)
+        }
+        guard code == errSecSuccess else {
+            throw APIProblem(message: "Juno’s connection vault could not be saved. Existing credentials were retained; retry after allowing Keychain access.", status: 0)
+        }
+        cache[vaultService(service)] = value
+    }
+    static func read(service: String, account: String, legacy: () throws -> Data?) throws -> Data? {
+        lock.lock(); defer { lock.unlock() }
+        var value = try load(service); let key = try entryKey(service, account)
+        if value.migrated.contains(key) { return value.entries[key] }
+        let data = try legacy()
+        value.entries[key] = data; value.migrated.insert(key)
+        try persist(value, service: service)
+        return data
+    }
+    static func save(_ data: Data?, service: String, account: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        var value = try load(service); let key = try entryKey(service, account)
+        value.entries[key] = data; value.migrated.insert(key)
+        try persist(value, service: service)
+    }
+}
+
 struct ProviderVault {
     let service:String
     init(service:String = (Bundle.main.bundleIdentifier ?? "com.dmccoy.juno") + ".providers") { self.service = service }
     func query(_ provider:WorkProvider) -> [String:Any] { [kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:service,kSecAttrAccount as String:provider.rawValue] }
-    func read(_ provider:WorkProvider) throws -> SavedConnection? {
-        var q = query(provider);q[kSecReturnData as String] = true;q[kSecMatchLimit as String] = kSecMatchLimitOne
-        var value:CFTypeRef?;let code = SecItemCopyMatching(q as CFDictionary,&value)
-        if code == errSecItemNotFound { return nil }
-        guard code == errSecSuccess,let data = value as? Data else { throw APIProblem(message:"The connection could not be read from Keychain.",status:0) }
-        do { return try JSONDecoder().decode(SavedConnection.self,from:data) }
-        catch { throw APIProblem(message:"The saved connection format could not be read. Its Keychain item was retained.",status:0) }
-    }
-    func save(_ value:SavedConnection,provider:WorkProvider) throws {
-        let data = try JSONEncoder().encode(value);let q = query(provider)
-        var code = SecItemUpdate(q as CFDictionary,[kSecValueData as String:data] as CFDictionary)
-        if code == errSecItemNotFound {
-            var item = q;item[kSecValueData as String] = data;item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly;item[kSecAttrSynchronizable as String] = false
-            code = SecItemAdd(item as CFDictionary,nil)
+    func read(_ provider: WorkProvider) throws -> SavedConnection? {
+        let data = try ConnectionSecrets.read(service: service, account: provider.rawValue) {
+            var q = query(provider); q[kSecReturnData as String] = true; q[kSecMatchLimit as String] = kSecMatchLimitOne
+            var value: CFTypeRef?; let code = SecItemCopyMatching(q as CFDictionary, &value)
+            if code == errSecItemNotFound { return nil }
+            guard code == errSecSuccess, let data = value as? Data else { throw APIProblem(message: "The connection could not be read from Keychain.", status: 0) }
+            guard (try? JSONDecoder().decode(SavedConnection.self, from: data)) != nil else { throw APIProblem(message: "The saved connection format could not be read. Its Keychain item was retained.", status: 0) }
+            return data
         }
-        guard code == errSecSuccess else { throw APIProblem(message:"The connection could not be saved in Keychain. Your previous saved item was retained.",status:0) }
+        guard let data else { return nil }
+        do { return try JSONDecoder().decode(SavedConnection.self, from: data) }
+        catch { throw APIProblem(message: "The saved connection format could not be read. Its Keychain item was retained.", status: 0) }
+    }
+    func save(_ value: SavedConnection, provider: WorkProvider) throws {
+        try ConnectionSecrets.save(JSONEncoder().encode(value), service: service, account: provider.rawValue)
     }
     func forget(_ provider:WorkProvider) throws {
+        try ConnectionSecrets.save(nil, service: service, account: provider.rawValue)
         let code = SecItemDelete(query(provider) as CFDictionary)
         guard code == errSecSuccess || code == errSecItemNotFound else { throw APIProblem(message:"The saved provider credential could not be removed.",status:0) }
     }
 }
+
 struct ProviderAccount: Codable { let id:String;let label:String }
 struct ProviderResource: Codable, Identifiable { let id:String;let label:String }
 struct ProviderDiscovery: Decodable { let provider:String;let account:ProviderAccount;let resources:[ProviderResource];let manual_selection_required:Bool;let notice:String }

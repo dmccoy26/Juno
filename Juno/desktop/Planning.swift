@@ -197,13 +197,21 @@ struct CompletionArchiveBasis: Codable, Equatable {
     let uncertain: Bool
 }
 struct WeeklyBasis: Codable, Equatable {
+    var dean_format:String?
+    var dean_review_notes:String?
     var operations_basis:OperationalSourceBasis?
     var meeting_window:DeanMeetingWindow?
     var completion_archive: CompletionArchiveBasis?
     var diaries:[WeeklyDiaryBasis]; var snapshot_id:String?; var workspace_id:String?; var taskdock_saved_at:String?; var planning_revision:Int;var taskdock_uncertain:Bool
-    enum CodingKeys:String,CodingKey { case meeting_window,completion_archive,operations_basis,diaries,snapshot_id,workspace_id,taskdock_saved_at,planning_revision,taskdock_uncertain }
-    func encode(to encoder:Encoder) throws { var c=encoder.container(keyedBy:CodingKeys.self);try c.encodeIfPresent(meeting_window,forKey:.meeting_window);try c.encodeIfPresent(completion_archive,forKey:.completion_archive);try c.encode(operations_basis,forKey:.operations_basis);try c.encode(diaries,forKey:.diaries);try c.encode(snapshot_id,forKey:.snapshot_id);try c.encode(workspace_id,forKey:.workspace_id);try c.encode(taskdock_saved_at,forKey:.taskdock_saved_at);try c.encode(planning_revision,forKey:.planning_revision);try c.encode(taskdock_uncertain,forKey:.taskdock_uncertain) }
+    enum CodingKeys:String,CodingKey { case dean_format,dean_review_notes,meeting_window,completion_archive,operations_basis,diaries,snapshot_id,workspace_id,taskdock_saved_at,planning_revision,taskdock_uncertain }
+    func encode(to encoder:Encoder) throws { var c=encoder.container(keyedBy:CodingKeys.self);try c.encodeIfPresent(dean_format,forKey:.dean_format);try c.encodeIfPresent(dean_review_notes,forKey:.dean_review_notes);try c.encodeIfPresent(meeting_window,forKey:.meeting_window);try c.encodeIfPresent(completion_archive,forKey:.completion_archive);try c.encode(operations_basis,forKey:.operations_basis);try c.encode(diaries,forKey:.diaries);try c.encode(snapshot_id,forKey:.snapshot_id);try c.encode(workspace_id,forKey:.workspace_id);try c.encode(taskdock_saved_at,forKey:.taskdock_saved_at);try c.encode(planning_revision,forKey:.planning_revision);try c.encode(taskdock_uncertain,forKey:.taskdock_uncertain) }
 }
+enum DeanRemoteRefreshAction: Equatable { case unchanged, adopt, compare }
+func deanRemoteRefreshAction(localRevision:Int, remoteRevision:Int, dirty:Bool, editing:Bool, pending:Bool, comparing:Bool) -> DeanRemoteRefreshAction {
+    guard remoteRevision > localRevision else { return .unchanged }
+    return dirty || editing || pending || comparing ? .compare : .adopt
+}
+
 struct WeeklyPlanningDraft: Decodable { var text:String; var notices:[String]; var basis:WeeklyBasis; var missing_diary_dates:[String] }
 struct SavedDeanDraft: Decodable {
     var owner_id:String;var week_start:String;var exists:Bool;var id:String?;var text:String;var revision:Int;var basis:WeeklyBasis;var sources_changed:Bool;var updated_at:String?;var notice:String
@@ -1129,11 +1137,14 @@ struct WeeklyDeanEditor: View {
     @State private var pending:[String:Any]?
     @State private var baseRevision=0
     @State private var confirmClose=false
+    @State private var closeAfterSave=false
     @State private var editing = false
     @State private var showDetails = false
     @State private var showingHistory = false
     @State private var presenting = false
     @State private var showFresh = false
+    @State private var checkingRemote = false
+    @State private var newerRemoteRevision:Int?
     var dayKey:String { let f=DateFormatter();f.locale=Locale(identifier:"en_US_POSIX");f.timeZone=TimeZone(identifier:"America/Chicago");f.dateFormat="yyyy-MM-dd";return f.string(from:day) }
     var recoveryKey:String? { saved.map { "deanDraft."+$0.owner_id+":"+dayKey } }
     private func object<T:Encodable>(_ value:T) throws -> [String:Any] { try JSONSerialization.jsonObject(with:JSONEncoder().encode(value)) as! [String:Any] }
@@ -1147,7 +1158,10 @@ struct WeeklyDeanEditor: View {
     private func load() async {
         guard !busy else { return }
         busy = true
-        defer { busy = false }
+        defer {
+            busy = false
+            if pending != nil && store.connected && !store.offline { retry() }
+        }
         if saved?.week_start != dayKey {
             saved = nil
             basis = nil
@@ -1168,12 +1182,34 @@ struct WeeklyDeanEditor: View {
             }
         } catch { notice=(error as? APIProblem)?.message ?? "Could not open the saved draft. Reconnect to your work Mac." }
     }
+    private func checkRemoteRevision() async {
+        guard !busy, !checkingRemote, pending == nil, !store.offline, store.connected,
+              !showingHistory, !presenting else { return }
+        checkingRemote=true;defer { checkingRemote=false }
+        let key=dayKey
+        do {
+            let remote=try await store.decode(SavedDeanDraft.self,"/v1/planning/weekly-draft/"+key)
+            guard dayKey == key, let original=saved, original.owner_id == remote.owner_id else { return }
+            switch deanRemoteRefreshAction(localRevision:baseRevision,remoteRevision:remote.revision,dirty:dirty,editing:editing,pending:pending != nil,comparing:comparisonOpen) {
+            case .unchanged: break
+            case .compare:
+                if newerRemoteRevision != remote.revision {
+                    newerRemoteRevision=remote.revision
+                    notice="A newer saved revision (\(remote.revision)) arrived from the work Mac. Your writing is kept. Use Compare saved copy to review both."
+                }
+            case .adopt:
+                saved=remote;basis=remote.basis;text=remote.text;baseRevision=remote.revision
+                prepared=nil;comparison=nil;showFresh=false;newerRemoteRevision=nil
+                notice="Updated from the work Mac · revision \(remote.revision).";recoverable()
+            }
+        } catch { /* Keep the displayed document and any local writing during an outage. */ }
+    }
     private func prepare() {
         guard !busy, pending == nil else { return };busy=true
         Task { defer{busy=false};do {
             let value=try await store.decode(WeeklyPlanningDraft.self,"/v1/planning/weekly?day="+dayKey)
             prepared=value
-            if saved?.exists == false && !dirty { text=value.text;basis=value.basis;dirty=true;recoverable();notice="Prepared for your review. Save draft keeps your edited writing on the work Mac." }
+            if saved?.exists == false && !dirty { text=value.text;basis=value.basis;dirty=true;recoverable();notice="Prepared for your review. Save creates a version in the connected workspace." }
             else { showFresh = true; comparison = nil; notice = "" }
         } catch { notice=(error as? APIProblem)?.message ?? "Could not prepare the draft. Your writing is still here." } }
     }
@@ -1186,11 +1222,13 @@ struct WeeklyDeanEditor: View {
         guard let operation=pending,!busy else{return};busy=true
         Task { defer{busy=false};do {
             let receipt=try await store.decode(DeanSaveReceipt.self,"/v1/planning/weekly-draft/"+dayKey,method:"PUT",body:operation)
-            pending=nil;dirty=false;baseRevision=receipt.revision;recoverable();notice="Saved on your work Mac."; editing = false
-            do { saved=try await store.decode(SavedDeanDraft.self,"/v1/planning/weekly-draft/"+dayKey) } catch { notice="Saved on your work Mac, but the view could not refresh. Your text remains here." }
+            pending=nil;dirty=false;baseRevision=receipt.revision;recoverable();notice="Saved version \(receipt.revision) on \(saveDestination)."; editing = false
+            do { saved=try await store.decode(SavedDeanDraft.self,"/v1/planning/weekly-draft/"+dayKey) } catch { notice="The version was saved, but the view could not refresh. Your text remains here." }
+            if closeAfterSave { closeAfterSave=false;dismiss() }
         } catch {
+            closeAfterSave=false
             if let problem=error as? APIProblem,(400..<500).contains(problem.status){pending=nil;notice=problem.message+" Use Compare saved copy; your writing remains here."}
-            else { notice="Save receipt unavailable. Your writing and save identity are retained; retry this same save." }
+            else { notice=((error as? APIProblem)?.message ?? "The save receipt is unavailable.")+" Your writing is kept on this Mac. Retry save when connected to the work Mac." }
             recoverable()
         } }
     }
@@ -1199,9 +1237,12 @@ struct WeeklyDeanEditor: View {
     }
     private var comparisonOpen: Bool { comparison != nil || showFresh }
     private var hasWriting: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var saveDestination:String { store.sharedProfile == nil ? "this Mac" : "the work Mac" }
+    private var saveActionTitle:String { store.sharedProfile == nil ? "Save version" : "Save to work Mac" }
     private var statusLabel: String {
-        if dirty { return "Unsaved changes" }
-        if saved?.exists == true { return "Saved · Revision \(baseRevision)" }
+        if pending != nil { return "Save pending on this Mac · waiting for a saved-version receipt" }
+        if dirty { return "Local edits · choose \(saveActionTitle) to create a version" }
+        if saved?.exists == true { return "Saved on \(saveDestination) · revision \(baseRevision)" }
         return "No draft saved"
     }
 
@@ -1242,6 +1283,9 @@ struct WeeklyDeanEditor: View {
         if let basis, showDetails || saved?.sources_changed == true {
             DisclosureGroup(isExpanded: $showDetails) {
                 VStack(alignment: .leading, spacing: 5) {
+                    if let notes=basis.dean_review_notes {
+                        DisclosureGroup("Detailed ticket evidence and coverage") { ScrollView { Text(notes).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading) }.frame(maxHeight:280) }
+                    }
                     if saved?.sources_changed == true { Text("Source data changed after this draft was prepared.") }
                     if basis.taskdock_uncertain { Text("Check the freshness of the TaskDock copy used for this draft.") }
                     Text("\(basis.diaries.count) confirmed check-ins in " +
@@ -1347,14 +1391,15 @@ struct WeeklyDeanEditor: View {
                     Button("Copy original plain text") { copyDeanDocument(text, rich: false) }
                 }.disabled(!hasWriting || busy)
                 if pending != nil {
-                    Button("Retry save", action: retry).disabled(busy || store.offline)
+                    Button("Retry save", action: retry).keyboardShortcut("s",modifiers:.command).disabled(busy || store.offline)
                 } else if editing {
                     Button("Preview") { editing = false }.disabled(busy)
                 } else if saved != nil {
                     Button("Edit briefing") { editing = true }.disabled(busy)
                 }
                 if dirty && pending == nil {
-                    Button("Save draft", action: save)
+                    Button(saveActionTitle, action: save)
+                        .keyboardShortcut("s",modifiers:.command)
                         .buttonStyle(.borderedProminent)
                         .disabled(busy || store.offline || !hasWriting || text.count > 60000)
                 }
@@ -1395,11 +1440,27 @@ struct WeeklyDeanEditor: View {
         .environment(\.locale, Locale(identifier: "en_US"))
         .environment(\.timeZone,DeanMeetingSchedule.zone)
         .task { await load() }
+        .task(id:dayKey) {
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds:15_000_000_000) } catch { return }
+                if NSApp.isActive { await checkRemoteRevision() }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)) { _ in
+            if pending != nil && !store.offline { retry() }
+            else { Task { await checkRemoteRevision() } }
+        }
+        .onChange(of:store.offline) { offline in if !offline && pending != nil { retry() } }
+        .onChange(of:store.connected) { connected in if connected && !store.offline && pending != nil { retry() } }
         .onChange(of:day) { _ in if !dirty && !busy { Task { await load() } } }
         .onChange(of:dirty) { value in if value { store.unsavedSections.insert("Dean draft") } else { store.unsavedSections.remove("Dean draft") } }
         .onDisappear { recoverable();store.unsavedSections.remove("Dean draft") }
         .interactiveDismissDisabled(dirty || pending != nil)
-        .alert("Keep this unsaved writing for later?",isPresented:$confirmClose) { Button("Keep local recovery and close") { recoverable();dismiss() };Button("Return to draft",role:.cancel){} } message:{Text("Your work-Mac draft changes only after Save succeeds. A local recovery copy keeps this writing for the next time you open this period.")}
+        .alert("Save these changes as a version?",isPresented:$confirmClose) {
+            Button("Save version and close") { closeAfterSave=true;if pending != nil { retry() } else { save() } }.disabled(store.offline || busy)
+            Button("Keep on this Mac and close") { recoverable();dismiss() }
+            Button("Return to draft",role:.cancel){}
+        } message:{Text("Save creates a version in the connected workspace. Keep on this Mac retains a local recovery copy for later.")}
     }
 }
 
@@ -1452,7 +1513,7 @@ struct ChairPreparationSchedule {
     }
 }
 
-private struct DeanPrepareResult: Decodable { let created:Bool }
+private struct DeanPrepareResult: Decodable { let created:Bool;let review_notice:String? }
 
 private struct ChairEmail: Decodable {
     let subject: String
@@ -1471,7 +1532,7 @@ private struct ChairEmail: Decodable {
     }
 }
 
-private struct ReportLibraryItem: Decodable, Identifiable {
+private struct ReportLibraryItem: Decodable, Identifiable, Equatable {
     let id: String; let week: String; let kind: String; let audience: String
     let title: String; let revision: Int; let reviewed: Bool
     var recipient: String {
@@ -1519,6 +1580,7 @@ private struct ReportLibraryWorkspace: View {
     @State private var more = false
     @State private var offset = 0
     @State private var readVersion = UUID()
+    @State private var loading = false
     @State private var busy = false
     @State private var issue: String?
     private var filtered: [ReportLibraryItem] { items.filter { search.isEmpty || ($0.recipient + " " + $0.title + " " + $0.week).localizedCaseInsensitiveContains(search) } }
@@ -1554,7 +1616,7 @@ private struct ReportLibraryWorkspace: View {
             }.padding(16).frame(minWidth: 230, idealWidth: 280, maxWidth: 340)
             if let item = filtered.first(where: { $0.id == selected }) {
                 ReportLibraryReader(store: store, item: item, edit: { editor = item }, onMarked: { Task { await load() } })
-                    .id(item.id + String(item.revision) + readVersion.uuidString).disabled(busy).frame(minWidth: 360, maxWidth: .infinity)
+                    .id(item.id + String(item.revision) + String(item.reviewed) + readVersion.uuidString).disabled(busy).frame(minWidth: 360, maxWidth: .infinity)
             } else {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Choose a saved document").font(.title2.bold())
@@ -1563,6 +1625,17 @@ private struct ReportLibraryWorkspace: View {
             }
         }
         .task(id: String(store.connected) + "|" + String(store.offline)) { await load() }
+        .task(id:active && store.section == "Reports" && store.connected && !store.offline) {
+            guard active, store.section == "Reports", store.connected, !store.offline else { return }
+            await load(quiet:true)
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds:15_000_000_000) } catch { return }
+                if NSApp.isActive && editor == nil { await load(quiet:true) }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)) { _ in
+            if active && store.section == "Reports" && editor == nil { Task { await load(quiet:true) } }
+        }
         .onChange(of: search) { _ in
             if !filtered.contains(where: { $0.id == selected }) { selected = filtered.first?.id }
         }
@@ -1574,9 +1647,9 @@ private struct ReportLibraryWorkspace: View {
             else { ChairsReportEditor(store: store, initialRecipient: item.audience, initialDay: item.date) }
         }
     }
-    private func load(older: Bool = false) async {
-        guard store.connected, !busy else { return }
-        busy = true; defer { busy = false }
+    private func load(older: Bool = false, quiet:Bool = false) async {
+        guard store.connected, !loading else { return }
+        loading=true;if !quiet { busy=true };defer {loading=false;if !quiet {busy=false}}
         do {
             var page = try await store.decode(ReportLibraryPage.self, "/v1/reports/index?offset=\(older ? offset : 0)")
             let responseOwner = page.owner_id
@@ -1591,9 +1664,11 @@ private struct ReportLibraryWorkspace: View {
             guard !Task.isCancelled else { return }
             if older, let owner, owner != page.owner_id { throw APIProblem(message: "The workspace changed. Refresh the saved document list.", status: 409) }
             var seen = Set<String>()
-            items = (older ? items + collected : collected).filter { seen.insert($0.id).inserted }
+            let refreshedItems = (older ? items + collected : collected).filter { seen.insert($0.id).inserted }
+            if items != refreshedItems { items = refreshedItems }
+            let changedOwner = owner != page.owner_id
             owner = page.owner_id; more = page.has_more; offset = page.next_offset; issue = nil
-            readVersion = UUID()
+            if !quiet || changedOwner { readVersion = UUID() }
             if selected == nil { selected = filtered.first?.id }
             else if !filtered.contains(where: { $0.id == selected }) {
                 selected = nil; issue = "The selected document is not in these refreshed pages. Search or load older weeks to find it."
@@ -1749,7 +1824,7 @@ private struct ReportPreparationWorkspace: View {
         let key = DeanMeetingSchedule(now: Date()).key
         do {
             let draft = try await store.decode(SavedDeanDraft.self, "/v1/planning/weekly-draft/" + key)
-            deanStatus = draft.exists ? "Talking points saved for this week" : "No talking points saved this week"
+            deanStatus = draft.exists ? (draft.basis.meeting_window == nil ? "Notes saved · source briefing still needs preparation" : "Talking points prepared for this week") : "No talking points saved this week"
         } catch { deanStatus = "Saved briefing status unavailable" }
         do {
             let draft = try await store.decode(ChairsDraft.self, "/v1/planning/chairs-draft/" + key)
@@ -1881,7 +1956,7 @@ extension JunoStore {
     func prepareDeanMeeting(automatic:Bool) async {
         guard !deanPreparing, !chairsPreparing, connected, sharedProfile == nil, !offline else {return}
         let current=Date(), schedule=DeanMeetingSchedule(now:current)
-        guard current<schedule.meeting else {
+        guard !automatic || current<schedule.meeting else {
             if !automatic { deanNotice="This week’s meeting has passed. Open its saved draft or prepare next week’s draft on Monday." }
             return
         }
@@ -1895,7 +1970,7 @@ extension JunoStore {
         var source="Juno"
         do {
             let draft=try await decode(SavedDeanDraft.self,"/v1/planning/weekly-draft/"+schedule.key)
-            if draft.exists {
+            if draft.exists && draft.basis.meeting_window != nil && (automatic || draft.basis.dean_format == "leadership-v1") {
                 deanHandledWeek=schedule.key;deanNotice="This week’s Dean draft is already saved. Open it to review."
                 return
             }
@@ -1911,7 +1986,7 @@ extension JunoStore {
                     ($0.text("last_changed_at") ?? "") > ($1.text("last_changed_at") ?? "")
                 }
                 for task in candidates.prefix(40) {
-                    guard Date()<schedule.meeting, sharedProfile == nil, !automatic || deanAutomatic else {return}
+                    guard (!automatic || Date()<schedule.meeting), sharedProfile == nil, !automatic || deanAutomatic else {return}
                     var path=URLComponents();path.path="/v1/taskdock/history"
                     path.queryItems=[URLQueryItem(name:"task_id",value:task.id),URLQueryItem(name:"kind",value:"updates")]
                     guard let target=path.string else {continue}
@@ -1931,15 +2006,18 @@ extension JunoStore {
                 deanNotice="Preparation stopped before saving. Any saved or unsaved writing has been kept."
                 return
             }
-            source="Juno"
+            source="Juno";deanNotice="Reviewing evidence and preparing the leadership briefing…"
             let override = deanOverrideWeek == schedule.key ? deanOverride : nil
             let formatter=ISO8601DateFormatter()
-            let prepared=try await decode(DeanPrepareResult.self,"/v1/planning/dean-meeting/prepare",method:"POST",body:[
+            var preparation:[String:Any]=[
                 "previous":formatter.string(from:override ?? schedule.previous),"previous_confirmed":override != nil,
                 "meeting":formatter.string(from:schedule.meeting),"taskdock_id":refreshed.id,"beacon_id":beacon.id,
-                "archive_refresh_failed":archiveRefreshFailed])
+                "archive_refresh_failed":archiveRefreshFailed,"allow_late":!automatic]
+            if draft.exists { preparation[draft.basis.meeting_window == nil ? "preserve_saved_revision" : "reformat_saved_revision"]=draft.revision }
+            let prepared=try await decode(DeanPrepareResult.self,"/v1/planning/dean-meeting/prepare",method:"POST",body:preparation)
             deanHandledWeek=schedule.key
             deanNotice=prepared.created ? "This week’s Dean draft is ready to review." : "This week’s saved draft was kept."
+            if let review=prepared.review_notice, prepared.created { deanNotice += " " + review }
             if prepared.created && archiveRefreshFailed { deanNotice += " Check Smartsheet archive coverage." }
         } catch {
             deanNotice=source+": "+((error as? APIProblem)?.message ?? "The draft could not be prepared. Try again from Plan.")
@@ -1955,6 +2033,7 @@ private struct DeanMeetingControls: View {
     @State private var correcting=false
     @State private var actual=Date()
     @State private var followUp = false
+    @State private var agenda = false
     var body: some View {
         let current=Date(), schedule=DeanMeetingSchedule(now:current)
         let overridden=store.deanOverrideWeek == schedule.key ? store.deanOverride : nil
@@ -1963,7 +2042,7 @@ private struct DeanMeetingControls: View {
                 if let summary { Text(summary).font(.headline) }
                 if store.sharedProfile == nil {
                     Toggle("Prepare automatically at 9:00 AM Central on Thursdays",isOn:$store.deanAutomatic)
-                    Text("Juno refreshes TaskDock and Beacon and combines their shared updates with your confirmed check-ins. Keep Juno open and this Mac awake. Saved drafts stay available for review.")
+                    Text("Juno refreshes TaskDock and Beacon and combines their shared updates with your confirmed check-ins. Keep Juno open and this Mac awake. Saved notes are included when the briefing is prepared. Prepared drafts and your edits stay available for review.")
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Text((overridden == nil ? "Previous scheduled meeting: " : "Last meeting: ") + (overridden ?? schedule.previous).formatted(.dateTime.month(.abbreviated).day().year().hour().minute().timeZone(.specificName(.short))))
@@ -1973,15 +2052,17 @@ private struct DeanMeetingControls: View {
                 HStack {
                     Button("Open this week’s draft…") { open() }
                     Button("Meeting follow-up…") { followUp = true }
+                    Button("Briefing priorities…") { agenda = true }.disabled(store.offline)
                     if store.sharedProfile == nil {
                         Button("Refresh sources and prepare now") { Task { await store.prepareDeanMeeting(automatic:false) } }
-                            .disabled(store.deanPreparing || !store.connected || current>=schedule.meeting)
+                            .disabled(store.deanPreparing || !store.connected)
                     }
                 }
                 if !store.deanNotice.isEmpty { Text(store.deanNotice).font(.callout).textSelection(.enabled) }
             }.frame(maxWidth:.infinity,alignment:.leading)
         }.environment(\.timeZone,DeanMeetingSchedule.zone)
         .sheet(isPresented: $followUp) { DeanFollowUpEditor(store: store, onSave: refreshPlan) }
+        .sheet(isPresented: $agenda) { DeanAgendaEditor(store:store) }
         .sheet(isPresented:$correcting) {
             VStack(alignment:.leading,spacing:14) {
                 Text("When did the last meeting happen?").font(.headline)
@@ -2665,5 +2746,60 @@ struct InlineRequestAnswer: View {
             if let recoveryKey { EditorRecovery.clear(recoveryKey) }
             self.recoveryKey = nil; issue = nil; onSave()
         } catch { issue = (error as? APIProblem)?.message ?? "Could not save. Your answer is retained; reload the source before retrying." }
+    }
+}
+
+
+private struct DeanAgendaTopic:Codable,Identifiable {
+    var title:String;var status:String;var detail:String;var category:String;var week:String?
+    var id:String { title }
+}
+private struct DeanAgenda:Codable { var revision:Int;var topics:[DeanAgendaTopic] }
+private struct DeanAgendaEditor:View {
+    @ObservedObject var store:JunoStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var value=DeanAgenda(revision:0,topics:[])
+    @State private var ready=false
+    @State private var busy=false
+    @State private var notice=""
+    var body:some View {
+        VStack(alignment:.leading,spacing:14) {
+            Text("Dean briefing priorities").font(.title2.bold())
+            Text("Continuing topics appear each week until removed. Use a Monday date to limit a topic to one week. Keep status, costs, and approval needs explicit.").foregroundStyle(.secondary)
+            ScrollView {
+                ForEach(value.topics.indices,id:\.self) { index in
+                    GroupBox {
+                        VStack(alignment:.leading,spacing:7) {
+                            TextField("Topic",text:$value.topics[index].title)
+                            TextField("Status",text:$value.topics[index].status)
+                            TextField("Details, known costs or approval needed",text:$value.topics[index].detail)
+                            HStack {
+                                Picker("Section",selection:$value.topics[index].category) {
+                                    Text("Policy, training & staffing").tag("progress");Text("Spending").tag("spending");Text("Blockers").tag("blockers");Text("Decisions").tag("decisions")
+                                }
+                                TextField("Week (YYYY-MM-DD; blank repeats)",text:Binding(get:{value.topics[index].week ?? ""},set:{value.topics[index].week=$0.isEmpty ? nil : $0})).frame(width:230)
+                                Button("Remove") { value.topics.remove(at:index) }
+                            }
+                        }.padding(6)
+                    }
+                }
+            }
+            if !notice.isEmpty { Text(notice).foregroundStyle(.secondary) }
+            HStack {
+                Button("Add topic") { value.topics.append(DeanAgendaTopic(title:"",status:"In progress",detail:"",category:"progress")) }.disabled(!ready || busy || value.topics.count>=24)
+                Spacer();Button("Cancel",role:.cancel) { dismiss() }
+                Button("Save priorities") {
+                    busy=true
+                    Task { defer{busy=false};do {
+                        let data=try JSONEncoder().encode(value)
+                        var body=try JSONSerialization.jsonObject(with:data) as! [String:Any]
+                        body["expected_revision"]=value.revision;body.removeValue(forKey:"revision")
+                        value=try await store.decode(DeanAgenda.self,"/v1/planning/dean-agenda",method:"PUT",body:body)
+                        dismiss()
+                    } catch { notice=(error as? APIProblem)?.message ?? "Could not save priorities. Your writing is still here." } }
+                }.buttonStyle(.borderedProminent).disabled(!ready || busy || store.offline || value.topics.contains{$0.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty})
+            }
+        }.padding(22).frame(width:840,height:610)
+        .task { do { value=try await store.decode(DeanAgenda.self,"/v1/planning/dean-agenda");ready=true } catch {notice="Could not load saved priorities. Reconnect and reopen this editor."} }
     }
 }
